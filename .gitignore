@@ -10,4 +10,9 @@ temp/
 run
 *.pyc
 *.o
-tests/test_results/*
+tests/test_results/
+*_backup.*
+src/v1/
+src/v2/
+include/v1/
+include/v2/
