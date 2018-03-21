@@ -8,3 +8,5 @@ temp/
 *.out
 */run
 run
+*.pyc
+*.o
