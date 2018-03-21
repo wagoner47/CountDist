@@ -1,0 +1,9 @@
+build/
+.cache/
+CountDist2.egg-info/
+.coverage
+*.swp
+*~
+temp/
+*.out
+*/run
