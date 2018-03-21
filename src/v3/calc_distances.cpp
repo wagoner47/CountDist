@@ -23,6 +23,18 @@ omp_set_num_threads(OMP_NUM_THREADS);
 #define omp_get_thread_num() 0
 #endif
 
+template <typename T> inline constexpr int signum(T x, false_type is_signed) {
+    return T(0) < x;
+}
+
+template <typename T> inline constexpr int signum(T x, true_type is_signed) {
+    return (T(0) < x) - (x < T(0));
+}
+
+template <typename T> inline constexpr int signum(T x) {
+    return signum(x, is_signed<T>::value);
+}
+
 const double one_over_root2 = 0.707106781186548;
 const size_t widx = 100000;
 
@@ -87,7 +99,8 @@ double dot(Pos pos1, Pos pos2, bool use_true) {
 
 tuple<double, double> r_par(Pos pos1, Pos pos2) {
 	double mult_fac = one_over_root2 * sqrt(1.0 + unit_dot(pos1, pos2));
-	return make_tuple(mult_fac * fabs(pos1.rt - pos2.rt), mult_fac * fabs(pos1.ro - pos2.ro));
+	int sign_rlo = signum(pos1.ro - pos2.ro);
+	return make_tuple(mult_fac * (pos1.rt - pos2.rt) * sign_rlo, mult_fac * fabs(pos1.ro - pos2.ro));
 }
 
 double r_par(Pos pos1, Pos pos2, bool use_true) {
