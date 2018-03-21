@@ -1,0 +1,10 @@
+file_name=test_data/HALOGEN_mock0000_rm-like_1.0-04_sigmaz0.02_zp0.65-0.7_small.txt
+ra_col=1
+dec_col=2
+ra_units=deg
+dec_units=deg
+r_col=3
+min_sep=60.0
+max_sep=200.0
+nbins=50
+nn_file_name=test_results/dd_true_tc.dat
