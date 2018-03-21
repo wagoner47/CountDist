@@ -10,3 +10,4 @@ temp/
 run
 *.pyc
 *.o
+tests/test_results/*
