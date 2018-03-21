@@ -21,3 +21,5 @@ python setup.py install --version=3 --omp=2
 All other standard setup.py install flags, such as `--prefix=`, are also available.
 
 The setup.py script also includes two additional commands, `uninstall` to completely uninstall the package including from the `PYTHONPATH`, and `clean`, to remove the extra directories created during the python installation.
+
+**_Important note:_** The name of the package for importing in python is actually `countdist2` rather than `countdist`. This is due to a previous version which will be removed completely in the future, at which point the name will become `countdist`, but for now be sure to know what to import!
