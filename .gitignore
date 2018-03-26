@@ -6,7 +6,7 @@ CountDist2.egg-info/
 *~
 temp/
 *.out
-*/run
+./*/run
 run
 *.pyc
 *.o
@@ -18,15 +18,15 @@ include/v1/
 include/v2/
 
 # CMake stuff
-**/CMakeCache.txt
-**/CmakeFiles/
-**/CMakeScripts/
-**/Makefile
-**/cmake_install.cmake
-**/install_manifest.txt
-**/compile_commands.json
-**/Testing/
-**/CTestTestfile.cmake
+./*/CMakeCache.txt
+./*/CmakeFiles/
+./*/CMakeScripts/
+./*/Makefile
+./*/cmake_install.cmake
+./*/install_manifest.txt
+./*/compile_commands.json
+./*/Testing/
+./*/CTestTestfile.cmake
 
 # CLion stuff
-**/.idea/
+./*/.idea/
