@@ -5,10 +5,11 @@ set(CMAKE_CXX_STANDARD 11)
 set(CountDistCPP_VERSION_MAJOR 3)
 set(CountDistCPP_VERSION_MINOR 1)
 # Compiler
+set(CMAC_C_COMPILER g++)
 set(CMAKE_CXX_COMPILER g++)
 # Compiler flags
-set(CMAKE_CXX_FLAGS "-Wall -g -std=c++11")
-set(CMAKE_EXE_LINKER_FLAGS "-lm -l sqlite3 -lstdc++fs")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g -std=c++11")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lm -lsqlite3 -lstdc++fs -largp")
 
 file(MAKE_DIRECTORY ${CountDistCPP_SOURCE_DIR}/build)
 file(MAKE_DIRECTORY ${CountDistCPP_SOURCE_DIR}/build/bin)
@@ -22,8 +23,12 @@ endif()
 add_definitions(-Domp_num_threads=${omp})
 
 if (omp GREATER 0)
-    add_compile_options(-fopenmp)
-    add_compile_options(-lgomp)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lgomp")
 endif()
+message(STATUS "omp = " ${omp})
+message(STATUS "CMAKE_CXX_STANDARD: " ${CMAKE_CXX_STANDARD})
+message(STATUS "CMAKE_CXX_FLAGS: " ${CMAKE_CXX_FLAGS})
+message(STATUS "CMAKE_EXE_LINKER_FLAGS: " ${CMAKE_EXE_LINKER_FLAGS})
 
 subdirs(src)

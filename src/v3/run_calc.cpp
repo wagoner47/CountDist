@@ -29,21 +29,18 @@ const double FROM_MICRO = 0.000001;
 int main(int argc, char* argv[]) {
 	size_t nReq = 6;
 	const string req_keys[] = {"ifname", "db_file", "rp_min", "rp_max", "rl_min", "rl_max"};
-	configuration::data params;
 	chrono::steady_clock::time_point start, stop;
 	chrono::microseconds exec_time;
 
 	// Create a holder for command line arguments
-	struct arguments arguments;
+	arguments arguments;
 	// Set default values
 	arguments.test = false;
 	// Parse the arguments
 	argp_parse(&argp, argc, argv, 0, 0, &arguments);
 
 	// Read the parameter file and check for the keys we need
-	ifstream f(arguments.args[0], ifstream::in);
-	f >> params;
-	f.close();
+	configuration::data params = reader(arguments.args[0]);
 	for (size_t i = 0; i < nReq; i++) {
 		if (!params.iskey(req_keys[i])) {
 			cerr << "Missing required parameter '" << req_keys[i] << "'" << endl;
