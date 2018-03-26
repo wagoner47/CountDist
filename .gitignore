@@ -19,11 +19,14 @@ include/v2/
 
 # CMake stuff
 **/CMakeCache.txt
-**/CmakeFiles
-**/CMakeScripts
+**/CmakeFiles/
+**/CMakeScripts/
 **/Makefile
 **/cmake_install.cmake
 **/install_manifest.txt
 **/compile_commands.json
-**/Testing
+**/Testing/
 **/CTestTestfile.cmake
+
+# CLion stuff
+**/.idea/

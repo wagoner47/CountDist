@@ -1,5 +1,6 @@
 include_directories(${CountDistCPP_SOURCE_DIR}/include/v3)
 set(EXECUTABLE_OUTPUT_PATH ${CountDistCPP_SOURCE_DIR}/build/bin)
 file(GLOB SRCS *.cpp)
-add_executable(run ${SRCS})
+file(GLOB HDRS ${CountDistCPP_SOURCE_DIR}/include/v3/*.h)
+add_executable(run ${SRCS} ${HDRS})
 install(TARGETS run DESTINATION bin)
