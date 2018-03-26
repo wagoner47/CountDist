@@ -1,5 +1,5 @@
 GCC = g++
-VERS ?= 2
+VERS ?= 3
 OMP := $(if $(strip $(OMP)), $(strip $(OMP)), $(or ${OMP_NUM_THREADS}, 0))
 ifneq ($(OMP), 0)
 	CFLAGS += -Domp_num_threads=$(OMP) -fopenmp
@@ -8,26 +8,43 @@ endif
 INC_DIR = include/v$(VERS)/
 SRC_DIR = src/v$(VERS)/
 OBJ_DIR = obj/
-INCL = -I$(INC_DIR) -I$(INC_DIR)CCfits -I$(INC_DIR)cfitsio
+INCL = -I$(INC_DIR)
 LIBS += -L${MY_LIB} -L/usr/lib64 -lm -l sqlite3
 OBJS = $(OBJ_DIR)calc_distances.o $(OBJ_DIR)io.o $(OBJ_DIR)run_calc.o
 EXEC = run
 CFLAGS += -Wall -g -std=c++11
 OFLAGS = -g
 
+ifeq ($(PREFIX),)
+	PREFIX := /usr/local/
+endif
+
 all : $(EXEC)
 
 $(OBJ_DIR)%.o: $(SRC_DIR)%.cpp
+	mkdir -p $(OBJ_DIR)
 	$(GCC) $(INCL) $(LIBS) $(CFLAGS) -c -lstdc++fs $^ -o $@
 
 $(EXEC) : $(OBJS)
 	$(GCC) $(OFLAGS) $^ $(LIBS) -o $(EXEC) -lstdc++fs
 
-clean:
+mostlyclean:
 	@rm -f $(OBJS)
 
-uninstall:
+clean:
 	@rm -f $(OBJS) $(EXEC)
+
+.PHONY: install
+install: run
+	mkdir -p $(PREFIX)bin
+	mkdir -p $(PREFIX)include
+	cp $(INC_DIR)%.h $(PREFIX)include/$(notdir $(INC_DIR)%.h)
+	cp $< $(PREFIX)bin/run_countdist
+
+.PHONY: uninstall
+uninstall:
+	rm -f $(PREFIX)bin/run_countdist
+	rm -f $(PREFIX)include/$(notdir $(INC_DIR)%.h)
 
 print-%:
 	@echo '$* = $($*)'
