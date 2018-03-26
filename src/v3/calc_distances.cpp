@@ -23,16 +23,8 @@ omp_set_num_threads(OMP_NUM_THREADS);
 #define omp_get_thread_num() 0
 #endif
 
-template <typename T> inline constexpr int signum(T x, false_type is_signed) {
-    return T(0) < x;
-}
-
-template <typename T> inline constexpr int signum(T x, true_type is_signed) {
-    return (T(0) < x) - (x < T(0));
-}
-
 template <typename T> inline constexpr int signum(T x) {
-    return signum(x, is_signed<T>::value);
+    return (T(0) < x) - (x < T(0));
 }
 
 const double one_over_root2 = 0.707106781186548;
