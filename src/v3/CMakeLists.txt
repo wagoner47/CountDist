@@ -1,0 +1,5 @@
+include_directories(${CountDistCPP_SOURCE_DIR}/include/v3)
+set(EXECUTABLE_OUTPUT_PATH ${CountDistCPP_SOURCE_DIR}/build/bin)
+file(GLOB SRCS *.cpp)
+add_executable(run ${SRCS})
+install(TARGETS run DESTINATION bin)

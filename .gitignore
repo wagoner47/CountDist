@@ -16,3 +16,14 @@ src/v1/
 src/v2/
 include/v1/
 include/v2/
+
+# CMake stuff
+**/CMakeCache.txt
+**/CmakeFiles
+**/CMakeScripts
+**/Makefile
+**/cmake_install.cmake
+**/install_manifest.txt
+**/compile_commands.json
+**/Testing
+**/CTestTestfile.cmake
