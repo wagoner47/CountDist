@@ -1,84 +1,284 @@
 from __future__ import print_function
 import numpy as np
-from astropy.table import QTable, vstack, Column
 import pandas as pd
 import os
-# import gc
-from glob import glob
-import re
 import sqlite3
 
 
-def read_files(rpo_min, rpo_max, rlo_min, rlo_max, db_file=None):
-    """This function is for reading the files saved using
-    :func:`write_files`, accounting for the gridding done in that
-    function. The user specifies the range in observed separations desired,
-    and this function automatically reads the data from the files
-    corresponding to those ranges and then cuts the resulting data to only
-    include the ranges specified. Please note that the min and max
-    separations must be given in the same units as the stored data for the
-    file numbering to be properly reproduced.
-    
-    Parameters
-    ----------
-    :param rpo_min: The minimum observed perpendicular separation to read
-    :type rpo_min: float
-    :param rpo_max: The maximum observed perpendicular separation to read
-    :type rpo_max: float
-    :param rlo_min: The minimum observed parallel separation to read
-    :type rlo_min: float
-    :param rlo_max: The maximum observed parallel separation to read
-    :type rlo_max: float
-    :param db_file: The database file name with the data table. If None, will
-    try to use the default 'seps_db.sqlite3' in the current working directory.
-    Default None
-    :type db_file: str or None, optional
-    
+DB_COLS = np.array(["R_PERP_O", "R_PAR_O", "R_PERP_T", "R_PAR_T", "ID1", "ID2"])
+
+
+def make_query(**kwargs):
+    """This function makes a query to select items from the table SEPARATIONS.
+    Keyword arguments allow the user to specify columns to select or limits to
+    use on the query. If nothing is provided, everything will be read from the
+    table.
+
+    Keyword Arguments
+    -----------------
+    :kwarg cols: A column or list of columns to select from the table. Can be
+    passed as column names, or numbers referring to column indexes from the
+    default order (see below). If `None`, all columns are read. Default `None`
+    :type cols: scalar or array-like of `str` or `int`, or `None` 
+    :kwarg rpo: Limits to use on the observed perpendicular separations (in
+    units of Mpc). If `None`, no limits will be placed on this separation. Default
+    `None`
+    :type rpo: array-like `float` or `None`
+    :kwarg rlo: Limits to use on the observed parallel separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation. Default `None`
+    :type rlo: array-like `float` or `None`
+    :kwarg rpt: Limits to use on the true perpendicular separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation. Default `None`
+    :type rpt: array-like `float` or `None`
+    :kwarg rlt: Limits to use on the true parallel separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation. Default `None`
+    :type rlt: array-like `float` or `None`
+
     Returns
     -------
-    :return data: A table containing the separations (and potentially
-    positions of pairs) within the ranges specified
-    :rtype data: astropy.table.QTable
-    """
-    if db_file is None:
-        db_file = os.path.join(os.getcwd(), "seps_db.sqlite3")
-    db = sqlite3.connect(db_file)
-    data = QTable.from_pandas(pd.read_sql_query("SELECT * FROM SEPARATIONS "\
-            "WHERE R_PERP_O >= {} AND R_PERP_O <= {} "\
-            "AND R_PAR_O >= {} AND R_PAR_O <= {}".format(rpo_min, rpo_max,
-                rlo_min, rlo_max), db))
-    data["ID1"] = data["ID1"].astype(np.uint64)
-    data["ID2"] = data["ID2"].astype(np.uint64)
-    return data
-
-
-def resave(dir_name):
-    """This function takes the grid files that have been saved as ascii files
-    and converts them to FITS files, deleting each ascii file only when the
-    corresponding FITS file has been saved. This is to make the saved files
-    smaller.
-    
-    Parameters
-    ----------
-    :param dir_name: The directory in which the grid files are saved.
-    :type dir_name: str
+    :return query: A string for the query to be performed, including any
+    specified columns to select and any where statements for limits
+    :rtype query: `str`
 
     Notes
     -----
-    This function does not return anything. It is merely used to transfer the
-    data from ascii files to FITS files, which should be smaller in memory.
+    As mentioned above, columns may also be specified via indices. The default
+    order (and indices) is as follows:
+
+    - 0 = 'R_PERP_O': observed perpendicular separation in Mpc
+    - 1 = 'R_PAR_O': observed parallel separation in Mpc, always positive
+    - 2 = 'R_PERP_T': true perpendicular separation in Mpc
+    - 3 = 'R_PAR_T': true parallel separation in Mpc, signed based on
+      configuration relative to observed
+    - 4 = 'ID1': ID of the first object in the pair
+    - 5 = 'ID2': ID of the second object in the pair
     """
-    for fname in glob(os.path.join(dir_name, "file_*.txt")):
-        with open(fname, "r") as fin:
-            fline = fin.readline()
-        if fline.startswith("#"):
-            data = QTable.read(fname, format="ascii.commented_header",
-                    delimiter=" ", comment="# ")
+    query = "SELECT "
+
+    # Get columns to select
+    cols = kwargs.pop("cols", None)
+    if cols is not None:
+        # Check user-input columns for valid entries
+        cols = np.atleast_1d(cols).flatten()
+        if cols.dtype.type == np.str_:
+            # Make sure none are repeated, and all are upper case
+            cols = np.unique(np.char.upper(cols))
+            if cols.size > DB_COLS.size:
+                # Throw an error because more columns specified than available
+                raise ValueError("Too many columns ({}) to select: {} columns "\
+                        "available".format(cols.size, DB_COLS.size))
+            # Check for any columns given that don't exist
+            bad_cols = np.isin(cols, DB_COLS, assume_unique=True, invert=True)
+            if np.any(bad_cols):
+                raise ValueError("Invalid column(s): {}".format(cols[bad_cols]))
+        elif cols.dtype in [int, float]:
+            # Make sure none are repeated, all indices are ints
+            col_idx = np.unique(cols.astype(int))
+            if col_idx.size > DB_COLS.size:
+                # Throw an error because more columns specified than available
+                raise ValueError("Too many columns ({}) to select: {} columns "\
+                        "available".format(col_idx.size, DB_COLS.size))
+            # Check for invalid indices
+            bad_idx = np.isin(col_idx, np.arange(DB_COLS.size),
+                    assume_unique=True, invert=True)
+            if np.any(bad_idx):
+                raise ValueError("Invalid column indices: "\
+                        "{}".format(col_idx[bad_idx]))
+            cols = DB_COLS[col_idx]
         else:
-            data = QTable.read(fname, format="ascii.no_header",
-                    names=["r_perp_t", "r_par_t", "r_perp_o", "r_par_o", "id1",
-                        "ra1", "dec1", "dt1", "do1", "id2", "ra2", "dec2",
-                        "dt2", "do2"], delimiter=" ", comment="# ")
-        data.write("{}.fits".format(os.path.splitext(fname)[0]), overwrite=True)
-        os.remove(fname)
-        del data
+            # What type is this?
+            raise ValueError("Unknown type for cols: {}".format(cols.dtype))
+        if cols.size == DB_COLS.size:
+            cols = np.array(["*"])
+    else:
+        cols = np.array(["*"])
+    for col in cols[:-1]:
+        query += "{}, ".format(col)
+    query += "{} FROM SEPARATIONS".format(col[-1])
+
+    # Get any limits to use
+    rpo = kwargs.pop("rpo", None)
+    rlo = kwargs.pop("rlo", None)
+    rpt = kwargs.pop("rpt", None)
+    rlt = kwargs.pop("rlt", None)
+    lims = np.array([np.asarray(limi).astype(float) if limi is not None else
+        np.full(2, np.nan) for limi in [rpo, rlo, rpt, rlt]])
+    if np.any(np.isfinite(lims)):
+        query += " WHERE"
+        first = True  # Flag to let us know if this is the first set of limits
+        for col, col_lims in zip(DB_COLS[:-2], lims):
+            # Set up the string for this column where based on if it's the first
+            # where entry
+            if first:
+                col_str = " "
+            else:
+                col_str = " AND "
+            if np.all(np.isfinite(col_lims)):
+                # Use a between statement
+                first = False
+                col_str += "{} BETWEEN {} AND {}".format(col, col_lims[0],
+                        col_lims[1])
+            elif np.any(np.isfinite(col_lims)):
+                # Must figure out which one is finite
+                first = False
+                if np.isfinite(col_lims[0]):
+                    col_str += "{} >= {}".format(col, col_lims[0])
+                else:
+                    col_str += "{} < {}".format(col, col_lims[1])
+            else:
+                # None are finite, so just reset col_str
+                col_str = ""
+            query += col_str
+
+    # Finally, return our string for the query
+    return query
+
+
+def read_db(db_file, **kwargs):
+    """This function reads data from the database in the file :param:`db_file`,
+    with options given via the keyword arguments
+
+    Parameters
+    ----------
+    :param db_file: The database file from which to read
+    :type db_file: `str`
+
+    Keyword Arguments
+    -----------------
+    :kwarg cols: A column or list of columns to select from the table. Can be
+    passed as column names, or numbers referring to column indexes from the
+    default order (see below). If `None`, all columns are read. Default `None`
+    :type cols: scalar or array-like of `str` or `int`, or `None` 
+    :kwarg rpo: Limits to use on the observed perpendicular separations (in
+    units of Mpc). If `None`, no limits will be placed on this separation. Default
+    `None`
+    :type rpo: array-like `float` or `None`
+    :kwarg rlo: Limits to use on the observed parallel separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation. Default `None`
+    :type rlo: array-like `float` or `None`
+    :kwarg rpt: Limits to use on the true perpendicular separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation. Default `None`
+    :type rpt: array-like `float` or `None`
+    :kwarg rlt: Limits to use on the true parallel separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation. Default `None`
+    :type rlt: array-like `float` or `None`
+
+    Returns
+    -------
+    :return: A pandas dataframe containing the results of the query
+    :rtype: :class:`pandas.DataFrame`
+
+    Notes
+    -----
+    As mentioned above, columns may also be specified via indices. The default
+    order (and indices) is as follows:
+
+    - 0 = 'R_PERP_O': observed perpendicular separation in Mpc
+    - 1 = 'R_PAR_O': observed parallel separation in Mpc, always positive
+    - 2 = 'R_PERP_T': true perpendicular separation in Mpc
+    - 3 = 'R_PAR_T': true parallel separation in Mpc, signed based on
+      configuration relative to observed
+    - 4 = 'ID1': ID of the first object in the pair
+    - 5 = 'ID2': ID of the second object in the pair
+    """
+    query = make_query(**kwargs)
+    conn = sqlite3.connect(db_file)
+    return pd.read_sql(query, conn)
+
+
+def read_db_multiple(db_file, **kwargs):
+    """This function allows the user to concatenate multiple reads of the same
+    database file to combine calls with various limits for instance.
+
+    Parameters
+    ----------
+    :param db_file: The database file from which to read
+    :type db_file: `str`
+
+    Keyword Arguments
+    -----------------
+    :kwarg cols: A column or list of columns to select from the table. Can be
+    passed as column names, or numbers referring to column indexes from the
+    default order (see below). If `None`, all columns are read. Default `None`
+    :type cols: scalar or array-like of `str` or `int`, or `None` 
+    :kwarg rpo: Limits to use on the observed perpendicular separations (in
+    units of Mpc). If `None`, no limits will be placed on this separation in any
+    query. Individual entries may also be `None`, so that no limits are used for
+    just that query. Default `None`
+    :type rpo: 2D array-like `float` or `None`
+    :kwarg rlo: Limits to use on the observed parallel separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation in any query.
+    Individual entries may also be `None`, so that no limits are used for just
+    that query. Default `None`
+    :type rlo: 2D array-like `float` or `None`
+    :kwarg rpt: Limits to use on the true perpendicular separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation in any query.
+    Individual entries may also be `None`, so that no limits are used for just
+    that query. Default `None`
+    :type rpt: array-like `float` or `None`
+    :kwarg rlt: Limits to use on the true parallel separations (in units of
+    Mpc). If `None`, no limits will be placed on this separation in any query.
+    Individual entries may also be `None`, so that no limits are used for just
+    that query. Default `None`
+    :type rlt: array-like `float` or `None`
+
+    Returns
+    -------
+    :return: Concatenated pandas dataframe for each query
+    :rtype: :class:`pandas.DataFrame`
+
+    Notes
+    -----
+    As mentioned above, columns may also be specified via indices. The default
+    order (and indices) is as follows:
+
+    - 0 = 'R_PERP_O': observed perpendicular separation in Mpc
+    - 1 = 'R_PAR_O': observed parallel separation in Mpc, always positive
+    - 2 = 'R_PERP_T': true perpendicular separation in Mpc
+    - 3 = 'R_PAR_T': true parallel separation in Mpc, signed based on
+      configuration relative to observed
+    - 4 = 'ID1': ID of the first object in the pair
+    - 5 = 'ID2': ID of the second object in the pair
+    """
+    rpo = kwargs.pop("rpo", None)
+    rlo = kwargs.pop("rlo", None)
+    rpt = kwargs.pop("rpt", None)
+    rlt = kwargs.pop("rlt", None)
+    all_lims = np.asarray([rpo, rlo, rpt, rlt])
+    # Get an array for whether each set of limits is given or None
+    lims_not_none = np.array([limi is not None for limi in all_lims])
+    if not np.any(lims_not_none):
+        # In this case, the user gave all limits as None, so only one query is
+        # needed
+        return read_db(db_file, **kwargs, rpo=rpo, rlo=rlo, rpt=rpt, rlt=rlt)
+    else:
+        # At least one set of limits is not None
+        first_not_none = all_lims[lims_not_none][0]
+        if len(first_not_none) == 2 and not np.any([hasattr(el, "__len__") for el
+            in first_not_none]):
+            # In this case, the user only provided limits for a single query
+            return read_db(db_file, **kwargs, rpo=rpo, rlo=rlo, rpt=rpt,
+                    rlt=rlt)
+        else:
+            # Need to get limits for each query
+            shape2d = (len(first_not_none), 2)
+            for i in np.where(~lims_not_none)[0]:
+                # Set any None limits to nans
+                all_lims[i] = np.full(shape2d, np.nan)
+            for i in np.where(lims_not_none)[0]:
+                # Set limits for each query for columns that are not None always
+                for j, lims in enumerate(all_lims[i]):
+                    ## Looping over query number and limit for this query for
+                    ## column i
+                    if lims is not None:
+                        # Set limits for column i and query j
+                        all_lims[i][j] = np.asarray(lims).astype(float)
+                    else:
+                        # Limits are None for column i in query j: set as nans
+                        all_lims[i][j] = np.full(2, np.nan)
+                    # Make sure all_lims for column i is an array
+                    all_lims[i] = np.asarray(all_lims[i])
+            # Run queries and concatenate before returning
+            return pd.concat([read_db(db_file, **kwargs, rpo=all_lims[0, i],
+                rlo=all_lims[1, i], rpt=all_lims[2, i], rlt=all_lims[3, i]) for
+                i in range(shape2d[0])])
