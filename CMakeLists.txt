@@ -9,7 +9,10 @@ set(CMAC_C_COMPILER g++)
 set(CMAKE_CXX_COMPILER g++)
 # Compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g -std=c++11")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lm -lsqlite3 -lstdc++fs -largp")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lm -lsqlite3 -lstdc++fs")
+if (APPLE)
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -largp")
+endif (APPLE)
 
 file(MAKE_DIRECTORY ${CountDistCPP_SOURCE_DIR}/build)
 file(MAKE_DIRECTORY ${CountDistCPP_SOURCE_DIR}/build/bin)

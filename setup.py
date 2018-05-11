@@ -30,11 +30,12 @@ except OSError:
     pass
 
 
-def compile_code(omp_num_threads=None):
+def compile_code(omp_num_threads=None, prefix="/usr/local"):
+    cmake_command = "cmake -DCMAKE_INSTALL_PREFIX={} .".format(prefix)
     if omp_num_threads is not None:
-        command = "OMP={} cmake .".format(omp_num_threads)
+        command = "OMP={} {}".format(omp_num_threads, cmake_command)
     else:
-        command = "cmake ."
+        command = cmake_command
     subprocess.check_call(command, shell=True)
     subprocess.check_call("make", shell=True)
     subprocess.check_call("make install", shell=True)
@@ -42,19 +43,21 @@ def compile_code(omp_num_threads=None):
 
 class CustomInstall(install):
     user_options = install.user_options + [("omp=", None, "Number of threads to use for OpenMP: "\
-            "if None (default) or 0, OpenMP not used")]
+            "if None (default) or 0, OpenMP not used"), ("loc=", None,
+            "Prefix to use for executable install location, if not /usr/local")]
 
     def initialize_options(self):
         """Set default values"""
         install.initialize_options(self)
         self.omp = None
+        self.loc = "/usr/local"
 
     def finalize_options(self):
         """Post-process options"""
         install.finalize_options(self)
 
     def run(self):
-        compile_code(omp_num_threads=self.omp)
+        compile_code(omp_num_threads=self.omp, prefix=self.loc)
         install.run(self)
 
 
@@ -99,7 +102,6 @@ dist = setup(name="CountDist2", version=cd_version, author="Erika Wagoner",
         author_email="wagoner47@email.arizona.edu", description="Get "\
                 "separations between objects in catalogs",
                 packages=["countdist2"],
-                scripts=["build/bin/run"],
                 install_requires=required, cmdclass={"clean":CleanCommand,
                     "uninstall":UninstallCommand, "install":CustomInstall})
 # dist = setup(name="CountDist2", version=cd_version, author="Erika Wagoner",

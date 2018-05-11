@@ -8,9 +8,6 @@ from glob import glob
 import re
 import sqlite3
 
-DELTAP = 50.0
-DELTAL = 60.0
-
 
 def read_files(rpo_min, rpo_max, rlo_min, rlo_max, db_file=None):
     """This function is for reading the files saved using
