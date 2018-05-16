@@ -26,6 +26,7 @@ def run_calc(params_file):
     """
     print("Reading parameter file and creating temporary parameter file")
     params_in = MyConfigObj(params_file, file_error=True)
+    params_in = params_in["run_params"]
     temp_params_fname = "{}_ascii{}".format(*os.path.splitext(params_file))
     params_out = MyConfigObj(temp_params_fname)
     params_out["rp_min"] = params_in.as_float("rp_min")
