@@ -1,6 +1,7 @@
 future
-cython
-cffi
 numpy
 sphinx_rtd_theme
 astropy >= 2
+pandas
+scipy
+emcee
