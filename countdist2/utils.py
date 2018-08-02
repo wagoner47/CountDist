@@ -50,12 +50,10 @@ def ndigits(x):
     :rtype digits: `int`, scalar or ndarray
     """
     x = np.atleast_1d(x)
-    digits = np.empty(x.shape, dtype=int)
+    digits = np.ones(x.shape, dtype=int)
     # Zeros must be separated because log10(0) = -inf: catch them by finding
     # where x / 10 is the same as x
     zeros = ((x / 10.0 == x))
-    # Zero has 1 digit
-    digits[zeros] = 1
     # The rest can be obtained using log10 and floor
     digits[~zeros] = np.floor(np.log10(np.abs(x[~zeros]))).astype(int)
     if x.size == 1:
@@ -84,7 +82,7 @@ def init_logger(name=None):
     dtfmt = '%m/%d/%Y %H:%M:%S'
     if name is None:
         name = ""
-    if level == "None":
+    if config["level"] == "None":
         level = "INFO"
     else:
         try:
