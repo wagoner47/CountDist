@@ -1,38 +1,131 @@
 from __future__ import print_function
 import numpy as np
 import pandas as pd
-import os
 import sqlite3
 
+B_DB_COLS = np.array(["R_PERP_O", "R_PAR_O", "R_PERP_T", "R_PAR_T",
+                      "AVE_LOS_OBS"])
+S_DB_COLS = np.array(["R_PERP", "R_PAR"])
 
-DB_COLS = np.array(["R_PERP_O", "R_PAR_O", "R_PERP_T", "R_PAR_T", "ID1", "ID2"])
+
+def set_col_select(cols, valid_cols):
+    """A convenience function for creating the SELECT clause for the query.
+    This is not meant to be called on its own, and assumes that at least one
+    name from :param:`valid_cols` is present in :param:`cols` without
+    checking to make sure that all names in :param:`cols` are valid together.
+    It only includes in the statement those names from :param:`cols` that are
+    valid
+
+    Parameters
+    ----------
+    :param cols: The column names to possible select
+    :type cols: 1D array-like of `str`
+    :param valid_cols: The valid possible column names
+    :type valid_cols: 1D array-like of `str`
+
+    Returns
+    -------
+    :return select_str: A string for the SELECT clause for the query
+    :rtype select_str: `str`
+    """
+    select_str = "SELECT "
+    if cols.size == valid_cols.size:
+        # Case: selecting all columns
+        select_str += "*"
+        return select_str
+    # If we make it here, only some of the columns are being selected. Find
+    # the valid ones
+    use_cols = cols[np.in1d(cols, valid_cols, assume_unique=True)]
+    # Now loop over all valid column names
+    for i, col in enumerate(use_cols):
+        select_str += col
+        if i < use_cols.size - 1:
+            # Not the last column, so need a comma and another space
+            select_str += ", "
+        else:
+            # Last one: do nothing
+            pass
+    # Return the string
+    return select_str
 
 
-def make_query(**kwargs):
-    """This function makes a query to select items from the table SEPARATIONS.
+def set_query_limits(keys_to_use, limits_dict):
+    """A convenience function for creating the string for the WHERE part of
+    the query (for column limits). This is not meant to be called on its own,
+    and does not check to make sure the keys being used are valid keys
+
+    Parameters
+    ----------
+    :param keys_to_use: The keys from the limits dictionary that are valid to
+    use in the criteria
+    :type keys_to_use: 1D array-like of `str`
+    :param limits_dict: The dictionary containing the limits that may be
+    given. At least one limit should be non-trivial
+    :type limits_dict: `dict`
+
+    Returns
+    -------
+    :return where_str: A string of the condition to add to the query
+    :rtype where_str: `str`
+    """
+    where_str = " WHERE"
+    first = True  ## Flag to tell us if this is the first condition
+    # Loop over keys
+    for key in keys_to_use:
+        lim = np.sort(limits_dict[key])
+        if np.any(np.isfinite(lim)):
+            # Case: at least 1 non-trivial limit. Start adding to the string
+            # and change the first flag to false (even if already false)
+            if first:
+                col = " "  ## Only a space to start the first
+            else:
+                col = " AND "  ## Join with AND if not first
+            first = False
+            if np.all(np.isfinite(lim)):
+                # Case: both limits non-trivial -- use between
+                col += "{} BETWEEN {} AND {}".format(key, lim[0], lim[1])
+            else:
+                # Case: only 1 non-trivial limit
+                if np.isfinite(lim[0]):
+                    # Case: only non-trivial min
+                    col += "{} >= {}".format(key, lim[0])
+                else:
+                    # Case: only non-trivial max
+                    col += "{} < {}".format(key, lim[1])
+            # Add to condition string
+            where_str += col
+        else:
+            # Case: no non-trivial limits for this key. Skip it
+            pass
+    # Return the completed condition string
+    return where_str
+
+
+def make_query(table_name, **kwargs):
+    """This function makes a query to select items from the table
+    SEPARATIONS.
     Keyword arguments allow the user to specify columns to select or limits to
     use on the query. If nothing is provided, everything will be read from the
     table.
 
+    Parameters
+    ----------
+    :param table_name: The name of the table to read within the database
+    :type table_name: `str`
+
     Keyword Arguments
     -----------------
-    :kwarg cols: A column or list of columns to select from the table. Can be
-    passed as column names, or numbers referring to column indexes from the
-    default order (see below). If `None`, all columns are read. Default `None`
-    :type cols: scalar or array-like of `str` or `int`, or `None` 
-    :kwarg rpo: Limits to use on the observed perpendicular separations (in
-    units of Mpc). If `None`, no limits will be placed on this separation. Default
-    `None`
-    :type rpo: array-like `float` or `None`
-    :kwarg rlo: Limits to use on the observed parallel separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation. Default `None`
-    :type rlo: array-like `float` or `None`
-    :kwarg rpt: Limits to use on the true perpendicular separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation. Default `None`
-    :type rpt: array-like `float` or `None`
-    :kwarg rlt: Limits to use on the true parallel separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation. Default `None`
-    :type rlt: array-like `float` or `None`
+    :kwarg cols: A column name or list of column names to select from the
+    table. See the notes below for allowed column names. If `None`,
+    all columns are read. Default `None`
+    :type cols: scalar or array-like of `str`, or `None`
+    :kwarg limits: A dictionary containing the limits to use (if any) for
+    each column. Keys should be given by valid column names (see notes). Any
+    column not included will not have limits. The values for the limits
+    should be a 2-element array-like to specify the min and max, but an
+    infinity for either will say that only a min or a max is to be specified.
+    If `None`, no limits will be used on any column. Default `None`
+    :type limits: `dict` or `None`
 
     Returns
     -------
@@ -42,99 +135,97 @@ def make_query(**kwargs):
 
     Notes
     -----
-    As mentioned above, columns may also be specified via indices. The default
-    order (and indices) is as follows:
+    The valid columns are different depending on whether both true and
+    observed separations are included in the database. For both, the columns
+    are:
 
-    - 0 = 'R_PERP_O': observed perpendicular separation in Mpc
-    - 1 = 'R_PAR_O': observed parallel separation in Mpc, always positive
-    - 2 = 'R_PERP_T': true perpendicular separation in Mpc
-    - 3 = 'R_PAR_T': true parallel separation in Mpc, signed based on
-      configuration relative to observed
-    - 4 = 'ID1': ID of the first object in the pair
-    - 5 = 'ID2': ID of the second object in the pair
+    - 'R_PERP_O': The observed perpendicular separation in Mpc
+    - 'R_PAR_O': The observed parallel separation in Mpc, with a value that
+    is always non-negative
+    - 'R_PERP_T': The true perpendicular separation in Mpc
+    - 'R_PAR_T': The true parallel separation in Mpc, with a sign based on
+    the relative orientation between true and observed
+    - 'AVE_OBS_LOS': The average observed LOS distance to the pair of
+    galaxies in Mpc
+
+    If only true or observed (and not both) separations are available,
+    the column names are:
+
+    - 'R_PERP': The perpendicular separation in Mpc
+    - 'R_PAR': The parallel separation in Mpc, with a value that is always
+    non-negative
     """
-    query = "SELECT "
-
     # Get columns to select
     cols = kwargs.pop("cols", None)
     if cols is not None:
+        # Case: at least some column names have been given
+        # We will make sure this is a 1D array, with no repeated names and
+        # everything uppercase
+        cols = np.unique(np.char.upper(cols))
         # Check user-input columns for valid entries
-        cols = np.atleast_1d(cols).flatten()
-        if cols.dtype.type == np.str_:
-            # Make sure none are repeated, and all are upper case
-            cols = np.unique(np.char.upper(cols))
-            if cols.size > DB_COLS.size:
-                # Throw an error because more columns specified than available
-                raise ValueError("Too many columns ({}) to select: {} columns "\
-                        "available".format(cols.size, DB_COLS.size))
-            # Check for any columns given that don't exist
-            bad_cols = np.isin(cols, DB_COLS, assume_unique=True, invert=True)
-            if np.any(bad_cols):
-                raise ValueError("Invalid column(s): {}".format(cols[bad_cols]))
-        elif cols.dtype in [int, float]:
-            # Make sure none are repeated, all indices are ints
-            col_idx = np.unique(cols.astype(int))
-            if col_idx.size > DB_COLS.size:
-                # Throw an error because more columns specified than available
-                raise ValueError("Too many columns ({}) to select: {} columns "\
-                        "available".format(col_idx.size, DB_COLS.size))
-            # Check for invalid indices
-            bad_idx = np.isin(col_idx, np.arange(DB_COLS.size),
-                    assume_unique=True, invert=True)
-            if np.any(bad_idx):
-                raise ValueError("Invalid column indices: "\
-                        "{}".format(col_idx[bad_idx]))
-            cols = DB_COLS[col_idx]
+        if np.any(np.in1d(S_DB_COLS, cols, assume_unique=True)) and np.any(
+                np.in1d(B_DB_COLS, cols, assume_unique=True)):
+            # Case: User provided at least one column from both types. This
+            # is invalid, and should throw an error
+            raise ValueError("Invalid column name combination: cannot have "
+                             "columns from both database types")
+        elif np.any(np.in1d(S_DB_COLS, cols, assume_unique=True)):
+            # Case: only true or observed. Check against S_DB_COLS
+            select_str = set_col_select(cols, S_DB_COLS)
+        elif np.any(np.in1d(B_DB_COLS, cols, assume_unique=True)):
+            # Case: both true and observed. Check against B_DB_COLS
+            select_str = set_col_select(cols, B_DB_COLS)
         else:
-            # What type is this?
-            raise ValueError("Unknown type for cols: {}".format(cols.dtype))
-        if cols.size == DB_COLS.size:
-            cols = np.array(["*"])
+            # Case: no column names of either database given. Throw an error
+            # because we don't have any valid columns
+            raise ValueError("No valid column names given for any database")
     else:
-        cols = np.array(["*"])
-    for col in cols[:-1]:
-        query += "{}, ".format(col)
-    query += "{} FROM SEPARATIONS".format(col[-1])
+        # Case: No columns are given means all columns are selected
+        select_str = "SELECT *"
 
-    # Get any limits to use
-    rpo = kwargs.pop("rpo", None)
-    rlo = kwargs.pop("rlo", None)
-    rpt = kwargs.pop("rpt", None)
-    rlt = kwargs.pop("rlt", None)
-    lims = np.array([np.asarray(limi).astype(float) if limi is not None else
-        np.full(2, np.nan) for limi in [rpo, rlo, rpt, rlt]])
-    if np.any(np.isfinite(lims)):
-        query += " WHERE"
-        first = True  # Flag to let us know if this is the first set of limits
-        for col, col_lims in zip(DB_COLS[:-2], lims):
-            # Set up the string for this column where based on if it's the first
-            # where entry
-            if first:
-                col_str = " "
-            else:
-                col_str = " AND "
-            if np.all(np.isfinite(col_lims)):
-                # Use a between statement
-                first = False
-                col_str += "{} BETWEEN {} AND {}".format(col, col_lims[0],
-                        col_lims[1])
-            elif np.any(np.isfinite(col_lims)):
-                # Must figure out which one is finite
-                first = False
-                if np.isfinite(col_lims[0]):
-                    col_str += "{} >= {}".format(col, col_lims[0])
-                else:
-                    col_str += "{} < {}".format(col, col_lims[1])
-            else:
-                # None are finite, so just reset col_str
-                col_str = ""
-            query += col_str
+    # Now check for any limits
+    limits = kwargs.pop("limits", None)
+    if limits is None:
+        # Case: no limits
+        where_str = ""
+    else:
+        # Case: at least some limits given. First check if all of the values
+        # are infinity
+        if np.all(np.isinf(list(limits.values()))):
+            where_str = ""
+        # Now check for valid column name combinations
+        limit_keys = np.char.upper(list(limits.keys()))
+        if np.count_nonzero(np.unique(limit_keys, return_counts=True)[1] > 1) \
+                > 0:
+            # Case: at least one key has been used twice. Throw an error
+            raise ValueError("At least one column name repeated in limits")
+        if np.any(np.in1d(S_DB_COLS, limit_keys, assume_unique=True)) and \
+                np.any(np.in1d(B_DB_COLS, limit_keys, assume_unique=True)):
+            # Case: some of each type given. Throw an error
+            raise ValueError("Invalid combination of column names in limits. "
+                             "Cannot mix column names from both database types")
+        elif np.any(np.in1d(S_DB_COLS, limit_keys, assume_unique=True)):
+            # Case: Single separation type. Use only the keys that are in
+            # S_DB_COLS
+            use_keys = limit_keys[np.in1d(limit_keys, S_DB_COLS,
+                                          assume_unique=True)]
+            where_str = set_query_limits(use_keys, limits)
+        elif np.any(np.in1d(B_DB_COLS, limit_keys, assume_unique=True)):
+            # Case: Both separation types. Use only the keys that are in
+            # B_DB_COLS
+            use_keys = limit_keys[np.in1d(limit_keys, B_DB_COLS,
+                                          assume_unique=True)]
+            where_str = set_query_limits(use_keys, limits)
+        else:
+            # Case: no valid column names in limits -- assume no limits
+            where_str = ""
 
-    # Finally, return our string for the query
+    # Now construct the query and return
+    query = "{} FROM {}{}".format(select_str, table_name, where_str)
     return query
 
 
-def read_db(db_file, **kwargs):
+def read_db(db_file, table_name, **kwargs):
     """This function reads data from the database in the file :param:`db_file`,
     with options given via the keyword arguments
 
@@ -142,85 +233,80 @@ def read_db(db_file, **kwargs):
     ----------
     :param db_file: The database file from which to read
     :type db_file: `str`
+    :param table_name: The name of the table to read
+    :type table_name: `str`
 
     Keyword Arguments
     -----------------
-    :kwarg cols: A column or list of columns to select from the table. Can be
-    passed as column names, or numbers referring to column indexes from the
-    default order (see below). If `None`, all columns are read. Default `None`
-    :type cols: scalar or array-like of `str` or `int`, or `None` 
-    :kwarg rpo: Limits to use on the observed perpendicular separations (in
-    units of Mpc). If `None`, no limits will be placed on this separation. Default
-    `None`
-    :type rpo: array-like `float` or `None`
-    :kwarg rlo: Limits to use on the observed parallel separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation. Default `None`
-    :type rlo: array-like `float` or `None`
-    :kwarg rpt: Limits to use on the true perpendicular separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation. Default `None`
-    :type rpt: array-like `float` or `None`
-    :kwarg rlt: Limits to use on the true parallel separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation. Default `None`
-    :type rlt: array-like `float` or `None`
+    :kwarg cols: A column name or list of column names to select from the
+    table. See the notes below for allowed column names. If `None`,
+    all columns are read. Default `None`
+    :type cols: scalar or array-like of `str`, or `None`
+    :kwarg limits: A dictionary containing the limits to use (if any) for
+    each column. Keys should be given by valid column names (see notes). Any
+    column not included will not have limits. The values for the limits
+    should be a 2-element array-like to specify the min and max, but an
+    infinity for either will say that only a min or a max is to be specified.
+    If `None`, no limits will be used on any column. Default `None`
+    :type limits: `dict` or `None`
 
     Returns
     -------
-    :return: A pandas dataframe containing the results of the query
-    :rtype: :class:`pandas.DataFrame`
+    :return results: A pandas dataframe containing the results of the query
+    :rtype results: :class:`pandas.DataFrame`
 
     Notes
     -----
-    As mentioned above, columns may also be specified via indices. The default
-    order (and indices) is as follows:
+    The valid columns are different depending on whether both true and
+    observed separations are included in the database. For both, the columns
+    are:
 
-    - 0 = 'R_PERP_O': observed perpendicular separation in Mpc
-    - 1 = 'R_PAR_O': observed parallel separation in Mpc, always positive
-    - 2 = 'R_PERP_T': true perpendicular separation in Mpc
-    - 3 = 'R_PAR_T': true parallel separation in Mpc, signed based on
-      configuration relative to observed
-    - 4 = 'ID1': ID of the first object in the pair
-    - 5 = 'ID2': ID of the second object in the pair
+    - 'R_PERP_O': The observed perpendicular separation in Mpc
+    - 'R_PAR_O': The observed parallel separation in Mpc, with a value that
+    is always non-negative
+    - 'R_PERP_T': The true perpendicular separation in Mpc
+    - 'R_PAR_T': The true parallel separation in Mpc, with a sign based on
+    the relative orientation between true and observed
+    - 'AVE_OBS_LOS': The average observed LOS distance to the pair of
+    galaxies in Mpc
+
+    If only true or observed (and not both) separations are available,
+    the column names are:
+
+    - 'R_PERP': The perpendicular separation in Mpc
+    - 'R_PAR': The parallel separation in Mpc, with a value that is always
+    non-negative
     """
-    query = make_query(**kwargs)
+    query = make_query(table_name, **kwargs)
     conn = sqlite3.connect(db_file)
-    return pd.read_sql(query, conn)
+    results = pd.read_sql(query, conn)
+    conn.close()
+    return results
 
 
-def read_db_multiple(db_file, **kwargs):
+def read_db_multiple(db_file, table_name, limits, cols=None):
     """This function allows the user to concatenate multiple reads of the same
-    database file to combine calls with various limits for instance.
+    database file to combine calls with various limits for instance. However,
+    it assumes all queries are to be made on the same table within the database
 
     Parameters
     ----------
     :param db_file: The database file from which to read
     :type db_file: `str`
-
-    Keyword Arguments
-    -----------------
-    :kwarg cols: A column or list of columns to select from the table. Can be
-    passed as column names, or numbers referring to column indexes from the
-    default order (see below). If `None`, all columns are read. Default `None`
-    :type cols: scalar or array-like of `str` or `int`, or `None` 
-    :kwarg rpo: Limits to use on the observed perpendicular separations (in
-    units of Mpc). If `None`, no limits will be placed on this separation in any
-    query. Individual entries may also be `None`, so that no limits are used for
-    just that query. Default `None`
-    :type rpo: 2D array-like `float` or `None`
-    :kwarg rlo: Limits to use on the observed parallel separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation in any query.
-    Individual entries may also be `None`, so that no limits are used for just
-    that query. Default `None`
-    :type rlo: 2D array-like `float` or `None`
-    :kwarg rpt: Limits to use on the true perpendicular separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation in any query.
-    Individual entries may also be `None`, so that no limits are used for just
-    that query. Default `None`
-    :type rpt: array-like `float` or `None`
-    :kwarg rlt: Limits to use on the true parallel separations (in units of
-    Mpc). If `None`, no limits will be placed on this separation in any query.
-    Individual entries may also be `None`, so that no limits are used for just
-    that query. Default `None`
-    :type rlt: array-like `float` or `None`
+    :param table_name: The name of the table to read
+    :type table_name: `str`
+    :param limits: A dictionary containing the limits to use on each column,
+    if any. The values should all be array-like of shape (N, 2), where N is
+    the number of queries being made. Any column with no limits for any query
+    does not need to be included, but columns with limits on only some
+    queries should have +/- infinity for the limits not to be used, as these
+    will be interpreted as no limit. This also holds for columns where only a
+    minimum or maximum is to be used.
+    :type limits: `dict`
+    :param cols: A column name or list of column names to select from the
+    table. See the notes below for allowed column names. If `None`,
+    all columns are read. Default `None`
+    :type cols: scalar or array-like of `str`, or `None`
 
     Returns
     -------
@@ -229,56 +315,40 @@ def read_db_multiple(db_file, **kwargs):
 
     Notes
     -----
-    As mentioned above, columns may also be specified via indices. The default
-    order (and indices) is as follows:
+    The valid columns are different depending on whether both true and
+    observed separations are included in the database. For both, the columns
+    are:
 
-    - 0 = 'R_PERP_O': observed perpendicular separation in Mpc
-    - 1 = 'R_PAR_O': observed parallel separation in Mpc, always positive
-    - 2 = 'R_PERP_T': true perpendicular separation in Mpc
-    - 3 = 'R_PAR_T': true parallel separation in Mpc, signed based on
-      configuration relative to observed
-    - 4 = 'ID1': ID of the first object in the pair
-    - 5 = 'ID2': ID of the second object in the pair
+    - 'R_PERP_O': The observed perpendicular separation in Mpc
+    - 'R_PAR_O': The observed parallel separation in Mpc, with a value that
+    is always non-negative
+    - 'R_PERP_T': The true perpendicular separation in Mpc
+    - 'R_PAR_T': The true parallel separation in Mpc, with a sign based on
+    the relative orientation between true and observed
+    - 'AVE_OBS_LOS': The average observed LOS distance to the pair of
+    galaxies in Mpc
+
+    If only true or observed (and not both) separations are available,
+    the column names are:
+
+    - 'R_PERP': The perpendicular separation in Mpc
+    - 'R_PAR': The parallel separation in Mpc, with a value that is always
+    non-negative
     """
-    rpo = kwargs.pop("rpo", None)
-    rlo = kwargs.pop("rlo", None)
-    rpt = kwargs.pop("rpt", None)
-    rlt = kwargs.pop("rlt", None)
-    all_lims = np.asarray([rpo, rlo, rpt, rlt])
-    # Get an array for whether each set of limits is given or None
-    lims_not_none = np.array([limi is not None for limi in all_lims])
-    if not np.any(lims_not_none):
-        # In this case, the user gave all limits as None, so only one query is
-        # needed
-        return read_db(db_file, **kwargs, rpo=rpo, rlo=rlo, rpt=rpt, rlt=rlt)
-    else:
-        # At least one set of limits is not None
-        first_not_none = all_lims[lims_not_none][0]
-        if len(first_not_none) == 2 and not np.any([hasattr(el, "__len__") for el
-            in first_not_none]):
-            # In this case, the user only provided limits for a single query
-            return read_db(db_file, **kwargs, rpo=rpo, rlo=rlo, rpt=rpt,
-                    rlt=rlt)
-        else:
-            # Need to get limits for each query
-            shape2d = (len(first_not_none), 2)
-            for i in np.where(~lims_not_none)[0]:
-                # Set any None limits to nans
-                all_lims[i] = np.full(shape2d, np.nan)
-            for i in np.where(lims_not_none)[0]:
-                # Set limits for each query for columns that are not None always
-                for j, lims in enumerate(all_lims[i]):
-                    ## Looping over query number and limit for this query for
-                    ## column i
-                    if lims is not None:
-                        # Set limits for column i and query j
-                        all_lims[i][j] = np.asarray(lims).astype(float)
-                    else:
-                        # Limits are None for column i in query j: set as nans
-                        all_lims[i][j] = np.full(2, np.nan)
-                    # Make sure all_lims for column i is an array
-                    all_lims[i] = np.asarray(all_lims[i])
-            # Run queries and concatenate before returning
-            return pd.concat([read_db(db_file, **kwargs, rpo=all_lims[0, i],
-                rlo=all_lims[1, i], rpt=all_lims[2, i], rlt=all_lims[3, i]) for
-                i in range(shape2d[0])])
+    if np.all(np.isinf(list(limits.values()))):
+        # Case: no non-trivial limits, so don't need multiple queries
+        return read_db(db_file, table_name, cols=cols)
+    nqueries = np.atleast_2d(list(limits.values())[0]).shape[0]
+    if nqueries == 1:
+        # Case: only one set of limits given, so don't need multiple queries
+        limi.fromkeys(limits.keys())
+        for key in limi:
+            limi[key] = np.squeeze(limits[key])
+        return read_db(db_file, table_name, cols=cols, limits=limi)
+    # If we made it here, we have more than one query
+    limits_list = [limi.fromkeys(limits.keys()) for i in range(nqueries)]
+    for i in range(nqueries):
+        for key in limits:
+            limits_list[i][key] = limits[key][i]
+    return pd.concat([read_db(db_file, table_name, cols=cols, limits=limi)
+                      for limi in limits_list])
