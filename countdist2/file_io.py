@@ -352,3 +352,59 @@ def read_db_multiple(db_file, table_name, limits, cols=None):
             limits_list[i][key] = limits[key][i]
     return pd.concat([read_db(db_file, table_name, cols=cols, limits=limi)
                       for limi in limits_list])
+
+
+def read_metadata(db_file, data=True, random=True):
+    """Read the metadata for the catalogs from the database file. The
+    metadata for the data or random catalogs can be optionally read by
+    setting each to True or False (default is that both are read). The
+    metadata is then returned as a dictionary for each, or None for catalogs
+    that weren't selected.
+
+    Parameters
+    ----------
+    :param db_file: The path to the database file to read
+    :type db_file: `str`
+    :param data: Flag to read (`True`) or not read (`False`) the metadata for the data catalog. Default `True`
+    :type data: `bool`, optional
+    :param random: Flag to read (`True`) or not read (`False`) the metadata for
+    the random catalog. Default `True`
+    :type random: `bool`, optional
+
+    Returns
+    -------
+    :return data_meta: A dictionary containing the metadata for the data
+    catalog, or `None` if :param:`data` is set to `False`
+    :rtype data_meta: `dict` or `None`
+    :return rand_meta: A dictionary containing the metadata for the random
+    catalog, or `None` if :param:`random` is set to `False`
+    :rtype rand_meta: `dict` or `None`
+    """
+    conn = sqlite3.connect(db_file)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    if data:
+        try:
+            c.execute("SELECT * FROM MetaData")
+            r = c.fetchone()
+            data_meta = dict.fromkeys(r.keys())
+            for key in data_meta:
+                data_meta[key] = r[key]
+        except sqlite3.OperationalError:
+            data_meta = None
+    else:
+        data_meta = None
+    if random:
+        try:
+            c.execute("SELECT * FROM MetaRandom")
+            r = c.fetchone()
+            rand_meta = dict.fromkeys(r.keys())
+            for key in rand_meta:
+                rand_meta[key] = r[key]
+        except sqlite3.OperationalError:
+            rand_meta = None
+    else:
+        rand_meta = None
+    conn.close()
+
+    return data_meta, rand_meta
