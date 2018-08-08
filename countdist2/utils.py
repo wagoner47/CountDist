@@ -2,7 +2,7 @@ from __future__ import print_function
 import os
 from configobj import ConfigObj
 import logging
-
+import numpy as np
 
 class MyConfigObj(ConfigObj):
     def __init__(self, infile=None, options=None, configspec=None,
@@ -81,7 +81,8 @@ def init_logger(name=None):
     :rtype logger: :class:`logging.Logger`
     """
     config = MyConfigObj(os.path.join(os.pardir, "package_options.ini"))
-    fmt = '%(asctime)s %(levelno)s - %(name)s.%(funcName)s (%(lineno)d): %(message)s'
+    fmt = '%(asctime)s %(levelname)s - %(name)s.%(funcName)s (%(lineno)d): %(' \
+          'message)s'
     dtfmt = '%m/%d/%Y %H:%M:%S'
     if name is None:
         name = ""
