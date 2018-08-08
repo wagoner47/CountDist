@@ -1,5 +1,4 @@
 from __future__ import print_function
-import os
 from .utils import ndigits, init_logger
 from .file_io import read_db_multiple
 import CatalogUtils
@@ -8,10 +7,6 @@ from scipy.optimize import minimize
 import emcee
 import numpy as np
 import pandas as pd
-from astropy.table import Table
-from astropy.cosmology import FlatLambdaCDM
-from .utils import MyConfigObj
-from itertools import product
 import matplotlib.pyplot as plt
 from chainconsumer import ChainConsumer
 
@@ -633,7 +628,7 @@ class AnalyticSingleFitter(object):
     def _get_const(self):
         self._c = np.sum(self.data * self.ivar) / np.sum(self.ivar)
 
-    def _get_err(selfself):
+    def _get_err(self):
         self._c_err = np.sqrt(1. / np.sum(self.ivar))
 
     def fit(self):
