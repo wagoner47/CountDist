@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.8)
+include_directories(${CountDistCPP_SOURCE_DIR}/include/v4)
+set(EXECUTABLE_OUTPUT_PATH ${CountDistCPP_SOURCE_DIR}/build/bin)
+file(GLOB SRCS *.cpp)
+file(GLOB HDRS ${CountDistCPP_SOURCE_DIR}/include/v4/*.h)
+add_executable(run ${SRCS} ${HDRS})
+install(TARGETS run DESTINATION bin)
