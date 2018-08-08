@@ -2,7 +2,7 @@ from __future__ import print_function
 import os
 from configobj import ConfigObj
 import logging
-
+import numpy as np
 
 class MyConfigObj(ConfigObj):
     def __init__(self, infile=None, options=None, configspec=None,
@@ -50,17 +50,18 @@ def ndigits(x):
     :rtype digits: `int`, scalar or ndarray
     """
     x = np.atleast_1d(x)
-    digits = np.empty(x.shape, dtype=int)
+    digits = np.ones(x.shape, dtype=int).flatten()
     # Zeros must be separated because log10(0) = -inf: catch them by finding
     # where x / 10 is the same as x
-    zeros = ((x / 10.0 == x))
-    # Zero has 1 digit
-    digits[zeros] = 1
+    zeros = ((x / 10.0 == x)).flatten()
     # The rest can be obtained using log10 and floor
-    digits[~zeros] = np.floor(np.log10(np.abs(x[~zeros]))).astype(int)
+    digits[~zeros] = np.floor(np.log10(np.abs(x.flatten()[~zeros]))).astype(int)
     if x.size == 1:
         # Convert back to scalar if x was a scalar
         digits = digits.item()
+    else:
+        # Reshape to match x
+        digits = digits.reshape(x.shape)
     # Return the number of digits
     return digits
 
@@ -80,11 +81,12 @@ def init_logger(name=None):
     :rtype logger: :class:`logging.Logger`
     """
     config = MyConfigObj(os.path.join(os.pardir, "package_options.ini"))
-    fmt = '%(asctime)s %(levelno)s - %(name)s.%(funcName)s (%(lineno)d): %(message)s'
+    fmt = '%(asctime)s %(levelname)s - %(name)s.%(funcName)s (%(lineno)d): %(' \
+          'message)s'
     dtfmt = '%m/%d/%Y %H:%M:%S'
     if name is None:
         name = ""
-    if level == "None":
+    if config["level"] == "None":
         level = "INFO"
     else:
         try:
