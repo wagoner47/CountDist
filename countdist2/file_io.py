@@ -385,7 +385,7 @@ def read_metadata(db_file, data=True, random=True):
     c = conn.cursor()
     if data:
         try:
-            c.execute("SELECT * FROM MetaData")
+            c.execute("SELECT * FROM DataMeta")
             r = c.fetchone()
             data_meta = dict.fromkeys(r.keys())
             for key in data_meta:
@@ -396,7 +396,7 @@ def read_metadata(db_file, data=True, random=True):
         data_meta = None
     if random:
         try:
-            c.execute("SELECT * FROM MetaRandom")
+            c.execute("SELECT * FROM RandomMeta")
             r = c.fetchone()
             rand_meta = dict.fromkeys(r.keys())
             for key in rand_meta:
