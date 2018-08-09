@@ -13,6 +13,10 @@ from chainconsumer import ChainConsumer
 plt.rcParams["figure.facecolor"] = "white"
 
 
+# Custom ValueError for too few groups (for catching during debugging)
+class TooFewGroupsError(ValueError): pass
+
+
 def get_array(x):
     """Get x as a 1D array"""
     try:
@@ -971,6 +975,12 @@ class ProbFitter(object):
     def _get_stats(self):
         self.logger.debug("Group data")
         grouped = self._group_seps()
+        if len(grouped) <= 2:  ## Is this good enough, or should I require more?
+            raise TooFewGroupsError("Only {} groups with at least {} pairs. " \
+                                    "consider decreasing the minimum number " \
+                                    "of pairs or using a larger " \
+                                    "catalog".format(len(grouped),
+                                                     self.min_counts))
         self.stats = pd.DataFrame()
         self.logger.debug("Sample mean of DELTA_R_PERP")
         self.stats["m_x"] = grouped["DELTA_R_PERP"].agg(kstat, n=1)
