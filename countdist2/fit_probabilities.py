@@ -978,9 +978,9 @@ class ProbFitter(object):
         if len(grouped) <= 2:  ## Is this good enough, or should I require more?
             raise TooFewGroupsError("Only {} groups with at least {} pairs. " \
                                     "consider decreasing the minimum number " \
-                                    "of pairs or using a larger " \
-                                    "catalog".format(len(grouped),
-                                                     self.min_counts))
+                                    "of pairs, increasing the bin size, or " \
+                                    "using a larger catalog".format(len(
+                grouped), self.min_counts))
         self.stats = pd.DataFrame()
         self.logger.debug("Sample mean of DELTA_R_PERP")
         self.stats["m_x"] = grouped["DELTA_R_PERP"].agg(kstat, n=1)
