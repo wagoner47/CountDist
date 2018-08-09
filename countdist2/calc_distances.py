@@ -26,19 +26,22 @@ def run_calc(params_file):
     logger = init_logger(__name__)
     logger.info("Reading parameter file and creating temporary parameter file")
     params_in = MyConfigObj(params_file, file_error=True)
-    params_in = params_in["run_params"]
+    try:
+        params_in = params_in["run_params"]
+    except KeyError:
+        pass
     temp_params_fname = "{}_ascii{}".format(*os.path.splitext(params_file))
     params_out = MyConfigObj(temp_params_fname)
     params_out["rp_min"] = params_in.as_float("rp_min")
     params_out["rp_max"] = params_in.as_float("rp_max")
     params_out["rl_min"] = params_in.as_float("rl_min")
     params_out["rl_max"] = params_in.as_float("rl_max")
-    params_out["use_true"] = params_in["use_true"]
-    params_out["use_obs"] = params_in["use_obs"]
-    params_out["has_true1"] = params_in["has_true1"]
-    params_out["has_obs1"] = params_in["has_obs1"]
-    params_out["has_true2"] = params_in["has_true2"]
-    params_out["has_obs2"] = params_in["has_obs2"]
+    params_out["use_true"] = params_in.as_bool["use_true"]
+    params_out["use_obs"] = params_in.as_bool["use_obs"]
+    params_out["has_true1"] = params_in.as_bool["has_true1"]
+    params_out["has_obs1"] = params_in.as_bool["has_obs1"]
+    params_out["has_true2"] = params_in.as_bool["has_true2"]
+    params_out["has_obs2"] = params_in.as_bool["has_obs2"]
     params_out["table_name"] = params_in["table_name"]
     params_out["meta_name1"] = params_in["meta_name1"]
     params_out["meta_name2"] = params_in["meta_name2"]
@@ -48,9 +51,7 @@ def run_calc(params_file):
         params_out["db_file"] = params_in["db_file"]
     else:
         params_out["db_file"] = os.path.join(os.getcwd(), "seps_db.sqlite3")
-    params_out.write()
-    if not os.path.exists(os.path.dirname(params_out["db_file"])):
-        os.makedirs(os.path.dirname(params_out["db_file"]))
+    os.makedirs(os.path.dirname(params_out["db_file"]), exist_ok=True)
     if params_in.as_bool("has_true1"):
         print("Using column '{}' for true distance in catalog 1".format(
             params_in["dtcol1"]))
@@ -85,6 +86,8 @@ def run_calc(params_file):
     data_in.write(params_out["ifname2"], format="ascii.no_header",
                   include_names=include_names, overwrite=True)
     del data_in
+
+    params_out.write()
 
     logger.info("Running executable")
     sys.stdout.flush()
