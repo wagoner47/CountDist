@@ -80,14 +80,16 @@ def init_logger(name=None):
     :return logger: The logger object with format and level set
     :rtype logger: :class:`logging.Logger`
     """
-    config = MyConfigObj(os.path.join(os.path.dirname(__file__), os.pardir,
-                                      "package_options.ini"))
+    pkg_opts = os.path.join(os.path.dirname(__file__), os.pardir,
+                            "package_options.ini")
+    config = MyConfigObj(pkg_opts)
     fmt = '%(asctime)s %(levelname)s - %(name)s.%(funcName)s (%(lineno)d): %(' \
           'message)s'
     dtfmt = '%m/%d/%Y %H:%M:%S'
     if name is None:
         name = ""
-    if config["level"] == "None":
+    level = config["level"]
+    if level == "None":
         level = "INFO"
     else:
         try:
