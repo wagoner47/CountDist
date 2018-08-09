@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
 	for (size_t i = 0; i < nReq; i++) {
 		if (!params.iskey(req_keys[i])) {
 			cerr << "Missing required parameter '" << req_keys[i] << "'" << endl;
-			return 1;
+			exit(1);
 		}
 	}
 

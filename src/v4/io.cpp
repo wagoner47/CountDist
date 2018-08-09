@@ -6,38 +6,41 @@
 #include <vector>
 #include <cmath>
 #include <cstdlib>
-#include <experimental/filesystem>
 #include <sqlite3.h>
 #include "io.h"
 #include "calc_distances.h"
-namespace fs = std::experimental::filesystem;
 using namespace std;
-
-const double DELTAP = ioconstants::DELTAP;
-const double DELTAL = ioconstants::DELTAL;
 
 vector<Pos> readCatalog(string fname, bool use_true, bool use_obs, bool has_true, bool has_obs) {
 	double ra, dec, rt, ro;
+	cout << "Check true and observed flags" << endl;
 	if (!(has_true || has_obs)) {
 	    cerr << "Must have at least true or observed distances in catalog, or both" << endl;
 	    exit(1);
 	}
+	cout << "Passed check for having at least one has flag" << endl;
 	if (!(use_true || use_obs)) {
 	    cerr << "Must use at least true or observed distances, or both" << endl;
 	    exit(2);
 	}
+	cout << "Passed check for having at least one use flag" << endl;
 	if (use_true && !has_true) {
 	    cerr << "Cannot use true distances when not provided in catalog" << endl;
 	    exit(3);
 	}
+	cout << "Passed check for using and having true" << endl;
 	if (use_obs && !has_obs) {
 	    cerr << "Cannot use observed distances when not provided in catalog" << endl;
 	    exit(4);
 	}
+	cout << "Passed check for using and having observed" << endl;
 	vector<Pos> pos;
 	ifstream fin(fname, ifstream::in);
 	string line;
+	int i = 0;
 	while (getline(fin, line)) {
+	    cout << "Read line " << i << endl;
+	    i++;
 		if (line.substr(0, 1).compare("#") != 0) {
 			istringstream iss(line);
 			if (has_true && has_obs) {
@@ -61,7 +64,9 @@ vector<Pos> readCatalog(string fname, bool use_true, bool use_obs, bool has_true
 			pos.push_back(posi);
 		}
 	}
+	cout << "Finish reading catalog" << endl;
 	fin.close();
+	cout << "Close file" << endl;
 	return pos;
 }
 

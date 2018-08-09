@@ -14,7 +14,7 @@ void open_db(sqlite3*, std::string);
 
 void drop_table(sqlite3*, std::string);
 
-void create_table(sqlite3*, std::string, int, std::string[], std::string[]);
+void create_table(sqlite3*, std::string, size_t, std::string[]);
 
 void setup_db(sqlite3*, std::string, bool, bool);
 
@@ -31,10 +31,5 @@ void write_and_restart(sqlite3*);
 void step_stmt(sqlite3*, sqlite3_stmt*, std::tuple<double, double>, std::tuple<double, double>, double, bool, bool);
 
 void write_meta_data(std::string, std::string, double, double, double);
-
-namespace ioconstants {
-	const double DELTAP = 50.0;
-	const double DELTAL = 60.0;
-}
 
 #endif
