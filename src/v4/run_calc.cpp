@@ -78,11 +78,14 @@ int main(int argc, char* argv[]) {
 	stop = chrono::steady_clock::now();
 	cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
 
-    cout << "Adding meta-data for catalog 2...";
-    start = chrono::steady_clock::now();
-    write_meta_data(params["db_file"], params["meta_name2"], params.as_double("Z_EFF2"), params.as_double("SIGMA_R_EFF2"), params.as_double("SIGMA_Z2"));
-    stop = chrono::steady_clock::now();
-    cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
+	if (!params.as_bool("is_auto")) {
+        cout << "Adding meta-data for catalog 2...";
+        start = chrono::steady_clock::now();
+        write_meta_data(params["db_file"], params["meta_name2"], params.as_double("Z_EFF2"),
+                        params.as_double("SIGMA_R_EFF2"), params.as_double("SIGMA_Z2"));
+        stop = chrono::steady_clock::now();
+        cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
+    }
 
 	return 0;
 }
