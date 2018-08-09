@@ -5,3 +5,6 @@ astropy >= 2
 pandas
 scipy
 emcee
+matplotlib
+chainconsumer
+configobj
