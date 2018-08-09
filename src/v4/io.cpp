@@ -221,7 +221,7 @@ void write_meta_data(string db_file, string meta_name, double Z_EFF, double SIGM
     open_db(db, db_file);
     drop_table(db, meta_name);
     create_table(db, meta_name, ncols, col_names);
-    string insert_stmt = "INSERT INTO " + meta_name + " VALUES (" + string(Z_EFF) + ", " + string(SIGMA_R_EFF) + ", " + string(SIGMA_Z) + ");";
+    string insert_stmt = "INSERT INTO " + meta_name + " VALUES (" + to_string(Z_EFF) + ", " + to_string(SIGMA_R_EFF) + ", " + to_string(SIGMA_Z) + ");";
     sqlite3_prepare(db, insert_stmt.c_str(), -1, &stmt, 0);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
