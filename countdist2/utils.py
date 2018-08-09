@@ -81,6 +81,7 @@ def init_logger(name=None):
     :rtype logger: :class:`logging.Logger`
     """
     config = MyConfigObj("package_options.ini")
+    print(config)
     fmt = '%(asctime)s %(levelname)s - %(name)s.%(funcName)s (%(lineno)d): %(' \
           'message)s'
     dtfmt = '%m/%d/%Y %H:%M:%S'

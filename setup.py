@@ -90,7 +90,6 @@ class UninstallCommand(Command):
         else:
             command = "echo y | pip uninstall countdist2"
         os.system(command)
-        os.system("make uninstall")
 
 
 class CleanCommand(Command):
@@ -110,7 +109,7 @@ class CleanCommand(Command):
 dist = setup(name="CountDist2", version=cd_version, author="Erika Wagoner",
              author_email="wagoner47@email.arizona.edu", description="Get " \
                                                                      "separations between objects in catalogs",
-             packages=["countdist2"],
+             packages=["countdist2"], include_package_data=True,
              install_requires=required, cmdclass={"clean": CleanCommand,
                                                   "uninstall": UninstallCommand,
                                                   "install": CustomInstall})
