@@ -30,6 +30,8 @@ void write_and_restart(sqlite3*);
 
 void step_stmt(sqlite3*, sqlite3_stmt*, std::tuple<double, double>, std::tuple<double, double>, double, bool, bool);
 
+void write_meta_data(std::string, std::string, double, double, double);
+
 namespace ioconstants {
 	const double DELTAP = 50.0;
 	const double DELTAL = 60.0;

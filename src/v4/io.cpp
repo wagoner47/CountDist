@@ -211,3 +211,19 @@ void step_stmt(sqlite3 *db, sqlite3_stmt *stmt, tuple<double, double> rp, tuple<
     sqlite3_step(stmt);
     sqlite3_reset(stmt);
 }
+
+
+void write_meta_data(string db_file, string meta_name, double Z_EFF, double SIGMA_R_EFF, double SIGMA_Z) {
+    sqlite3 *db;
+    sqlite3_stmt *stmt;
+    size_t ncols = 3;
+    string col_names[] = {"Z_EFF", "SIGMA_R_EFF", "SIGMA_Z"};
+    open_db(db, db_file);
+    drop_table(db, meta_name);
+    create_table(db, meta_name, ncols, col_names);
+    string insert_stmt = "INSERT INTO " + meta_name + " VALUES (" + to_string(Z_EFF) + ", " + to_string(SIGMA_R_EFF) + ", " + to_string(SIGMA_Z) + ");";
+    sqlite3_prepare(db, insert_stmt.c_str(), -1, &stmt, 0);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+}
