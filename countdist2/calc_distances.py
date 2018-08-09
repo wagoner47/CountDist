@@ -1,21 +1,20 @@
 from __future__ import print_function
-import numpy as np
 from astropy.table import QTable
 import subprocess
 import os, sys
-# from .file_io import read_files, resave
-from .utils import MyConfigObj
-from glob import glob
+from .utils import MyConfigObj, init_logger
 
 
 def run_calc(params_file):
     """This function runs the executable for finding the separations between
     galaxies. The only input is the location of the parameter file, which will
-    first be read in here. The input catalog file will be checked for type
-    compatability, and if it is a FITS file, will be converted to an ascii file
-    in the same directory with a new paramter file being created to give the
-    correct file. The data is then automatically stored in files, and can be
-    read in using the :func:`countdist2.read_files` function.
+    first be read in here. The input catalogs file will be checked for type
+    metadata and will be converted to an ascii file n the same directory with
+    a new paramter file being created to give the correct file. The data is
+    then automatically stored in a database, and can be read in using the
+    :function:`countdist2.read_db` or :function:`countdist2.read_db_multiple`
+    functions. Please note that the catalogs should be FITS files, and the
+    same catalog may safely be used for both inputs for an auto-correlation.
 
     Parameters
     ----------
@@ -24,7 +23,8 @@ def run_calc(params_file):
     executable, but the temporary file will be removed after the code has run.
     :type params_file: string
     """
-    print("Reading parameter file and creating temporary parameter file")
+    logger = init_logger(__name__)
+    logger.info("Reading parameter file and creating temporary parameter file")
     params_in = MyConfigObj(params_file, file_error=True)
     params_in = params_in["run_params"]
     temp_params_fname = "{}_ascii{}".format(*os.path.splitext(params_file))
@@ -33,35 +33,17 @@ def run_calc(params_file):
     params_out["rp_max"] = params_in.as_float("rp_max")
     params_out["rl_min"] = params_in.as_float("rl_min")
     params_out["rl_max"] = params_in.as_float("rl_max")
-    print("Using column '{}' for true distance".format(params_in["dtcol"]))
-    if ".fit" in os.path.splitext(params_in["ifname"])[1].lower():
-        params_out["ifname"] = os.path.splitext(params_in["ifname"])[0] + ".txt"
-        data_in = QTable.read(params_in["ifname"])
-        dtcol = params_in["dtcol"]
-        docol = params_in["docol"]
-        data_in.write(params_out["ifname"], format="ascii.no_header",
-                include_names=["RA", "DEC", dtcol, docol], overwrite=True)
-        del data_in
-        rm1_when_done = True
-    else:
-        params_out["ifname"] = params_in["ifname"]
-        rm1_when_done = False
-    rm2_when_done = False
-    if "ifname2" in params_in:
-        if ".fit" in os.path.splitext(params_in["ifname2"])[1].lower():
-            params_out["ifname2"] = os.path.splitext(
-                    params_in["ifname2"])[1] + ".txt"
-            data_in = QTable.read(params_in["ifname2"])
-            if "dtcol2" in params_in:
-                dtcol = params_in["dtcol2"]
-            if "docol2" in params_in:
-                docol = params_in["docol2"]
-            data_in.write(params_out["ifname2"], format="ascii.no_header",
-                    include_names=["RA", "DEC", dtcol, docol], overwrite=True)
-            del data_in
-            rm2_when_done = True
-        else:
-            params_out["ifname2"] = params_in["ifname2"]
+    params_out["use_true"] = params_in["use_true"]
+    params_out["use_obs"] = params_in["use_obs"]
+    params_out["has_true1"] = params_in["has_true1"]
+    params_out["has_obs1"] = params_in["has_obs1"]
+    params_out["has_true2"] = params_in["has_true2"]
+    params_out["has_obs2"] = params_in["has_obs2"]
+    params_out["table_name"] = params_in["table_name"]
+    params_out["meta_name1"] = params_in["meta_name1"]
+    params_out["meta_name2"] = params_in["meta_name2"]
+    params_out["table_name"] = params_in["table_name"]
+    params_out["is_auto"] = (params_out["ifname1"] == params_out["ifname2"])
     if "db_file" in params_in:
         params_out["db_file"] = params_in["db_file"]
     else:
@@ -69,22 +51,55 @@ def run_calc(params_file):
     params_out.write()
     if not os.path.exists(os.path.dirname(params_out["db_file"])):
         os.makedirs(os.path.dirname(params_out["db_file"]))
+    if params_in.as_bool("has_true1"):
+        print("Using column '{}' for true distance in catalog 1".format(
+            params_in["dtcol1"]))
+    if params_in.as_bool("has_true2"):
+        print("Using column '{}' for true distance in catalog 2".format(
+            params_in["dtcol2"]))
 
-    print("Running executable")
+    params_out["ifname1"] = os.path.splitext(params_in["ifname1"])[0] + ".txt"
+    data_in = QTable.read(params_in["ifname1"])
+    params_out["SIGMA_R_EFF1"] = data_in.meta["SIGMAR"]
+    params_out["Z_EFF1"] = data_in.meta["ZEFF"]
+    params_out["SIGMA_Z1"] = data_in.meta["SIGMAZ"]
+    include_names = ["RA", "DEC"]
+    if params_in.as_bool("has_true1"):
+        include_names.append(params_in["dtcol1"])
+    if params_in.as_bool("has_obs1"):
+        include_names.append(params_in["docol1"])
+    data_in.write(params_out["ifname1"], format="ascii.no_header",
+                  include_names=include_names, overwrite=True)
+    del data_in
+
+    params_out["ifname2"] = os.path.splitext(params_in["ifname2"])[0] + ".txt"
+    data_in = QTable.read(params_in["ifname2"])
+    params_out["SIGMA_R_EFF2"] = data_in.meta["SIGMAR"]
+    params_out["Z_EFF2"] = data_in.meta["ZEFF"]
+    params_out["SIGMA_Z2"] = data_in.meta["SIGMAZ"]
+    include_names = ["RA", "DEC"]
+    if params_in.as_bool("has_true2"):
+        include_names.append(params_in["dtcol2"])
+    if params_in.as_bool("has_obs2"):
+        include_names.append(params_in["docol2"])
+    data_in.write(params_out["ifname2"], format="ascii.no_header",
+                  include_names=include_names, overwrite=True)
+    del data_in
+
+    logger.info("Running executable")
     sys.stdout.flush()
     command = "run {}".format(temp_params_fname)
     subprocess.check_call(command, shell=True)
     os.remove(temp_params_fname)
-
-    if rm1_when_done:
-        os.remove(params_out["ifname"])
-    if rm2_when_done:
-        os.remove(params_out["ifname2"])
+    os.remove(params_out["ifname1"])
+    os.remove(params_out["ifname2"])
 
 # def pair_counts_perp(rp_min, rp_max, nbins, log_bins=False, load_dir=None):
-#     """Get the perpendicular pair counts (i.e. histogram of perpendicular separations) for
+#     """Get the perpendicular pair counts (i.e. histogram of perpendicular
+# separations) for
 #     comparing to other pair counting codes. This should allow for checking the
-#     performance of the separations (rather than just that saving doesn't change
+#     performance of the separations (rather than just that saving doesn't
+# change
 #     them) and could potentially be used for verification of the convolution
 #
 #     Parameters
@@ -125,7 +140,8 @@ def run_calc(params_file):
 #     data = read_files(0.0, fac*rp_max, 0.0, 1.0e6, load_dir)
 #     if data["r_perp_o"].max() < rp_max:
 #         raise ValueError("Can not reach desired max observed separation")
-#     while data["r_perp_t"].max() < rp_max and data["r_perp_o"].max() < (fac*rp_max):
+#     while data["r_perp_t"].max() < rp_max and data["r_perp_o"].max() < (
+# fac*rp_max):
 #         fac *= 10
 #         data = read_files(0.0, fac*rp_max, 0.0, 1.0e6, load_dir)
 #     if data["r_perp_t"].max() < rp_max:
@@ -140,7 +156,8 @@ def run_calc(params_file):
 # def pair_counts_perp_par(rp_min, rp_max, rl_min, rl_max, np_bins, nl_bins,
 #         log_bins=False, load_dir=None):
 #     """Get the perpendicular and parallel pair counts (i.e. histogram of
-#     perpendicular separations) for comparing to other pair counting codes. This
+#     perpendicular separations) for comparing to other pair counting codes.
+# This
 #     should allow for checking the performance of the separations (rather than
 #     just that saving doesn't change them) and could potentially be used for
 #     verification of the convolution
@@ -208,9 +225,11 @@ def run_calc(params_file):
 #     if data["r_par_o"].max() < rl_max:
 #         raise ValueError("Can not reach desired max observed parallel "\
 #                 "separation")
-#     perp_cond = ((data["r_perp_t"].max() < rp_max) and (data["r_perp_o"].max() \
+#     perp_cond = ((data["r_perp_t"].max() < rp_max) and (data[
+# "r_perp_o"].max() \
 #             < (pfac * rp_max)))
-#     par_cond = ((data["r_par_t"].max() < rl_max) and (data["r_par_o"].max() < \
+#     par_cond = ((data["r_par_t"].max() < rl_max) and (data["r_par_o"].max()
+#  < \
 #             (lfac * rl_max)))
 #     while perp_cond or par_cond:
 #         if perp_cond:

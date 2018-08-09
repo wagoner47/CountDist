@@ -18,19 +18,23 @@ using namespace std;
 
 /*
  * Positional arguments:
- * 	PARAMETER_FILE: The configuration paramter file, with required parameters "ifname1", "ifname2",
- * 	"ofdir", "rp_min", "rp_max", "rl_min", "rl_max", "has_true1", "has_true2", "has_obs1", "has_obs2",
- * 	"use_true", "use_obs", and "is_auto"
+ * 	PARAMETER_FILE: The configuration paramter file, with required parameters
+ * 	"ifname1", "ifname2", "db_file", "table_name", "rp_min", "rp_max", "rl_min",
+ * 	"rl_max", "has_true1", "has_true2", "has_obs1", "has_obs2", "use_true",
+ * 	"use_obs", "is_auto", "SIGMA_R_EFF1", "Z_EFF1", "SIGMA_Z1", "SIGMA_R_EFF2",
+ * 	"Z_EFF2", "SIGMA_Z2", "meta_name1", "meta_name2"
  *
  * Optional arguments:
  * 	-t, --test: Run the code in test mode
 */
 
-const double FROM_MICRO = 0.000001;
-
 int main(int argc, char* argv[]) {
 	size_t nReq = 15;
-	const string req_keys[] = {"ifname1", "ifname2", "db_file", "table_name", "rp_min", "rp_max", "rl_min", "rl_max", "has_true1", "has_true2", "has_obs1", "has_obs2", "use_true", "use_obs", "is_auto"};
+	const string req_keys[] = {"ifname1", "ifname2", "db_file", "table_name",
+			"rp_min", "rp_max", "rl_min", "rl_max", "has_true1", "has_true2",
+            "has_obs1", "has_obs2", "use_true", "use_obs", "is_auto", "SIGMA_R_EFF1",
+            "Z_EFF1", "SIGMA_Z1", "SIGMA_R_EFF2", "Z_EFF2", "SIGMA_Z2", "meta_name1",
+            "meta_name2"};
 	chrono::steady_clock::time_point start, stop;
 	chrono::microseconds exec_time;
 
@@ -67,6 +71,18 @@ int main(int argc, char* argv[]) {
 	get_dist(cat1, cat2, params.as_double("rp_min"), params.as_double("rp_max"), params.as_double("rl_min"), params.as_double("rl_max"), params["db_file"], params["table_name"], params.as_bool("use_true"), params.as_bool("use_obs"), params.as_bool("is_auto"));
 	stop = chrono::steady_clock::now();
 	cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
+
+	cout << "Adding meta-data for catalog 1...";
+	start = chrono::steady_clock::now();
+	write_meta_data(params["db_file"], params["meta_name1"], params.as_double("Z_EFF1"), params.as_double("SIGMA_R_EFF1"), params.as_double("SIGMA_Z1"));
+	stop = chrono::steady_clock::now();
+	cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
+
+    cout << "Adding meta-data for catalog 2...";
+    start = chrono::steady_clock::now();
+    write_meta_data(params["db_file"], params["meta_name2"], params.as_double("Z_EFF2"), params.as_double("SIGMA_R_EFF2"), params.as_double("SIGMA_Z2"));
+    stop = chrono::steady_clock::now();
+    cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
 
 	return 0;
 }
