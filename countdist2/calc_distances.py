@@ -46,7 +46,6 @@ def run_calc(params_file):
     params_out["meta_name1"] = params_in["meta_name1"]
     params_out["meta_name2"] = params_in["meta_name2"]
     params_out["table_name"] = params_in["table_name"]
-    params_out["is_auto"] = (params_out["ifname1"] == params_out["ifname2"])
     if "db_file" in params_in:
         params_out["db_file"] = params_in["db_file"]
     else:
@@ -86,6 +85,7 @@ def run_calc(params_file):
     data_in.write(params_out["ifname2"], format="ascii.no_header",
                   include_names=include_names, overwrite=True)
     del data_in
+    params_out["is_auto"] = (params_out["ifname1"] == params_out["ifname2"])
 
     params_out.write()
 
