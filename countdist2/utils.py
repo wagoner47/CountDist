@@ -80,8 +80,9 @@ def init_logger(name=None):
     :return logger: The logger object with format and level set
     :rtype logger: :class:`logging.Logger`
     """
-    config = MyConfigObj("package_options.ini")
-    print(config)
+    pkg_opts = os.path.join(os.path.dirname(__file__), os.pardir,
+        "package_options.ini")
+    config = MyConfigObj(pkg_opts)
     fmt = '%(asctime)s %(levelname)s - %(name)s.%(funcName)s (%(lineno)d): %(' \
           'message)s'
     dtfmt = '%m/%d/%Y %H:%M:%S'
