@@ -4,6 +4,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <list>
+#include <locale>
 #include "read_config.h"
 using namespace std;
 
@@ -13,6 +14,15 @@ configuration::data reader(const string& fname) {
 	pfile >> params;
 	pfile.close();
 	return params;
+}
+
+string lowercase(string input) {
+	locale loc;
+	string output = "";
+	for (auto elem : input) {
+		output += tolower(elem, loc);
+	}
+	return output;
 }
 
 namespace configuration {

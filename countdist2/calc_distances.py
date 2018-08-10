@@ -95,7 +95,8 @@ def run_calc(params_file):
     subprocess.check_call(command, shell=True)
     os.remove(temp_params_fname)
     os.remove(params_out["ifname1"])
-    os.remove(params_out["ifname2"])
+    if not params_out["is_auto"]:
+        os.remove(params_out["ifname2"])
 
 # def pair_counts_perp(rp_min, rp_max, nbins, log_bins=False, load_dir=None):
 #     """Get the perpendicular pair counts (i.e. histogram of perpendicular

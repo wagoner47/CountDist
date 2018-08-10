@@ -932,7 +932,7 @@ class ProbFitter(object):
         return (np.sqrt(2.0) * self.sigma_z * (1 + zbar) *
                 CatalogUtils.dr_dz(zbar))
 
-    def _add_bin_column(selfself, orig_col_name, bin_col_name, bin_size, scale):
+    def _add_bin_column(self, orig_col_name, bin_col_name, bin_size, scale):
         self.seps[bin_col_name] = ((np.floor(self.seps[orig_col_name] /
                                              bin_size) + 0.5) * (bin_size /
                                                                  scale))

@@ -284,7 +284,7 @@ def read_db(db_file, table_name, **kwargs):
     return results
 
 
-def read_db_multiple(db_file, table_name, limits, cols=None):
+def read_db_multiple(db_file, table_name, limits=None, cols=None):
     """This function allows the user to concatenate multiple reads of the same
     database file to combine calls with various limits for instance. However,
     it assumes all queries are to be made on the same table within the database
@@ -335,6 +335,8 @@ def read_db_multiple(db_file, table_name, limits, cols=None):
     - 'R_PAR': The parallel separation in Mpc, with a value that is always
     non-negative
     """
+    if limits is None:
+        return read_db(db_file, table_name, cols=cols)
     if np.all(np.isinf(list(limits.values()))):
         # Case: no non-trivial limits, so don't need multiple queries
         return read_db(db_file, table_name, cols=cols)

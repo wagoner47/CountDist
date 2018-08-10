@@ -111,9 +111,9 @@ void get_dist(vector<Pos> pos1, vector<Pos> pos2, double rp_min, double rp_max, 
     size_t n2 = pos2.size();
     size_t num_rows = 0;
 
-	sqlite3 *db;
-	sqlite3_stmt *stmt;
-	start_sqlite(db, stmt, db_file, table_name, use_true, use_obs, USE_OMP);
+    sqlite3 *db = 0;
+    sqlite3_stmt *stmt = 0;
+    start_sqlite(db, stmt, db_file, table_name, use_true, use_obs, USE_OMP);
 
     #pragma omp parallel for if(USE_OMP) collapse(2)
 	for (size_t i = 0; i < n1; i++) {

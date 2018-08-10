@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
 
 	cout << "Reading catalog 1 into 'std::vector<Pos>'...";
 	start = chrono::steady_clock::now();
-	vector<Pos> cat1 = readCatalog(params["ifname1"], params.as_bool("use_true"), params.as_bool("use_obs"), params.as_bool("has_true1"), params.as_bool("has_obs1"));
+	vector<Pos> cat1(readCatalog(params["ifname1"], params.as_bool("use_true"), params.as_bool("use_obs"), params.as_bool("has_true1"), params.as_bool("has_obs1")));
 	stop = chrono::steady_clock::now();
 	cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
 

@@ -13,34 +13,26 @@ using namespace std;
 
 vector<Pos> readCatalog(string fname, bool use_true, bool use_obs, bool has_true, bool has_obs) {
 	double ra, dec, rt, ro;
-	cout << "Check true and observed flags" << endl;
 	if (!(has_true || has_obs)) {
 	    cerr << "Must have at least true or observed distances in catalog, or both" << endl;
 	    exit(1);
 	}
-	cout << "Passed check for having at least one has flag" << endl;
 	if (!(use_true || use_obs)) {
 	    cerr << "Must use at least true or observed distances, or both" << endl;
 	    exit(2);
 	}
-	cout << "Passed check for having at least one use flag" << endl;
 	if (use_true && !has_true) {
 	    cerr << "Cannot use true distances when not provided in catalog" << endl;
 	    exit(3);
 	}
-	cout << "Passed check for using and having true" << endl;
 	if (use_obs && !has_obs) {
 	    cerr << "Cannot use observed distances when not provided in catalog" << endl;
 	    exit(4);
 	}
-	cout << "Passed check for using and having observed" << endl;
 	vector<Pos> pos;
 	ifstream fin(fname, ifstream::in);
 	string line;
-	int i = 0;
 	while (getline(fin, line)) {
-	    cout << "Read line " << i << endl;
-	    i++;
 		if (line.substr(0, 1).compare("#") != 0) {
 			istringstream iss(line);
 			if (has_true && has_obs) {
@@ -64,9 +56,7 @@ vector<Pos> readCatalog(string fname, bool use_true, bool use_obs, bool has_true
 			pos.push_back(posi);
 		}
 	}
-	cout << "Finish reading catalog" << endl;
 	fin.close();
-	cout << "Close file" << endl;
 	return pos;
 }
 
@@ -80,7 +70,7 @@ void setup_sqlite(bool use_omp) {
     }
 }
 
-void open_db(sqlite3 *db, string db_file) {
+void open_db(sqlite3*& db, string db_file) {
     int open_status = sqlite3_open(db_file.c_str(), &db);
     if (open_status != SQLITE_OK) {
         cerr << "Cannot open database: " << db_file << endl;
@@ -179,7 +169,7 @@ void end_transaction(sqlite3 *db) {
     }
 }
 
-void start_sqlite(sqlite3 *db, sqlite3_stmt *stmt, string db_file, string table_name, bool use_true, bool use_obs, bool use_omp) {
+void start_sqlite(sqlite3*& db, sqlite3_stmt *stmt, string db_file, string table_name, bool use_true, bool use_obs, bool use_omp) {
     setup_sqlite(use_omp);
     open_db(db, db_file);
     setup_db(db, table_name, use_true, use_obs);

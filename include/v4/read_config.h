@@ -6,6 +6,9 @@
 #include <iostream>
 #include <unordered_map>
 #include <list>
+#include <locale>
+
+std::string lowercase(std::string);
 
 namespace configuration {
 	struct data: std::unordered_map<std::string, std::string> {
@@ -23,8 +26,10 @@ namespace configuration {
         bool as_bool(const std::string& key) {
 			if (!iskey(key)) throw 0;
 			std::istringstream ss(this->operator[](key));
-			bool result;
-			ss >> result;
+			std::string str_result;
+			ss >> str_result;
+			str_result = lowercase(str_result);
+			bool result = (str_result.substr(0, 1).compare("t") == 0);
 			if (!ss.eof()) throw 1;
 			return result;
 		}

@@ -6,11 +6,13 @@
 #include <sqlite3.h>
 #include "calc_distances.h"
 
+size_t numLines(std::string);
+
 std::vector<Pos> readCatalog(std::string, bool, bool, bool, bool);
 
 void setup_sqlite(bool);
 
-void open_db(sqlite3*, std::string);
+void open_db(sqlite3*&, std::string);
 
 void drop_table(sqlite3*, std::string);
 
@@ -24,7 +26,7 @@ void begin_transaction(sqlite3*);
 
 void end_transaction(sqlite3*);
 
-void start_sqlite(sqlite3*, sqlite3_stmt*, std::string, std::string, bool, bool, bool);
+void start_sqlite(sqlite3*&, sqlite3_stmt*, std::string, std::string, bool, bool, bool);
 
 void write_and_restart(sqlite3*);
 
