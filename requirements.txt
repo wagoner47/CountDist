@@ -5,6 +5,7 @@ astropy >= 2
 pandas
 scipy
 emcee
-matplotlib
+matplotlib <2.1.0, >1.6.0
 chainconsumer
 configobj
+git+https://github.com/wagoner47/CatalogUtils#egg=CatalogUtils
