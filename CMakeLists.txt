@@ -18,12 +18,6 @@ file(MAKE_DIRECTORY ${CountDistCPP_SOURCE_DIR}/build)
 file(MAKE_DIRECTORY ${CountDistCPP_SOURCE_DIR}/build/bin)
 set(RUNTIME_OUTPUT_DIRECTORY ${CountDistCPP_SOURCE_DIR}/build)
 
-set(BOOST_REQUESTED_VERSION 1.67.0)
-set(BOOST_ROOT ${CMAKE_INSTALL_PREFIX})
-find_package(Boost REQUIRED COMPONENTS log date_time)
-add_library(boost INTERFACE IMPORTED)
-set_property(TARGET boost PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${Boost_INCLUDE_DIR})
-
 if (DEFINED ENV{OMP})
     set(omp $ENV{OMP})
 else()
