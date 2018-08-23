@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <list>
 #include <locale>
+#include <array>
 #include "read_config.h"
 using namespace std;
 
@@ -57,5 +58,12 @@ namespace configuration {
 			outs << iter.first << " = " << iter.second << std::endl;
 		}
 		return outs;
+	}
+}
+
+void check_key(configuration::data params, string key) {
+	if (!params.iskey(key)) {
+		cerr << "Missing required parameter '" << key << "'" << endl;
+		exit(1);
 	}
 }

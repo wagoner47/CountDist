@@ -1,14 +1,18 @@
 from __future__ import print_function
 from .utils import ndigits, init_logger
 from .file_io import read_db_multiple
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from chainconsumer import ChainConsumer
 import CatalogUtils
 from scipy.stats import kstat, kstatvar
 from scipy.optimize import minimize
 import emcee
 import numpy as np
+import math
 import pandas as pd
-import matplotlib.pyplot as plt
-from chainconsumer import ChainConsumer
+import pickle
+import os
 
 plt.rcParams["figure.facecolor"] = "white"
 
@@ -26,7 +30,7 @@ def get_array(x):
     return arr_x
 
 
-def corr_coef(x, y, x_mean, y_mean, x_var, y_var):
+def corr_coeff(x, y, x_mean, y_mean, x_var, y_var):
     """
     Calculate the correlation coefficient between x and y. All inputs must be
     scalar or 1D array-like with the same shape
@@ -44,24 +48,22 @@ def corr_coef(x, y, x_mean, y_mean, x_var, y_var):
     :param y_var: The variance of :param:`y`
     :type y_var: scalar or 1D array-like `float`
     :return r: The correlation between x and y
-    :rtype r: scalar or 1D :class:`numpy.ndarray` `float`
+    :rtype r: scalar or 1D :class:`pandas.Series` `float`
     """
-    r = ((x - x_mean) * (y - y_mean)) / (np.sqrt(x_var * y_var))
-    if hasattr(r, "__len__"):
-        r = np.asarray(r)
+    if not hasattr(x_var, "__len__"):
+        r = ((x - x_mean) * (y - y_mean)) / math.sqrt(x_var * y_var)
+    else:
+        r = ((x - x_mean) * (y - y_mean)) / (np.sqrt(x_var * y_var))
     return r
 
 
-def mean_y(rpo, rlo, a, alpha, beta, s):
+def mean_y(rpo, rlo, a, alpha, beta, s, index=None):
     """
     The mean of :math:`\frac{\Delta R_\parallel}{R_\parallel^O}`. This
     function looks like :math:`a x^\alpha y^\beta \exp[-y^2 / 2 s]`, where x
     is the perpendicular separation and y is the parallel separation. If
-    :param:`rpo` and/or :param:`rlo` is array-like, they will be
-    flattened before calculating. Notice that if :param:`rpo` and
-    :param:`rlo` are both array-like with different lengths, they will be
-    flattened, a meshgrid will be formed with :param:`rpo` first, and then
-    they will be flattened again (for order of unzipping later).
+    :param:`rpo` or :param:`rlo` has a length, it will be assumed that they are
+    the indices from a Series/DataFrame, and a Series will be returned.
 
     :param rpo: The observed perpendicular separation
     :type rpo: scalar or array-like `float`
@@ -75,33 +77,35 @@ def mean_y(rpo, rlo, a, alpha, beta, s):
     :type beta: scalar `float`
     :param s: The scale of the exponential term
     :type s: scalar `float`
+    :param index: The index to add to the Series, if needed. Ignored for scalar
+    output. If `None`, the index is made from :param:`rpo` and :param:`rlo`,
+    with names ['RPO_BIN', 'RLO_BIN']. Default `None`
+    :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or `None`,
+    optional
     :return f: The function evaluated at the separation(s)
-    :rtype f: scalar or 1D :class:`numpy.ndarray` `float`
+    :rtype f: scalar or 1D :class:`pandas.Series` `float`
     """
-    rpo = get_array(rpo)
-    rlo = get_array(rlo)
-    if rpo.size != rlo.size:
-        rpo, rlo = np.meshgrid(rpo, rlo)
-        rpo = rpo.flatten()
-        rlo = rlo.flatten()
-    f = a * (rpo ** alpha) * (rlo ** beta) * np.exp(-0.5 * rlo ** 2 / s)
-    if rpo.size == 1:
-        f = f.item()
+    if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
+        f = a * (rpo**alpha) * (rlo**beta) * math.exp(-0.5 * rlo**2 / s)
+    else:
+        if index is None:
+            index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN", 
+                "RLO_BIN"])
+        f = pd.Series(a * (rpo ** alpha) * (rlo ** beta) * \
+                np.exp(-0.5 * rlo**2 / s), index=index)
     return f
 
 
-def var_y(rpo, rlo, b, s1, s2, rho):
+def var_y(rpo, rlo, b, s1, s2, rho, index=None):
     """
     The variance of :math:`\frac{\Delta R_\parallel}{\sqrt{2} \chi'(\bar{z})
     \sigma_z(\bar{z})}`. This function looks like :math:`1 - b \exp[-0.5 \vec{
     r}^T C^{-1} \vec{r}]`, where :math:`\vec{r}` is a vector of the observed
     perpendicular and parallel separations, and C looks like a covariance
     matrix if :param:`s1` and :param:`s2` are variances and :param:`rho` is
-    the correlation coefficient. If :param:`rpo` and/or :param:`rlo` is
-    array-like, they will be flattened before calculating. Notice that if
-    :param:`rpo` and :param:`rlo` are both array-like with different lengths,
-    they will be flattened, a meshgrid will be formed with :param:`rpo`
-    first, and then they will be flattened again (for order of unzipping later).
+    the correlation coefficient. If :param:`rpo` or :param:`rlo` has a length,
+    both will assumed to be indices from a Series/DataFrame, and a Series will
+    be returned.
 
     :param rpo: The observed perpendicular separations
     :type rpo: scalar or array-like `float`
@@ -118,22 +122,25 @@ def var_y(rpo, rlo, b, s1, s2, rho):
     :param rho: The mixing of the perpendicular and parallel contriubtions to
     the exponential
     :type rho: scalar `float`
+    :param index: The index to add to the Series, if needed. Ignored for scalar
+    output. If `None`, the index is made from :param:`rpo` and :param:`rlo`,
+    with names ['RPO_BIN', 'RLO_BIN']. Default `None`
+    :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or `None`,
+    optional
     :return f: The function evaluated at the separation(s)
-    :rtype f: scalar or 1D :class:`numpy.ndarray` `float`
+    :rtype f: scalar or 1D :class:`pandas.Series` `float`
     """
-    rpo = get_array(rpo)
-    rlo = get_array(rlo)
-    if rpo.size != rlo.size:
-        rpo, rlo = np.meshgrid(rpo, rlo)
-        rpo = rpo.flatten()
-        rlo = rlo.flatten()
-    cinv = np.array([s2, s1, -2 * rho * np.sqrt(s1 * s2)]) / (s1 * s2(1 -
-                                                                      rho ** 2))
-    f = 1.0 - b
-    np.exp(-0.5 * (rpo ** 2 * cinv[0] + rlo ** 2 * cinv[1] + rpo *
-                   rlo * cinv[2]))
-    if rpo.size == 1:
-        f = f.item()
+    inv_weight = 1. / (s1 * s2 * (1 - rho**2))
+    cinv = [x * inv_weight for x in [s2, s1, -2 * rho * math.sqrt(s1 * s2)]]
+    if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
+        f = 1.0 - b * math.exp(-0.5 * (rpo**2 * cinv[0] + rlo**2 * cinv[1] + rpo
+            * rlo * cinv[2]))
+    else:
+        if index is None:
+            index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN", 
+                "RLO_BIN"])
+        f = 1.0 - b * np.exp(-0.5 * pd.Series(rpo**2 * cinv[0] + rlo**2 *
+            cinv[1] + rpo * rlo * cinv[2], index=index))
     return f
 
 
@@ -153,7 +160,7 @@ def prior_mean_y(theta):
     a, alpha, beta, s = theta
     if s > 0.0:
         return 0.0
-    return -np.inf
+    return -math.inf
 
 
 def prior_var_y(theta):
@@ -172,7 +179,15 @@ def prior_var_y(theta):
     b, s1, s2, rho = theta
     if s1 > 0.0 and s2 > 0.0 and -1.0 < rho < 1.0:
         return 0.0
-    return -np.inf
+    return -math.inf
+
+def _check_pickleable(attrs):
+    for attr in attrs:
+        try:
+            pickle.dumps(attr)
+        except (pickle.PicklingError, TypeError):
+            return False
+    return True
 
 
 class SingleFitter(object):
@@ -180,19 +195,22 @@ class SingleFitter(object):
     Fit a single function to a single set of data.
     """
 
-    def __init__(self, rpo, rlo, data, var, func=None, prior=None,
+    def __init__(self, data, index_names, col_names, func=None, prior=None,
                  param_names=None, fitter_name=None):
         """Initialize the SingleFitter
 
-        :param rpo: The observed perpendicular separation
-        :type rpo: array-like `float`
-        :param rlo: The observed parallel separation
-        :type rlo: array-like `float`
-        :param data: The vector of data to fit
-        :type data: array-like `float`
-        :param var: The variance (for diagonal covariance matrix) or covariance
-        matrix of the data
-        :type var: array-like `float`
+        :param data: A DataFrame containing the observed parallel and
+        perpendicular separations as indices, as well as columns for the data
+        and the variance. Note that this does force the variance to be diagonal.
+        :type data: :class:`pandas.DataFrame`
+        :param index_names: A list containing the names of the index columns,
+        with the first element corresponding to the perpendicular separation and
+        the second to the parallel separation.
+        :type index_names: `list` `str`
+        :param col_names: A list containing the names of the columns from the
+        DataFrame to be used, with the first element corresponding to the data
+        column and the second corresponding the the variance.
+        :type col_names: `list` `str`
         :param func: The function to fit to the data. Must be set before
         fitting, and parameter names must be given simultaneously. Use
         :function:`SingleFitter.set_fit_func` to set or change this later.
@@ -214,11 +232,11 @@ class SingleFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.logger.debug("Set up separations and data")
-        self.rpo = get_array(rpo)
-        self.rlo = get_array(rlo)
-        self.data = get_array(data)
-        self.logger.debug("Set up inverse (co)variance and lnlike")
-        self._set_var_lnlike(var)
+        self.data = data
+        self.index_names = index_names
+        self.col_names = col_names
+        self.data["ivar"] = 1. / self.data[col_names[1]]
+        self.data["sigma"] = np.sqrt(self.data[col_names[1]])
         self.logger.debug("Set fitting function and prior")
         self.set_fit_func(func, param_names)
         self.set_prior_func(prior)
@@ -250,19 +268,6 @@ class SingleFitter(object):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
                      fitter_name is not None else self.__class__.__name__)
 
-    def _set_var_lnlike(self, var):
-        if var.ndim == 1:
-            self.logger.debug("Setting up 1D variance and likelihood")
-            self.sigma = np.sqrt(var)
-            self.ivar = 1. / var
-            self.lnlike = lambda theta: self.lnlike_1d(theta)
-        else:
-            self.logger.debug("Setting up ND variance and likelihood")
-            self.sigma = np.sqrt(np.diag(var))
-            self.ivar = np.linalg.pinv(var)
-            self.lnlike = lambda theta: self.lnlike_2d(theta)
-        self.logger.debug("done")
-
     def set_fit_func(self, func, param_names):
         """Set a (new) fitting function with parameter names
 
@@ -281,7 +286,7 @@ class SingleFitter(object):
                 raise ValueError("Parameter names must be given when fitting "
                                  "function is specified")
             self.logger.debug("Setting fitting function and parameters")
-            self.f = lambda x, y, params: func(x, y, *params)
+            self.f = lambda x, y, params, **kwargs: func(x, y, *params, **kwargs)
             self.params = param_names
             self.ndim = len(param_names)
         self.logger.debug("done")
@@ -300,18 +305,13 @@ class SingleFitter(object):
             self.pr = lambda params: prior(params)
         self.logger.debug("done")
 
-    def lnlike_1d(self, theta):
+    def lnlike(self, theta):
         if self.f is None:
             raise AttributeError("No fitting function set for likelihood")
-        feval = self.f(self.rpo, self.rlo, theta)
-        return -0.5 * np.sum((self.data - feval) ** 2 * self.ivar)
-
-    def lnlike_2d(self, theta):
-        if self.f is None:
-            raise AttributeError("No fitting function set for likelihood")
-        feval = self.f(self.rpo, self.rlo, theta)
-        return -0.5 * np.dot((self.data - feval), np.dot(self.ivar,
-                                                         (self.data - feval)))
+        feval = self.f(self.data.index.get_level_values(self.index_names[0]),
+                self.data.index.get_level_values(self.index_names[1]), theta)
+        return -0.5 * np.sum((self.data[self.col_names[0]] - feval) ** 2 *
+                self.data["ivar"])
 
     def lnprob(self, theta):
         if self.pr is None:
@@ -364,7 +364,8 @@ class SingleFitter(object):
         :type nwalkers: `int` or `None`, optional
         :param nthreads: The number of threads to use for multiprocessing
         with `emcee`. If set to 1, multiprocessing will not be used. This
-        parameter is ignored when continuing chains. Default 1
+        parameter is ignored when continuing chains. It may be overridden if
+        pickling will fail. Default 1
         :type nthreads: `int`, optional
         :param reset: If `True`, start a new sampler even if a previous one
         has been run. This makes the optional arguments (other than
@@ -375,6 +376,11 @@ class SingleFitter(object):
         running the MCMC. Ignored when continuing chains. Default `True`
         :type with_init: `bool`, optional
         """
+        attrs_needed = [self.lnlike, self.lnprob]
+        if not _check_pickleable(attrs_needed):
+            self.logger.debug("Setting number of threads to 1 because not "
+                    "pickleable")
+            nthreads = 1
         if self.sampler is not None and not reset:
             self.logger.debug("Continuing chains")
             self.sampler.run_mcmc(None, nsteps)
@@ -415,30 +421,27 @@ class SingleFitter(object):
         self.c.add_chain(samples, parameters=self.params, posterior=lnprobs)
         self.logger.debug("done")
 
-    def model(self, rpo, rlo):
+    def model(self, rpo, rlo, index=None):
         """Get the best fit model at the given separations
 
         :param rpo: The observed perpendicular separation
         :type rpo: scalar or array-like `float`
         :param rlo: The observed parallel separation
         :type rlo: scalar or array-like `float`
+        :param index: The index to add to the Series. Ignored for scalar
+        returns. If `None`, the index will be created from :param:`rpo` and
+        :param:`rlo`, with names ['RPO_BIN', 'RLO_BIN']. Default `None`
+        :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or
+        `None`, optional
         :return m: The value of the best fit model at the points. This will
         be 1D if :param:`rpo` and :param:`rlo` are both array-like, with both
         separations flattened
-        :rtype m: scalar or 1D ndarray `float`
+        :rtype m: scalar or :class:`pandas.Series` `float`
         """
-        rpo = np.atleast_1d(rpo).flatten()
-        rlo = np.atleast_1d(rlo).flatten()
-        if rpo.size != rlo.size:
-            rpo, rlo = np.meshgrid(rpo, rlo)
-            rpo = rpo.flatten()
-            rlo = rlo.flatten()
-        m = self.f(rpo, rlo, self._best_fit_params)
-        if rpo.size == 1:
-            m = m.item()
+        m = self.f(rpo, rlo, self._best_fit_params, index=index)
         return m
 
-    def model_with_errors(self, rpo, rlo):
+    def model_with_errors(self, rpo, rlo, index=None):
         """Get the median and 68 percent contours of the model at the
         separations
 
@@ -446,22 +449,24 @@ class SingleFitter(object):
         :type rpo: scalar or array-like `float`
         :param rlo: The observed parallel separation
         :type rlo: scalar or array-like `float`
+        :param index: The index to add to the Series. Ignored for single
+        separation. If `None`, the index will be created from :param:`rpo` and
+        :param:`rlo`, with names ['RPO_BIN', 'RLO_BIN']. Default `None`
+        :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or
         :return m: The 16th, 50th, and 84th percentiles of the model at the
         points. The 0th axis is the percentiles, and the first axis is the
         flattened points, if not both scalar
-        :rtype m: 1D or 2D ndarray `float`
+        :rtype m: :class:`pandas.Series` or :class:`pandas.DataFrame` `float`
         """
-        rpo = np.atleast_1d(rpo).flatten()
-        rlo = np.atleast_1d(rlo).flatten()
-        if rpo.size != rlo.size:
-            rpo, rlo = np.meshgrid(rpo, rlo)
-            rpo = rpo.flatten()
-            rlo = rlo.flatten()
         samples = self.sampler.chain[:, self._nburnin:, :].reshape((-1,
                                                                     self.ndim))
-        meval = map(lambda params: self.f(rpo, rlo, params), samples)
-        m = np.percentile(meval, [16.0, 50.0, 84.0], axis=0)
-        m = m.squeeze()
+        meval = map(lambda params: self.f(rpo, rlo, params, index=index), 
+                samples)
+        if hasattr(meval, "index"):
+            m = meval.quantile(q=[0.16, 0.5, 0.84]).T
+        else:
+            m = pd.Series(np.percentile(meval, [16.0, 50.0, 84.0], axis=0),
+                    index=pd.Index([0.16, 0.5, 0.84]))
         return m
 
     def plot(self, rpo_label, rlo_label, ylabel, bins, bin_size,
@@ -513,24 +518,30 @@ class SingleFitter(object):
             figsize = plt.rcParams["figure.figsize"]
         plt.rcParams["font.size"] = text_size
 
-        axis_label = r"${{}} \pm {}$".format(np.around(0.5 * bin_size,
+        axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * bin_size,
                                                        2 - ndigits(0.5 *
                                                                    bin_size)))
         fig = plt.figure(figsize=figsize)
         bins = np.atleast_1d(bins).flatten()
-        full_ax = fig.add_subplot(111, yticks=[], yticklabels=[], frameon=False)
-        grid = plt.GridSpec(bins.size, 1, hspace=0, left=0.2)
+        full_ax = fig.add_subplot(111, yticks=[], yticklabels=[],
+                frame_on=False, position=[0.1, 0.1, 0, 0])
+        grid = plt.GridSpec(bins.size, 1, hspace=0, left=0.2, bottom=0.2)
+        rpo = self.data.index.get_level_values(self.index_names[0])
+        rlo = self.data.index.get_level_values(self.index_names[1])
         if logx:
             full_ax.set_xscale("log")
         if logy:
             full_ax.set_yscale("log")
-        full_ax.set_ylabel(ylabel)
+        full_ax.xaxis.set_ticks([])
+        full_ax.xaxis.set_ticklabels([])
+        full_ax.yaxis.set_ticks([])
+        full_ax.yaxis.set_ticklabels([])
         for i, r in enumerate(bins):
             ax = fig.add_subplot(grid[i, :], sharex=full_ax)
             ax.axhline(exp, c="k")
             if is_rpo:
-                idx = np.isclose(self.rpo, r, atol=0.25 * bin_size)
-                x = self.rlo[idx]
+                idx = np.isclose(rpo, r, atol=0.25 * bin_size)
+                x = rlo[idx]
                 labeli = r"{}{}".format(rpo_label, axis_label.format(
                     np.around(r, 2 - ndigits(r))))
                 xlabel = rlo_label
@@ -540,8 +551,8 @@ class SingleFitter(object):
                                              "fitting")
                     m = self.model_with_errors(r, x)
             else:
-                idx = np.isclose(self.rlo, r, atol=0.25 * bin_size)
-                x = self.rpo[idx]
+                idx = np.isclose(rlo, r, atol=0.25 * bin_size)
+                x = rpo[idx]
                 labeli = r"{}{}".format(rlo_label, axis_label.format(
                     np.around(r, 2 - ndigits(r))))
                 xlabel = rpo_label
@@ -550,22 +561,22 @@ class SingleFitter(object):
                         raise AttributeError("Cannot plot best fit without "
                                              "fitting")
                     m = self.model_with_errors(x, r)
-            d = self.data[idx]
-            s = self.sigma[idx]
+            d = self.data[self.col_names[0]][idx]
+            s = self.data["sigma"][idx]
             line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
             if with_fit:
                 ax.fill_between(x, m[0], m[2], color="C2", alpha=0.4)
                 ax.plot(x, m[1], "C2-")
             ax.legend([line], [labeli], loc="best", markerscale=0,
                       frameon=False)
-            if ax.is_last_row():
-                ax.set_xlabel(xlabel)
-            else:
-                ax.set_xticklabels("")
+            if not ax.is_last_row():
+                ax.set_xticklabels([])
+        full_ax.set_xlabel(xlabel)
+        full_ax.set_ylabel(ylabel)
         if filename is not None:
             fig.savefig(filename, bbox_inches="tight")
         if display:
-            fig.show()
+            plt.show()
         return fig
 
 
@@ -576,18 +587,22 @@ class AnalyticSingleFitter(object):
     function with uncorrelated errors (i.e. diagonal covariance matrix)
     """
 
-    def __init__(self, rpo, rlo, data, var, fitter_name=None):
+    def __init__(self, data, index_names, col_names, fitter_name=None):
         """
         Initialize the analytic fitter. Please note that all array-likes should
         have the same size
-        :param rpo: The observed perpendicular separations
-        :type rpo: 1D array-like `float`
-        :param rlo: The observed parallel separations
-        :type rlo: 1D array-like `float`
-        :param data: The vector of data to be fit
-        :type data: 1D array-like `float`
-        :param var: The variance on the data
-        :type var: 1D array-like `float`
+        :param data: A Pandas DataFrame with indices giving the observed
+        perpendicular and parallel separations and columns for the data and
+        variance.
+        :type data: :class:`pandas.DataFrame`
+        :param index_names: A list of the index names, with the first element
+        corresponding to the name for the observed perpendicular separation and
+        the second to the observed parallel separation.
+        :type index_names: `list` `str`
+        :param col_names: A list of the needed column names from the DataFrame, 
+        with the first element corresponding to the data and the second to the 
+        variance.
+        :type col_names: `list` `str`
         :param fitter_name: The name for this instance of the fitter. If
         `None`, the name will be set to 'AnalyticSingleFitter'. Default `None`
         :type fitter_name: `str` or `None`, optional
@@ -595,24 +610,11 @@ class AnalyticSingleFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.logger.debug("Setting up data and variance")
-        rpo = get_array(rpo)
-        rlo = get_array(rlo)
-        if rpo.size != rlo.size:
-            raise ValueError("Separation arrays must have same size")
-        data = get_array(data)
-        if rpo.size != data.size:
-            raise ValueError("Data array must have same size as separations")
-        if np.allclose(np.diag(np.diag(var)), var):
-            var = np.diag(var)
-        else:
-            var = get_array(var)
-        if data.size != var.size:
-            raise ValueError("Variance must have same size as data")
-        self.rpo = rpo
-        self.rlo = rlo
         self.data = data
-        self.ivar = 1. / var
-        self.sigma = np.sqrt(var)
+        self.index_names = index_names
+        self.col_names = col_names
+        self.data["ivar"] = 1. / self.data[col_names[1]]
+        self.data["sigma"] = np.sqrt(self.data[col_names[1]])
         self.logger.debug("__init__ complete")
         self._c = None
         self._c_err = None
@@ -630,38 +632,43 @@ class AnalyticSingleFitter(object):
                      fitter_name is not None else self.__class__.__name__)
 
     def _get_const(self):
-        self._c = np.sum(self.data * self.ivar) / np.sum(self.ivar)
+        self._c = np.sum(self.data[self.col_names[0]] * self.data["ivar"]) /\
+                np.sum(self.data["ivar"])
 
     def _get_err(self):
-        self._c_err = np.sqrt(1. / np.sum(self.ivar))
+        self._c_err = np.sqrt(1. / np.sum(self.data["ivar"]))
 
     def fit(self):
         self._get_const()
         self._get_err()
 
-    def model(self, rpo, rlo):
+    def model(self, rpo, rlo, index=None):
         """Get the best fit model at the given separations
 
         :param rpo: The observed perpendicular separation
         :type rpo: scalar or array-like `float`
         :param rlo: The observed parallel separation
         :type rlo: scalar or array-like `float`
+        :param index: The index to add to the Series. Ignored for scalar
+        returns. If `None`, the index will be created from :param:`rpo` and
+        :param:`rlo`, with names ['RPO_BIN', 'RLO_BIN']. Default `None`
+        :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or
+        `None`, optional
         :return m: The value of the best fit model at the points. This will
         be 1D if :param:`rpo` and :param:`rlo` are both array-like, with both
         separations flattened
-        :rtype m: scalar or 1D ndarray `float`
+        :rtype m: scalar or :class:`pandas.Series` `float`
         """
-        rpo = get_array(rpo)
-        rlo = get_array(rlo)
-        if rpo.size != rlo.size:
-            rpo, rlo = np.meshgrid(rpo, rlo)
-            rpo = rpo.flatten()
-        m = np.full(rpo.size, self._c)
-        if rpo.size == 1:
-            m = m.item()
+        if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
+            m = self._c
+        else:
+            if index is None:
+                index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN",
+                    "RLO_BIN"])
+            m = pd.Series(self._c, index=index)
         return m
 
-    def model_with_errors(self, rpo, rlo):
+    def model_with_errors(self, rpo, rlo, index=None):
         """Get the median and 1 sigma error region of the model at the
         separations
 
@@ -669,26 +676,29 @@ class AnalyticSingleFitter(object):
         :type rpo: scalar or array-like `float`
         :param rlo: The observed parallel separation
         :type rlo: scalar or array-like `float`
+        :param index: The index to add to the Series. Ignored for single
+        separation. If `None`, the index will be created from :param:`rpo` and
+        :param:`rlo`, with names ['RPO_BIN', 'RLO_BIN']. Default `None`
+        :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or
         :return m: The (median - 1 sigma), median, and (median + 1 sigma)
         values of the model at the points. The 0th axis is the percentiles,
         and the first axis is the flattened points, if not both scalar
-        :rtype m: 1D or 2D ndarray `float`
+        :rtype m: :class:`pandas.Series` or :class:`pandas.DataFrame` `float`
         """
-        rpo = get_array(rpo)
-        rlo = get_array(rlo)
-        if rpo.size != rlo.size:
-            rpo, rlo = np.meshgrid(rpo, rlo)
-            rpo = rpo.flatten()
-        m = np.empty((3, rpo.size), dtype=float)
-        m[0, :] = self._c - self._c_err
-        m[1, :] = self._c
-        m[2, :] = self._c + self._c_err
-        m = m.squeeze()
+        if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
+            m = np.array([self._c - self._c_err, self._c, self._c + self._c_err])
+        else:
+            if index is None:
+                index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN",
+                    "RLO_BIN"])
+            m = pd.DataFrame({0.16: self._c - self._c_err, 0.5: self._c, 0.84:
+                self._c + self._c_err}, index=index)
         return m
 
-    def plot(self, rpo_label, rlo_label, ylabel, bins, bin_size,
-             exp, is_rpo=False, logx=False, logy=False, filename=None,
-             figsize=None, display=False, text_size=22, with_fit=False):
+    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_size,
+             par_bin_size, exp, is_rpo=False, logx=False, logy=False, 
+             filename=None, figsize=None, display=False, text_size=22, 
+             with_fit=False):
         """Plot the data (and optionally the best fit to the data) at a
         number of individual perpendicular or parallel separations.
 
@@ -702,9 +712,12 @@ class AnalyticSingleFitter(object):
         :type ylabel: `str`
         :param bins: The values of the fixed separation to use
         :type bins: scalar or array-like `float`
-        :param bin_size: The size of the bins for the specified fixed
-        separation, in the same units as the separation
-        :type bin_size: `float`
+        :param perp_bin_size: The size of the bins in the perpendicular
+        direction, in the same units as the perpendicular separations
+        :type perp_bin_size: `float`
+        :param par_bin_size: The size of the bins in the parallel direction, in
+        the same units as the parallel separations
+        :type par_bin_size: `float`
         :param exp: The expected constant for the limiting behavior. This is
         likely to be 0 for means and 1 for variances
         :type exp: scalar `float`
@@ -735,59 +748,121 @@ class AnalyticSingleFitter(object):
             figsize = plt.rcParams["figure.figsize"]
         plt.rcParams["font.size"] = text_size
 
-        axis_label = r"${{}} \pm {}$".format(np.around(0.5 * bin_size,
+        rpo = self.data.index.get_level_values(self.index_names[0])
+        rlo = self.data.index.get_level_values(self.index_names[1])
+
+        if is_rpo:
+            # x-axis will be RLO_BIN, bins are drawn from r=RPO_BIN
+            r_full = self.data.index.get_level_values(self.index_names[0])
+            x_full = self.data.index.get_level_values(self.index_names[1])
+            r_bin_size = perp_bin_size
+            x_bin_size = par_bin_size
+            rlabel = rpo_label
+            xlabel = rlo_label
+        else:
+            # x-axis will be RPO_BIN, bins are drawn from r=RLO_BIN
+            r_full = self.data.index.get_level_values(self.index_names[1])
+            x_full = self.data.index.get_level_values(self.index_names[0])
+            r_bin_size = par_bin_size
+            x_bin_size = perp_bin_size
+            rlabel = rlo_label
+            xlabel = rpo_label
+
+        axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * r_bin_size,
                                                        2 - ndigits(0.5 *
-                                                                   bin_size)))
+                                                                   r_bin_size)))
+
+        if with_fit and (self._c is None or self._c_err is None):
+            raise ValueError("with_fit=True, but no fit has been done")
+
         fig = plt.figure(figsize=figsize)
-        bins = np.atleast_1d(bins).flatten()
-        full_ax = fig.add_subplot(111, yticks=[], yticklabels=[], frameon=False)
-        grid = plt.GridSpec(bins.size, 1, hspace=0, left=0.2)
-        if logx:
-            full_ax.set_xscale("log")
-        if logy:
-            full_ax.set_yscale("log")
-        full_ax.set_ylabel(ylabel)
-        for i, r in enumerate(bins):
-            ax = fig.add_subplot(grid[i, :], sharex=full_ax)
-            ax.axhline(exp, c="k")
-            if is_rpo:
-                idx = np.isclose(self.rpo, r, atol=0.25 * bin_size)
-                x = self.rlo[idx]
-                labeli = r"{}{}".format(rpo_label, axis_label.format(
-                    np.around(r, 2 - ndigits(r))))
-                xlabel = rlo_label
-                if with_fit:
-                    if self._c is None or self._c_err is None:
-                        raise AttributeError("Cannot plot best fit without "
-                                             "fitting")
-                    m = self.model_with_errors(r, x)
-            else:
-                idx = np.isclose(self.rlo, r, atol=0.25 * bin_size)
-                x = self.rpo[idx]
-                labeli = r"{}{}".format(rlo_label, axis_label.format(
-                    np.around(r, 2 - ndigits(r))))
-                xlabel = rpo_label
-                if with_fit:
-                    if self._c is None or self._c_err is None:
-                        raise AttributeError("Cannot plot best fit without "
-                                             "fitting")
-                    m = self.model_with_errors(x, r)
-            d = self.data[idx]
-            s = self.sigma[idx]
-            line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+        if not hasattr(bins, "__len__"):
+            # In this case, we don't need any subplots
+            if logx:
+                plt.xscale("log")
+            if logy:
+                plt.yscale("log")
+            plt.axhline(exp, c="k")
+            labeli = r"{}{}".format(rlabel, axis_label.format(np.around(bins, 2
+                - ndigits(bins))))
+            idx = np.isclose(r_full, bins, atol=(0.25 * r_bin_size))
+            x = x_full[idx]
+            # Debugging: make sure x is unique up to bin size
+            x_bin_idx = int(np.trunc((x / x_bin_size) - 0.5))
+            un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
+                    return_counts=True)[1:]
+            self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
+                    "perpendicular" if is_rpo else "parallel", bins, 
+                    un_counts.max())
+            if un_counts.max() > 1:
+                self.logger.debug("Getting rid of extra points in x")
+                x = x[un_idx.sort()]
+                # Also need to get rid of the extra data points corresponding to
+                # them, so change idx
+                idx = idx[un_idx.sort()]
+            m = self.model_with_errors(x, bins)
+            d = self.data[self.col_names[0]][idx]
+            s = self.data["sigma"][idx]
+            line = plt.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                ax.fill_between(x, m[0], m[2], color="C2", alpha=0.4)
-                ax.plot(x, m[1], "C2-")
-            ax.legend([line], [labeli], loc="best", markerscale=0,
-                      frameon=False)
-            if ax.is_last_row():
-                ax.set_xlabel(xlabel)
-            else:
-                ax.set_xticklabels("")
+                plt.fill_between(x, m[0], m[2], color="C2", alpha=0.4)
+                plt.plot(x, m[1], "C2-")
+            plt.legend([line], [labeli], loc="best", markerscale=0,
+                    frameon=False)
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+        else:
+            bins = np.flatten(bins)
+            full_ax = fig.add_subplot(111)
+            full_ax.spines["top"].set_color("none")
+            full_ax.spines["bottom"].set_color("none")
+            full_ax.spines["left"].set_color("none")
+            full_ax.spines["right"].set_color("none")
+            full_ax.tick_params(labelcolor="w", top="off", bottom="off",
+                    left="off", right="off")
+            grid = gridspec.GridSpec(bins.size, 1, figure=fig, hspace=0, 
+                    left=0.2, bottom=0.2)
+            for i, r in enumerate(bins):
+                ax = fig.add_subplot(grid[i, :], sharex=full_ax)
+                if logx:
+                    ax.set_xscale("log")
+                if logy:
+                    ax.set_yscale("log")
+                ax.axhline(exp, c="k")
+                labeli = r"{}{}".format(rlabel, axis_label.format(np.around(r, 2
+                    - ndigits(r))))
+                idx = np.isclose(r_full, r, atol=(0.25 * r_bin_size))
+                x = x_full[idx]
+                # Debugging: make sure x is unique up to bin size
+                x_bin_idx = int(np.trunc((x / x_bin_size) - 0.5))
+                un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
+                        return_counts=True)[1:]
+                self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
+                        "perpendicular" if is_rpo else "parallel", r,
+                        un_counts.max())
+                if un_counts.max() > 1:
+                    self.logger.debug("Getting rid of extra points in x")
+                    x = x[un_idx.sort()]
+                    # Also need to get rid of the extra data points
+                    # corresponding to them, so change idx
+                    idx = idx[un_idx.sort()]
+                m = self.model_with_errors(x, r)
+                d = self.data[self.col_names[0]][idx]
+                s = self.data["sigma"][idx]
+                line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+                if with_fit:
+                    ax.fill_between(x, m[0], m[2], color="C2", alpha=0.4)
+                    ax.plot(x, m[1], "C2-")
+                ax.legend([line], [labeli], loc="best", markerscale=0,
+                        frameon=False)
+                if not ax.is_last_row():
+                    ax.set_xticklabels([])
+            full_ax.set_xlabel(xlabel)
+            full_ax.set_ylabel(ylabel)
         if filename is not None:
             fig.savefig(filename, bbox_inches="tight")
         if display:
-            fig.show()
+            plt.show()
         return fig
 
 
@@ -824,8 +899,9 @@ class ProbFitter(object):
         :param sigma_z: The fractional redshift error :math:`\frac{\sigma_z}{
         1 + z}` to assume for the data
         :type sigma_z: `float`
-        :param cosmo: The cosmology to use for calculating distance functions
-        :type cosmo: :class:`astropy.cosmology.FLRW` or subclass
+        :param cosmo: The cosmology for initializing the distance function
+        splines
+        :type cosmo: :class:`astropy.cosmology.FLRW` or similar
         :param min_counts: The minimum number of pairs needed in a bin to be
         included in the fit. Default 200
         :type min_counts: `int`, optional
@@ -837,7 +913,9 @@ class ProbFitter(object):
         should be in Mpc. Default `None` (for no limits, all separations read)
         :type limits: `dict` or `None`
         """
-        CatalogUtils.initialize(cosmo, 0.0, 2.0)
+        CatalogUtils.initialize(cosmo)
+        self._fitter_names = dict.fromkeys(["mean_x", "var_x", "mean_y",
+            "var_y", "mean_r"])
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.sigma_z = sigma_z
@@ -861,30 +939,19 @@ class ProbFitter(object):
         self.logger.debug("Generate statistics...[done]")
         self.logger.debug("Set up fitters...")
         self.logger.debug("mean_x")
-        self._fitters["mean_x"] = AnalyticSingleFitter(self.rpo, self.rlo,
-                                                       self.stats["m_x"],
-                                                       self.stats["var_m_x"],
-                                                       "mean_x")
+        self._fitters["mean_x"] = AnalyticSingleFitter(self.stats, ["RPO_BIN",
+            "RLO_BIN"], ["m_x", "var_m_x"], self._fitter_names["mean_x"])
         self.logger.debug("var_x")
-        self._fitters["var_x"] = AnalyticSingleFitter(self.rpo, self.rlo,
-                                                      self.stats["v_x"],
-                                                      self.stats["var_v_x"],
-                                                      "var_x")
+        self._fitters["var_x"] = AnalyticSingleFitter(self.stats, ["RPO_BIN",
+            "RLO_BIN"], ["v_x", "var_v_x"], self._fitter_names["var_x"])
         self.logger.debug("mean_y")
-        self._fitters["mean_y"] = SingleFitter(self.rpo, self.rlo,
-                                               self.stats["m_y"], self.stats[
-                                                   "var_m_y"], mean_y,
-                                               prior_mean_y, [r"$a$",
-                                                              r"$\alpha$",
-                                                              r"$\beta$",
-                                                              r"$s$"], "mean_y")
+        self._fitters["mean_y"] = SingleFitter(self.stats, ["RPO_BIN",
+            "RLO_BIN"], ["m_y", "var_m_y"], mean_y, prior_mean_y, [r"$a$",
+            r"$\alpha$", r"$\beta$", r"$s$"], self._fitter_names["mean_y"])
         self.logger.debug("var_y")
-        self._fitters["var_y"] = SingleFitter(self.rpo, self.rlo, self.stats[
-            "v_y"], self.stats["var_v_y"], var_y, prior_var_y, [r"$b$",
-                                                                r"$s_1$",
-                                                                r"$s_2$",
-                                                                r"$\rho$"],
-                                              "var_y")
+        self._fitters["var_y"] = SingleFitter(self.stats, ["RPO_BIN",
+            "RLO_BIN"], ["v_y", "var_v_y"], var_y, prior_var_y, [r"$b$",
+            r"$s_1$", r"$s_2$", r"$\rho$"], self._fitter_names["var_y"])
         self.logger.debug("mean_r")
         self._fitters["mean_r"] = None
         self.logger.debug("Set up fitters...[done]")
@@ -917,6 +984,9 @@ class ProbFitter(object):
     def _get_name(self, fitter_name):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
                      fitter_name is not None else self.__class__.__name__)
+        for name in self._fitter_names.keys():
+            self._fitter_names[name] = ("{}_{}".format(fitter_name, name) if
+                fitter_name is not None else name)
 
     def _perp_mean_scale(self, rpo, rlo, zbar):
         return rpo
@@ -973,7 +1043,7 @@ class ProbFitter(object):
         return grouped
 
     def _get_stats(self):
-        self.logger.debug("Group data")
+        self.logger.debug("Group data...")
         grouped = self._group_seps()
         if len(grouped) <= 2:  ## Is this good enough, or should I require more?
             raise TooFewGroupsError("Only {} groups with at least {} pairs. " \
@@ -981,6 +1051,7 @@ class ProbFitter(object):
                                     "of pairs, increasing the bin size, or " \
                                     "using a larger catalog".format(len(
                 grouped), self.min_counts))
+        self.logger.debug("Group data...[done]")
         self.stats = pd.DataFrame()
         self.logger.debug("Sample mean of DELTA_R_PERP")
         self.stats["m_x"] = grouped["DELTA_R_PERP"].agg(kstat, n=1)
@@ -1013,11 +1084,12 @@ class ProbFitter(object):
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        rpo = get_array(rpo)
-        rlo = get_array(rlo)
-        zbar = get_array(zbar)
+        if not hasattr(rpo, "index"):
+            index = pd.Index(rpo.size)
+        else:
+            index = rpo.index
         return (self._perp_mean_scale(rpo, rlo, zbar) * self.mean_x.model(
-            rpo, rlo) + rpo)
+            rpo, rlo, index=index) + rpo)
 
     def var_rpt(self, rpo, rlo, zbar):
         """
@@ -1033,11 +1105,12 @@ class ProbFitter(object):
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        rpo = get_array(rpo)
-        rlo = get_array(rlo)
-        zbar = get_array(zbar)
+        if not hasattr(rpo, "index"):
+            index = pd.Index(rpo.size)
+        else:
+            index = rpo.index
         return (self._perp_var_scale(rpo, rlo, zbar) ** 2 * self.var_x.model(
-            rpo, rlo))
+            rpo, rlo, index=index))
 
     def mean_rlt(self, rpo, rlo, zbar):
         """
@@ -1053,11 +1126,12 @@ class ProbFitter(object):
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        rpo = get_array(rpo)
-        rlo = get_array(rlo)
-        zbar = get_array(zbar)
+        if not hasattr(rpo, "index"):
+            index = pd.Index(rpo.size)
+        else:
+            index = rpo.index
         return (self._par_mean_scale(rpo, rlo, zbar) * self.mean_y.model(
-            rpo, rlo) + rlo)
+            rpo, rlo, index=index) + rlo)
 
     def var_rlt(self, rpo, rlo, zbar):
         """
@@ -1073,11 +1147,12 @@ class ProbFitter(object):
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        rpo = get_array(rpo)
-        rlo = get_array(rlo)
-        zbar = get_array(zbar)
+        if not hasattr(rpo, "index"):
+            index = pd.Index(rpo.size)
+        else:
+            index = rpo.index
         return (self._par_var_scale(rpo, rlo, zbar) ** 2 * self.var_y.model(
-            rpo, rlo))
+            rpo, rlo, index=index))
 
     def _add_corr_column(self):
         rpo = self.seps["R_PERP_O"]
@@ -1092,8 +1167,8 @@ class ProbFitter(object):
         self.logger.debug("Calculate var R_PAR_T")
         y_var = self.var_rlt(rpo, rlo, zbar)
         self.logger.debug("Calculate correlations")
-        self.seps["r"] = corr_coef(self.seps["R_PERP_T"], self.seps[
-            "R_PAR_T"], x_mean, y_mean, x_var, y_var)
+        self.seps["r"] = corr_coeff(self.seps["R_PERP_T"], self.seps["R_PAR_T"],
+                x_mean, y_mean, x_var, y_var)
         self._has_r = True
 
     def _add_corr_stat(self):
@@ -1114,7 +1189,6 @@ class ProbFitter(object):
             self.logger.debug("Generate correlation statistics...")
             self._add_corr_stat()
             self.logger.debug("Generate correlation statistics...[done]")
-        self._fitters["mean_r"] = SingleFitter(self.rpo, self.rlo,
-                                               self.stats["m_r"], self.stats[
-                                                   "var_m_r"],
-                                               fitter_name="mean_r")
+        self._fitters["mean_r"] = SingleFitter(self.stats, ["RPO_BIN",
+            "RLO_BIN"], ["m_r", "var_m_r"],
+            fitter_name=self._fitter_names["mean_r"])

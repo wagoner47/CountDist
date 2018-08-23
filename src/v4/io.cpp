@@ -5,10 +5,14 @@
 #include <sstream>
 #include <vector>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <sqlite3.h>
+#include <typeinfo>
 #include "io.h"
 #include "calc_distances.h"
+#include "read_config.h"
+#include "type.h"
 using namespace std;
 
 vector<Pos> readCatalog(string fname, bool use_true, bool use_obs, bool has_true, bool has_obs) {
@@ -92,45 +96,38 @@ void drop_table(sqlite3 *db, string table_name) {
     }
 }
 
-void create_table(sqlite3 *db, string table_name, size_t ncols, string col_names[]) {
+template <size_t ncols>
+void create_table(sqlite3 *db, string table_name, array<string, ncols> col_names) {
     string create_stmt = "CREATE TABLE " + table_name + "(";
-    string col_stmt;
-    for (size_t i = 0; i < ncols - 1; i++) {
-        col_stmt = col_names[i] + " NUM NOT NULL,";
-        create_stmt += col_stmt;
+    for (const auto& col_name : col_names) {
+	create_stmt += col_name + " NUM NOT NULL" + ((&col_name == &col_names.back()) ? ");" : ",");
     }
-    col_stmt = col_names[ncols - 1] + " NUM NOT NULL);";
-    create_stmt += col_stmt;
-    int create_status = sqlite3_exec(db, create_stmt.c_str(), 0, 0, 0);
-    if (create_status != SQLITE_OK) {
-        cerr << "Cannot create table " << table_name << " in database" << endl;
-        sqlite3_close(db);
-        exit(8);
+    if (sqlite3_exec(db, create_stmt.c_str(), 0, 0, 0) != SQLITE_OK) {
+	cerr << "Cannot create table " << table_name << "in database" << endl;
+	sqlite3_close(db);
+	exit(8);
     }
 }
 
 void setup_db(sqlite3 *db, string table_name, bool use_true, bool use_obs) {
-    size_t ncols;
-    string *col_names;
-    vector<string> col_vec;
-    if (use_true && use_obs) {
-        ncols = 5;
-        col_names = new string[ncols]{"R_PERP_T", "R_PAR_T", "R_PERP_O", "R_PAR_O", "AVE_OBS_LOS"};
-    }
-    else if (use_true || use_obs) {
-        ncols = 2;
-        col_names = new string[ncols]{"R_PERP", "R_PAR"};
+    drop_table(db, table_name);
+    if (!(use_true || use_obs)) {
+	cerr << "Must use at least true or observed separations, or both" << endl;
+	sqlite3_close(db);
     }
     else {
-        cerr << "Must use at least true or observed separations, or both" << endl;
-        sqlite3_close(db);
-        exit(2);
+        if (use_true && use_obs) {
+	    array<string, 5> col_names = {"R_PERP_T", "R_PAR_T", "R_PERP_O", "R_PAR_O", "AVE_OBS_LOS"};
+	    create_table(db, table_name, col_names);
+	}
+	else {
+	    array<string, 2> col_names = {"R_PERP", "R_PAR"};
+	    create_table(db, table_name, col_names);
+	}
     }
-    drop_table(db, table_name);
-    create_table(db, table_name, ncols, col_names);
 }
 
-void setup_stmt(sqlite3 *db, sqlite3_stmt *stmt, string table_name, bool use_true, bool use_obs) {
+void setup_stmt(sqlite3 *db, sqlite3_stmt *&stmt, string table_name, bool use_true, bool use_obs) {
     string sql_stmt = "INSERT INTO " + table_name + " VALUES (";
     if (use_true && use_obs) {
         sql_stmt += "?1, ?2, ?3, ?4, ?5)";
@@ -149,6 +146,8 @@ void setup_stmt(sqlite3 *db, sqlite3_stmt *stmt, string table_name, bool use_tru
         sqlite3_close(db);
         exit(9);
     }
+    // Debug: check statement
+    // cout << "SQL statement in setup_stmt: " << sqlite3_sql(stmt) << endl;
 }
 
 void begin_transaction(sqlite3 *db) {
@@ -169,12 +168,36 @@ void end_transaction(sqlite3 *db) {
     }
 }
 
-void start_sqlite(sqlite3*& db, sqlite3_stmt *stmt, string db_file, string table_name, bool use_true, bool use_obs, bool use_omp) {
+void start_sqlite(sqlite3*& db, sqlite3_stmt *&stmt, string db_file, string table_name, bool use_true, bool use_obs, bool use_omp) {
     setup_sqlite(use_omp);
     open_db(db, db_file);
     setup_db(db, table_name, use_true, use_obs);
     setup_stmt(db, stmt, table_name, use_true, use_obs);
+    // Debug: check statement
+    // cout << "SQL statement in start_sqlite: " << sqlite3_sql(stmt) << endl;
     begin_transaction(db);
+}
+
+int count_callback(void *row_count, int argc, char **argv, char **colname) {
+    size_t *c = (size_t *)row_count;
+    *c = atoi(argv[0]);
+    return 0;
+}
+
+void check_rows_written(sqlite3 *db, string table_name, size_t num_rows_expected) {
+    string query = "SELECT COUNT(*) FROM " + table_name;
+    size_t num_rows_retrieved = 0;
+    int count_status = sqlite3_exec(db, query.c_str(), count_callback, &num_rows_retrieved, 0);
+    if (count_status != SQLITE_OK) {
+	cerr << "Cannot get count from table " << table_name << endl;
+	sqlite3_close(db);
+	exit(13);
+    }
+    if (num_rows_retrieved != num_rows_expected) {
+	cerr << "Wrong number of rows in table: expected " << num_rows_expected << ", found " << num_rows_retrieved << endl;
+	sqlite3_close(db);
+	exit(14);
+    }
 }
 
 void write_and_restart(sqlite3 *db) {
@@ -182,43 +205,80 @@ void write_and_restart(sqlite3 *db) {
     begin_transaction(db);
 }
 
-void step_stmt(sqlite3 *db, sqlite3_stmt *stmt, tuple<double, double> rp, tuple<double, double> rl, double ave_dist, bool use_true, bool use_obs) {
+void write_and_restart_check(sqlite3 *db, string table_name, size_t num_rows_expected) {
+	end_transaction(db);
+	check_rows_written(db, table_name, num_rows_expected);
+	begin_transaction(db);
+}
+
+void bind_and_check(sqlite3 *db, sqlite3_stmt *&stmt, int position, double value) {
+    // Debug: get type of stmt
+    // cout << "Type for stmt: " << type(stmt) << endl;
+    // Debug: get sql statment and expanded statment
+    // cout << "SQL statement in bind_and_check: " << sqlite3_sql(stmt) << endl;
+    int bind_status = sqlite3_bind_double(stmt, position, value);
+    if (bind_status != SQLITE_OK) {
+	cerr << "Could not bind value " << value << " to position " << position << " to insert statment" << endl;
+	sqlite3_close(db);
+	exit(15);
+    }
+}
+
+void step_stmt(sqlite3 *db, sqlite3_stmt *&stmt, tuple<double, double> rp, tuple<double, double> rl, double ave_dist, bool use_true, bool use_obs) {
     if (use_true && use_obs) {
-        sqlite3_bind_double(stmt, 1, get<0>(rp));
-        sqlite3_bind_double(stmt, 3, get<1>(rp));
-        sqlite3_bind_double(stmt, 2, get<0>(rl));
-        sqlite3_bind_double(stmt, 4, get<1>(rl));
-        sqlite3_bind_double(stmt, 5, ave_dist);
+	bind_and_check(db, stmt, 1, get<0>(rp));
+	bind_and_check(db, stmt, 3, get<1>(rp));
+	bind_and_check(db, stmt, 2, get<0>(rl));
+	bind_and_check(db, stmt, 4, get<1>(rl));
+	bind_and_check(db, stmt, 5, ave_dist);
     }
     else if (use_true) {
-        sqlite3_bind_double(stmt, 1, get<0>(rp));
-        sqlite3_bind_double(stmt, 2, get<0>(rl));
+	bind_and_check(db, stmt, 1, get<0>(rp));
+	bind_and_check(db, stmt, 2, get<0>(rl));
     }
     else if (use_obs) {
-        sqlite3_bind_double(stmt, 1, get<1>(rp));
-        sqlite3_bind_double(stmt, 2, get<1>(rl));
+	bind_and_check(db, stmt, 1, get<1>(rp));
+	bind_and_check(db, stmt, 2, get<1>(rl));
     }
     else {
         cerr << "Must use at least true or observed separations, or both" << endl;
         sqlite3_close(db);
         exit(2);
     }
-    sqlite3_step(stmt);
-    sqlite3_reset(stmt);
+    int step_status = sqlite3_step(stmt);
+    if (step_status != SQLITE_OK && step_status != SQLITE_DONE && step_status != SQLITE_ROW) {
+	cerr << "Error stepping sqlite statement" << endl;
+	cerr << "SQLite error code: " << sqlite3_errcode(db) << endl;
+	cerr << "SQLite extended error code: " << sqlite3_extended_errcode(db) << endl;
+	cerr << "SQLite error message: " << sqlite3_errmsg(db) << endl;
+	sqlite3_close(db);
+	exit(16);
+    }
+    if (sqlite3_reset(stmt) != SQLITE_OK) {
+	cerr << "Error resetting sqlite statement" << endl;
+	sqlite3_close(db);
+	exit(17);
+    }
 }
 
+void end_all(sqlite3 *db) {
+    end_transaction(db);
+    sqlite3_close(db);
+}
+
+void end_and_check(sqlite3 *db, string table_name, size_t num_rows_expected) {
+    end_transaction(db);
+    check_rows_written(db, table_name, num_rows_expected);
+    sqlite3_close(db);
+}
 
 void write_meta_data(string db_file, string meta_name, double Z_EFF, double SIGMA_R_EFF, double SIGMA_Z) {
     sqlite3 *db;
-    sqlite3_stmt *stmt;
-    size_t ncols = 3;
-    string col_names[] = {"Z_EFF", "SIGMA_R_EFF", "SIGMA_Z"};
+    array<string, 3> col_names = {"Z_EFF", "SIGMA_R_EFF", "SIGMA_Z"};
     open_db(db, db_file);
     drop_table(db, meta_name);
-    create_table(db, meta_name, ncols, col_names);
+    create_table(db, meta_name, col_names);
     string insert_stmt = "INSERT INTO " + meta_name + " VALUES (" + to_string(Z_EFF) + ", " + to_string(SIGMA_R_EFF) + ", " + to_string(SIGMA_Z) + ");";
-    sqlite3_prepare(db, insert_stmt.c_str(), -1, &stmt, 0);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+    sqlite3_exec(db, insert_stmt.c_str(), 0, 0, 0);
     sqlite3_close(db);
 }

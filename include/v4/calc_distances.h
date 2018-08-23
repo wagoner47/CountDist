@@ -22,7 +22,7 @@ constexpr auto USE_OMP = (OMP_NUM_THREADS != 0);
 #endif
 
 namespace sepconstants {
-	const size_t MAX_ROWS = 1000;
+	const size_t MAX_ROWS = 10000;
 }
 
 constexpr auto RAD2DEG = 180.0 / M_PI;

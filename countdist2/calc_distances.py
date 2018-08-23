@@ -3,6 +3,28 @@ from astropy.table import QTable
 import subprocess
 import os, sys
 from .utils import MyConfigObj, init_logger
+import logging
+
+
+def pylevel_to_cpplevel(logger):
+    """This function translates the python logging level filter from the logger
+    object to the equivalent level in my C++ code, which is numbered in reverse
+    order. It is more a convenience than anything, and should probably not be
+    called by the user.
+
+    Parameters
+    ----------
+    :param logger: A Logger instance with a level set.
+    :type logger: :class:`logging.Logger`
+
+    Returns
+    -------
+    :return: The integer for the corresponding level in the C++ code.
+    :rtype: `int`
+    """
+    cpplevel_mapper = {logging.CRITICAL: 10, logging.ERROR: 20, logging.WARNING:
+            30, logging.INFO: 40, logging.DEBUG: 50}
+    return cpplevel_mapper[logger.getEffectiveLevel()]
 
 
 def run_calc(params_file):
@@ -32,10 +54,10 @@ def run_calc(params_file):
         pass
     temp_params_fname = "{}_ascii{}".format(*os.path.splitext(params_file))
     params_out = MyConfigObj(temp_params_fname)
-    params_out["rp_min"] = params_in.as_float("rp_min")
-    params_out["rp_max"] = params_in.as_float("rp_max")
-    params_out["rl_min"] = params_in.as_float("rl_min")
-    params_out["rl_max"] = params_in.as_float("rl_max")
+    params_out["rp_min"] = params_in["rp_min"]
+    params_out["rp_max"] = params_in["rp_max"]
+    params_out["rl_min"] = params_in["rl_min"]
+    params_out["rl_max"] = params_in["rl_max"]
     params_out["use_true"] = params_in.as_bool("use_true")
     params_out["use_obs"] = params_in.as_bool("use_obs")
     params_out["has_true1"] = params_in.as_bool("has_true1")
@@ -91,7 +113,8 @@ def run_calc(params_file):
 
     logger.info("Running executable")
     sys.stdout.flush()
-    command = "run {}".format(temp_params_fname)
+    command = "run {} -l {}".format(temp_params_fname,
+            pylevel_to_cpplevel(logger))
     subprocess.check_call(command, shell=True)
     os.remove(temp_params_fname)
     os.remove(params_out["ifname1"])
