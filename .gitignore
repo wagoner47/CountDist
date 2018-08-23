@@ -1,4 +1,5 @@
 build/
+extras.txt
 .cache/
 CountDist2.egg-info/
 .coverage
