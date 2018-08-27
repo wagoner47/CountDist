@@ -530,8 +530,6 @@ class SingleFitter(object):
             x_bin_size = par_bin_size
             rlabel = rpo_label
             xlabel = rlo_label
-            # For consistency when levels may need to be swapped
-            data = self.data.copy()
         else:
             # x-axis will be RPO_BIN, bins are drawn from r=RLO_BIN
             r_full = self.data.index.get_level_values(self.index_names[1])
@@ -540,8 +538,6 @@ class SingleFitter(object):
             x_bin_size = perp_bin_size
             rlabel = rlo_label
             xlabel = rpo_label
-            # Also need to swap index levels
-            data = self.data.swaplevel(0, 1, axis=0)
 
         axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * r_bin_size,
                                                        2 - ndigits(0.5 *
@@ -551,60 +547,81 @@ class SingleFitter(object):
             raise ValueError("with_fit=True, but no fit has been done")
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
-            # Case: single bin, looping isn't needed
-            
-        
-        bins = np.atleast_1d(bins).flatten()
-        full_ax = fig.add_subplot(111, yticks=[], yticklabels=[],
-                frame_on=False, position=[0.1, 0.1, 0, 0])
-        grid = plt.GridSpec(bins.size, 1, hspace=0, left=0.2, bottom=0.2)
-        rpo = self.data.index.get_level_values(self.index_names[0])
-        rlo = self.data.index.get_level_values(self.index_names[1])
-        if logx:
-            full_ax.set_xscale("log")
-        if logy:
-            full_ax.set_yscale("log")
-        full_ax.xaxis.set_ticks([])
-        full_ax.xaxis.set_ticklabels([])
-        full_ax.yaxis.set_ticks([])
-        full_ax.yaxis.set_ticklabels([])
-        for i, r in enumerate(bins):
-            ax = fig.add_subplot(grid[i, :], sharex=full_ax)
-            ax.axhline(exp, c="k")
-            if is_rpo:
-                idx = np.isclose(rpo, r, atol=0.25 * bin_size)
-                x = rlo[idx]
-                labeli = r"{}{}".format(rpo_label, axis_label.format(
-                    np.around(r, 2 - ndigits(r))))
-                xlabel = rlo_label
-                if with_fit:
-                    if self._best_fit_params is None:
-                        raise AttributeError("Cannot plot best fit without "
-                                             "fitting")
-                    m = self.model_with_errors(r, x)
-            else:
-                idx = np.isclose(rlo, r, atol=0.25 * bin_size)
-                x = rpo[idx]
-                labeli = r"{}{}".format(rlo_label, axis_label.format(
-                    np.around(r, 2 - ndigits(r))))
-                xlabel = rpo_label
-                if with_fit:
-                    if self._best_fit_params is None:
-                        raise AttributeError("Cannot plot best fit without "
-                                             "fitting")
-                    m = self.model_with_errors(x, r)
-            d = self.data[self.col_names[0]][idx]
-            s = self.data["sigma"][idx]
-            line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+            # Case: single bin, don't need any subplots
+            if logx:
+                plt.xscale("log")
+            if logy:
+                plt.yscale("log")
+            plt.axhline(exp, c="k")
+            labeli = r"{}{}".format(rlabel, axis_label.format(np.around(bins, 2 
+                - ndigits(bins))))
+            idx = np.isclose(r_full, bins, atol=(0.25 * r_bin_size))
+            x = x_full[idx]
+            # Debugging: make sure x is unique (up to bin size)
+            x_bin_idx = np.trunc(x / x_bin_size).astype(int)
+            un_idx, un_counts = np.unique(x_bin_idx, return_index=True, 
+                    return_counts=True)[1:]
+            self.logger.debug("Maximum unique counts in x for %s bin %f = %d", 
+                    "perpendicular" if is_rpo else "parallel", bins, 
+                    un_counts.max())
+            if un_counts.max() > 1:
+                self.logger.debug("Getting rid of extra points in x")
+                idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
+                x = x_full[idx]
+            d = data[self.col_names[0]][idx].copy()
+            s = data["sigma"][idx].copy()
+            line = plt.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                ax.fill_between(x, m[0], m[2], color="C2", alpha=0.4)
-                ax.plot(x, m[1], "C2-")
-            ax.legend([line], [labeli], loc="best", markerscale=0,
-                      frameon=False)
-            if not ax.is_last_row():
-                ax.set_xticklabels([])
-        full_ax.set_xlabel(xlabel)
-        full_ax.set_ylabel(ylabel)
+                m = self.model_with_errors(x, bins, index=pd.Index(x))
+                plt.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
+                plt.plot(x, m[0.5], "C2-")
+            plt.legend([line], [labeli], loc="best", markerscale=0, 
+                    frameon=False)
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+        else:
+            bins = np.reshape(bins, -1)
+            grid = gridspec.GridSpec(bins.size, 1, hspace=0)
+            full_ax = fig.add_subplot(grid[:,:])
+            for loc in ["top", "bottom", "left", "right"]:
+                full_ax.spines[loc].set_color("none")
+            full_ax.tick_params(labelcolor="w", top="off", bottom="off", 
+                    left="off", right="off", which="both")
+            for i, r in enumerate(bins):
+                ax = fig.add_subplot(grid[i,:], sharex=full_ax)
+                if logx:
+                    ax.set_xscale("log")
+                if logy:
+                    ax.set_yscale("log")
+                ax.axhline(exp, c="k")
+                labeli = r"{}{}".format(rlabel, axis_label.format(np.around(r,
+                    2 - ndigits(r))))
+                idx = np.isclose(r_full, r, atol=(0.25 * r_bin_size))
+                x = x_full[idx]
+                # Debugging: make sure x is unique (up to bin size)
+                x_bin_idx = np.trunc(x / x_bin_size).astype(int)
+                un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
+                        return_counts=True)[1:]
+                self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
+                        "perpendicular" if is_rpo else "parallel", r, 
+                        un_counts.max())
+                if un_counts.max() > 1:
+                    self.logger.debug("Getting rid of extra points in x")
+                    idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
+                    x = x_full[idx]
+                d = self.data[self.col_names[0]][idx].copy()
+                s = self.data["sigma"][idx].copy()
+                line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+                if with_fit:
+                    m = self.model_with_errors(x, r, index=pd.Index(x))
+                    ax.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
+                    ax.plot(x, m[0.5], "C2-")
+                ax.legend([line], [labeli], loc="best", markerscale=0,
+                        frameon=False)
+                if not ax.is_last_row():
+                    ax.tick_params(axis="x", which="both", labelcolor="w")
+            full_ax.set_xlabel(xlabel)
+            full_ax.set_ylabel(ylabel)
         if filename is not None:
             fig.savefig(filename, bbox_inches="tight")
         if display:
