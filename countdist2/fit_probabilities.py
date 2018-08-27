@@ -813,8 +813,6 @@ class AnalyticSingleFitter(object):
             x_bin_size = par_bin_size
             rlabel = rpo_label
             xlabel = rlo_label
-            # For consistency when levels may need to be swapped
-            data = self.data.copy()
         else:
             # x-axis will be RPO_BIN, bins are drawn from r=RLO_BIN
             r_full = self.data.index.get_level_values(self.index_names[1])
@@ -823,8 +821,6 @@ class AnalyticSingleFitter(object):
             x_bin_size = perp_bin_size
             rlabel = rlo_label
             xlabel = rpo_label
-            # Also need to swap index levels
-            data = self.data.swaplevel(0, 1, axis=0)
 
         axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * r_bin_size,
                                                        2 - ndigits(0.5 *
@@ -854,13 +850,13 @@ class AnalyticSingleFitter(object):
                     un_counts.max())
             if un_counts.max() > 1:
                 self.logger.debug("Getting rid of extra points in x")
-                idx[~un_idx] = False
-                x = x[un_idx.sort()]
-            m = self.model_with_errors(x, bins, index=pd.Index(x))
+                idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
+                x = x_full[idx]
             d = data[self.col_names[0]].iloc[idx].copy()
             s = data["sigma"].iloc[idx].copy()
             line = plt.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
             if with_fit:
+                m = self.model_with_errors(x, bins, index=pd.Index(x))
                 plt.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
                 plt.plot(x, m[0.5], "C2-")
             plt.legend([line], [labeli], loc="best", markerscale=0,
@@ -869,14 +865,12 @@ class AnalyticSingleFitter(object):
             plt.ylabel(ylabel)
         else:
             bins = np.reshape(bins, -1)
-            full_ax = fig.add_subplot(111)
-            full_ax.spines["top"].set_color("none")
-            full_ax.spines["bottom"].set_color("none")
-            full_ax.spines["left"].set_color("none")
-            full_ax.spines["right"].set_color("none")
+            grid = gridspec.GridSpec(bins.size, 1, hspace=0)
+            full_ax = fig.add_subplot(grid[:,:])
+            for loc in ["top", "bottom", "left", "right"]:
+                full_ax.spines[loc].set_color("none")
             full_ax.tick_params(labelcolor="w", top="off", bottom="off",
                     left="off", right="off", which="both")
-            grid = gridspec.GridSpec(bins.size, 1, hspace=0, left=0.2)
             for i, r in enumerate(bins):
                 ax = fig.add_subplot(grid[i, :], sharex=full_ax)
                 if logx:
@@ -889,9 +883,7 @@ class AnalyticSingleFitter(object):
                 idx = np.isclose(r_full, r, atol=(0.25 * r_bin_size))
                 x = x_full[idx]
                 # Debugging: make sure x is unique up to bin size
-                self.logger.debug("x = \n{}".format(x))
                 x_bin_idx = np.trunc(x / x_bin_size).astype(int)
-                self.logger.debug("x_bin_idx = \n{}".format(x_bin_idx))
                 un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
                         return_counts=True)[1:]
                 self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
@@ -899,13 +891,13 @@ class AnalyticSingleFitter(object):
                         un_counts.max())
                 if un_counts.max() > 1:
                     self.logger.debug("Getting rid of extra points in x")
-                    idx[~un_idx] = False
-                    x = x[un_idx.sort()]
-                m = self.model_with_errors(x, r, index=pd.Index(x))
+                    idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
+                    x = x_full[idx]
                 d = data[self.col_names[0]].iloc[idx].copy()
                 s = data["sigma"].iloc[idx].copy()
                 line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
                 if with_fit:
+                    m = self.model_with_errors(x, r, index=pd.Index(x))
                     ax.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
                     ax.plot(x, m[0.5], "C2-")
                 ax.legend([line], [labeli], loc="best", markerscale=0,
