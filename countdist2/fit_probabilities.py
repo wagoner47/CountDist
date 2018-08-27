@@ -469,9 +469,10 @@ class SingleFitter(object):
                     index=pd.Index([0.16, 0.5, 0.84]))
         return m
 
-    def plot(self, rpo_label, rlo_label, ylabel, bins, bin_size,
-             exp, is_rpo=False, logx=False, logy=False, filename=None,
-             figsize=None, display=False, text_size=22, with_fit=False):
+    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_size, 
+             par_bin_size, exp, is_rpo=False, logx=False, logy=False, 
+             filename=None, figsize=None, display=False, text_size=22, 
+             with_fit=False):
         """Plot the data (and optionally the best fit to the data) at a
         number of individual perpendicular or parallel separations.
 
@@ -485,9 +486,12 @@ class SingleFitter(object):
         :type ylabel: `str`
         :param bins: The values of the fixed separation to use
         :type bins: scalar or array-like `float`
-        :param bin_size: The size of the bins for the specified fixed
-        separation, in the same units as the separation
-        :type bin_size: `float`
+        :param perp_bin_size: The size of the bins in the perpendicular
+        direction, in the same units as the perpendicular separations
+        :type perp_bin_size: `float`
+        :param par_bin_size: The size of the bins in the parallel direction, in
+        the same units as the parallel separations
+        :type par_bin_size: `float`
         :param exp: The expected constant for the limiting behavior. This is
         likely to be 0 for means and 1 for variances
         :type exp: scalar `float`
@@ -518,10 +522,38 @@ class SingleFitter(object):
             figsize = plt.rcParams["figure.figsize"]
         plt.rcParams["font.size"] = text_size
 
-        axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * bin_size,
+        if is_rpo:
+            # x-axis will be RLO_BIN, bins are drawn from r=RPO_BIN
+            r_full = self.data.index.get_level_values(self.index_names[0])
+            x_full = self.data.index.get_level_values(self.index_names[1])
+            r_bin_size = perp_bin_size
+            x_bin_size = par_bin_size
+            rlabel = rpo_label
+            xlabel = rlo_label
+            # For consistency when levels may need to be swapped
+            data = self.data.copy()
+        else:
+            # x-axis will be RPO_BIN, bins are drawn from r=RLO_BIN
+            r_full = self.data.index.get_level_values(self.index_names[1])
+            x_full = self.data.index.get_level_values(self.index_names[0])
+            r_bin_size = par_bin_size
+            x_bin_size = perp_bin_size
+            rlabel = rlo_label
+            xlabel = rpo_label
+            # Also need to swap index levels
+            data = self.data.swaplevel(0, 1, axis=0)
+
+        axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * r_bin_size,
                                                        2 - ndigits(0.5 *
-                                                                   bin_size)))
+                                                                   r_bin_size)))
+        
+        if with_fit and self._best_fit_params is None:
+            raise ValueError("with_fit=True, but no fit has been done")
         fig = plt.figure(figsize=figsize)
+        if not hasattr(bins, "__len__"):
+            # Case: single bin, looping isn't needed
+            
+        
         bins = np.atleast_1d(bins).flatten()
         full_ax = fig.add_subplot(111, yticks=[], yticklabels=[],
                 frame_on=False, position=[0.1, 0.1, 0, 0])
@@ -689,8 +721,13 @@ class AnalyticSingleFitter(object):
             m = np.array([self._c - self._c_err, self._c, self._c + self._c_err])
         else:
             if index is None:
-                index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN",
-                    "RLO_BIN"])
+                if not hasattr(rpo, "__len__"):
+                    index = pd.Index(rlo)
+                elif not hasattr(rlo, "__len__"):
+                    index = pd.Index(rpo)
+                else:
+                    index = pd.MultiIndex.from_arrays([rpo, rlo], 
+                            names=["RPO_BIN", "RLO_BIN"])
             m = pd.DataFrame({0.16: self._c - self._c_err, 0.5: self._c, 0.84:
                 self._c + self._c_err}, index=index)
         return m
@@ -759,6 +796,8 @@ class AnalyticSingleFitter(object):
             x_bin_size = par_bin_size
             rlabel = rpo_label
             xlabel = rlo_label
+            # For consistency when levels may need to be swapped
+            data = self.data.copy()
         else:
             # x-axis will be RPO_BIN, bins are drawn from r=RLO_BIN
             r_full = self.data.index.get_level_values(self.index_names[1])
@@ -767,6 +806,8 @@ class AnalyticSingleFitter(object):
             x_bin_size = perp_bin_size
             rlabel = rlo_label
             xlabel = rpo_label
+            # Also need to swap index levels
+            data = self.data.swaplevel(0, 1, axis=0)
 
         axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * r_bin_size,
                                                        2 - ndigits(0.5 *
@@ -788,7 +829,7 @@ class AnalyticSingleFitter(object):
             idx = np.isclose(r_full, bins, atol=(0.25 * r_bin_size))
             x = x_full[idx]
             # Debugging: make sure x is unique up to bin size
-            x_bin_idx = int(np.trunc((x / x_bin_size) - 0.5))
+            x_bin_idx = np.trunc(x / x_bin_size).astype(int)
             un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
                     return_counts=True)[1:]
             self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
@@ -796,32 +837,29 @@ class AnalyticSingleFitter(object):
                     un_counts.max())
             if un_counts.max() > 1:
                 self.logger.debug("Getting rid of extra points in x")
+                idx[~un_idx] = False
                 x = x[un_idx.sort()]
-                # Also need to get rid of the extra data points corresponding to
-                # them, so change idx
-                idx = idx[un_idx.sort()]
-            m = self.model_with_errors(x, bins)
-            d = self.data[self.col_names[0]][idx]
-            s = self.data["sigma"][idx]
+            m = self.model_with_errors(x, bins, index=pd.Index(x))
+            d = data[self.col_names[0]].iloc[idx].copy()
+            s = data["sigma"].iloc[idx].copy()
             line = plt.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                plt.fill_between(x, m[0], m[2], color="C2", alpha=0.4)
-                plt.plot(x, m[1], "C2-")
+                plt.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
+                plt.plot(x, m[0.5], "C2-")
             plt.legend([line], [labeli], loc="best", markerscale=0,
                     frameon=False)
             plt.xlabel(xlabel)
             plt.ylabel(ylabel)
         else:
-            bins = np.flatten(bins)
+            bins = np.reshape(bins, -1)
             full_ax = fig.add_subplot(111)
             full_ax.spines["top"].set_color("none")
             full_ax.spines["bottom"].set_color("none")
             full_ax.spines["left"].set_color("none")
             full_ax.spines["right"].set_color("none")
             full_ax.tick_params(labelcolor="w", top="off", bottom="off",
-                    left="off", right="off")
-            grid = gridspec.GridSpec(bins.size, 1, figure=fig, hspace=0, 
-                    left=0.2, bottom=0.2)
+                    left="off", right="off", which="both")
+            grid = gridspec.GridSpec(bins.size, 1, hspace=0, left=0.2)
             for i, r in enumerate(bins):
                 ax = fig.add_subplot(grid[i, :], sharex=full_ax)
                 if logx:
@@ -834,7 +872,9 @@ class AnalyticSingleFitter(object):
                 idx = np.isclose(r_full, r, atol=(0.25 * r_bin_size))
                 x = x_full[idx]
                 # Debugging: make sure x is unique up to bin size
-                x_bin_idx = int(np.trunc((x / x_bin_size) - 0.5))
+                self.logger.debug("x = \n{}".format(x))
+                x_bin_idx = np.trunc(x / x_bin_size).astype(int)
+                self.logger.debug("x_bin_idx = \n{}".format(x_bin_idx))
                 un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
                         return_counts=True)[1:]
                 self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
@@ -842,21 +882,19 @@ class AnalyticSingleFitter(object):
                         un_counts.max())
                 if un_counts.max() > 1:
                     self.logger.debug("Getting rid of extra points in x")
+                    idx[~un_idx] = False
                     x = x[un_idx.sort()]
-                    # Also need to get rid of the extra data points
-                    # corresponding to them, so change idx
-                    idx = idx[un_idx.sort()]
-                m = self.model_with_errors(x, r)
-                d = self.data[self.col_names[0]][idx]
-                s = self.data["sigma"][idx]
+                m = self.model_with_errors(x, r, index=pd.Index(x))
+                d = data[self.col_names[0]].iloc[idx].copy()
+                s = data["sigma"].iloc[idx].copy()
                 line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
                 if with_fit:
-                    ax.fill_between(x, m[0], m[2], color="C2", alpha=0.4)
-                    ax.plot(x, m[1], "C2-")
+                    ax.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
+                    ax.plot(x, m[0.5], "C2-")
                 ax.legend([line], [labeli], loc="best", markerscale=0,
                         frameon=False)
                 if not ax.is_last_row():
-                    ax.set_xticklabels([])
+                    ax.tick_params(axis="x", which="both", labelcolor="w")
             full_ax.set_xlabel(xlabel)
             full_ax.set_ylabel(ylabel)
         if filename is not None:
