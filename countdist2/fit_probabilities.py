@@ -12,7 +12,7 @@ import numpy as np
 import math
 import pandas as pd
 import pickle
-import os
+import os, re
 
 plt.rcParams["figure.facecolor"] = "white"
 
@@ -88,11 +88,11 @@ def mean_y(rpo, rlo, a, alpha, beta, s, index=None):
     if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
         f = a * (rpo**alpha) * (rlo**beta) * math.exp(-0.5 * rlo**2 / s)
     else:
-        if index is None:
-            index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN", 
-                "RLO_BIN"])
-        f = pd.Series(a * (rpo ** alpha) * (rlo ** beta) * \
-                np.exp(-0.5 * rlo**2 / s), index=index)
+        if index is not None:
+            f = pd.Series(a * (rpo**alpha) * (rlo**beta) * \
+                          np.exp(-0.5 * rlo**2 / s), index=index)
+        else:
+            f = a * (rpo**alpha) * (rlo**beta) * np.exp(-0.5 * rlo**2 / s)
     return f
 
 
@@ -190,6 +190,19 @@ def _check_pickleable(attrs):
     return True
 
 
+def _wrap_func(func, *args, **kwargs):
+    if func is None:
+        return None
+    def f(x, y, params, index=None):
+        if np.asarray(params).ndim > 1:
+            func_map = map(lambda paramsi: func(x, y, *paramsi, *args,
+                                                index=index, **kwargs), params)
+            dict_map = dict(zip(range(len(params)), func_map))
+            return pd.DataFrame.from_dict(dict_map)
+        return func(x, y, *params, *args, index=index, **kwargs)
+    return f
+
+
 class SingleFitter(object):
     """
     Fit a single function to a single set of data.
@@ -232,7 +245,7 @@ class SingleFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.logger.debug("Set up separations and data")
-        self.data = data
+        self.data = data.copy()
         self.index_names = index_names
         self.col_names = col_names
         self.data["ivar"] = 1. / self.data[col_names[1]]
@@ -268,17 +281,19 @@ class SingleFitter(object):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
                      fitter_name is not None else self.__class__.__name__)
 
-    def set_fit_func(self, func, param_names):
+    def set_fit_func(self, func, param_names, *args, **kwargs):
         """Set a (new) fitting function with parameter names
 
         :param func: The fitting function to use
         :type func: `function` or `None`
         :param param_names: The names of the parameters for the fitting function
         :type param_names: 1D array-like `str` or `None`
+        :param *args: The additional positional arguments to pass to the fitting
+        function
+        :param **kwargs: Any keyword arguments to pass to the fitting function
         """
         if func is None:
             self.logger.debug("Setting fitting function to None")
-            self.f = None
             self.params = None
             self.ndim = None
         else:
@@ -286,9 +301,9 @@ class SingleFitter(object):
                 raise ValueError("Parameter names must be given when fitting "
                                  "function is specified")
             self.logger.debug("Setting fitting function and parameters")
-            self.f = lambda x, y, params, **kwargs: func(x, y, *params, **kwargs)
             self.params = param_names
             self.ndim = len(param_names)
+        setattr(self, "f", _wrap_func(func, *args, **kwargs))
         self.logger.debug("done")
 
     def set_prior_func(self, prior):
@@ -299,10 +314,9 @@ class SingleFitter(object):
         """
         if prior is None:
             self.logger.debug("Setting prior to None")
-            self.pr = None
         else:
             self.logger.debug("Setting up prior function")
-            self.pr = lambda params: prior(params)
+        setattr(self, "pr", prior)
         self.logger.debug("done")
 
     def lnlike(self, theta):
@@ -460,13 +474,12 @@ class SingleFitter(object):
         """
         samples = self.sampler.chain[:, self._nburnin:, :].reshape((-1,
                                                                     self.ndim))
-        meval = map(lambda params: self.f(rpo, rlo, params, index=index), 
-                samples)
+        meval = self.f(rpo, rlo, samples, index=index)
         if hasattr(meval, "index"):
-            m = meval.quantile(q=[0.16, 0.5, 0.84]).T
+            m = meval.quantile(q=[0.16, 0.5, 0.84], axis="columns").T
         else:
-            m = pd.Series(np.percentile(meval, [16.0, 50.0, 84.0], axis=0),
-                    index=pd.Index([0.16, 0.5, 0.84]))
+            m = pd.Series(np.percentile(meval, [0.16, 0.5, 0.84]),
+                                        index=pd.Index([0.16, 0.5, 0.84]))
         return m
 
     def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_size, 
@@ -523,105 +536,77 @@ class SingleFitter(object):
         plt.rcParams["font.size"] = text_size
 
         if is_rpo:
-            # x-axis will be RLO_BIN, bins are drawn from r=RPO_BIN
-            r_full = self.data.index.get_level_values(self.index_names[0])
-            x_full = self.data.index.get_level_values(self.index_names[1])
+            # x-axis will be RLO_BIN, bins are drawn from RPO_BIN
             r_bin_size = perp_bin_size
             x_bin_size = par_bin_size
             rlabel = rpo_label
             xlabel = rlo_label
+            data = self.data.copy().loc[bins]
         else:
-            # x-axis will be RPO_BIN, bins are drawn from r=RLO_BIN
-            r_full = self.data.index.get_level_values(self.index_names[1])
-            x_full = self.data.index.get_level_values(self.index_names[0])
+            # x-axis will be RPO_BIN, bins are drawn from RLO_BIN
             r_bin_size = par_bin_size
             x_bin_size = perp_bin_size
             rlabel = rlo_label
             xlabel = rpo_label
+            data = self.data.swaplevel(0, 1, axis=0).loc[bins]
 
-        axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * r_bin_size,
-                                                       2 - ndigits(0.5 *
-                                                                   r_bin_size)))
+        axis_label = r"${} = {{}} \pm {}$".format(re.sub("\$", "", re.sub(r"([{}])", r"\1\1", rlabel)),
+                                                  round(0.5 * r_bin_size, 2 - ndigits(0.5 * r_bin_size)))
         
-        if with_fit and self._best_fit_params is None:
-            raise ValueError("with_fit=True, but no fit has been done")
+        if with_fit:
+            if self._best_fit_params is None:
+                raise ValueError("with_fit=True, but no fit has been done")
+            mod = self.model_with_errors(data.index.get_level_values(self.index_names[0]), data.index.get_level_values(self.index_names[1]), index=data.index)
+        
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
             # Case: single bin, don't need any subplots
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel, labelpad=(2 * plt.rcParams["font.size"]))
             if logx:
                 plt.xscale("log")
             if logy:
                 plt.yscale("log")
             plt.axhline(exp, c="k")
-            labeli = r"{}{}".format(rlabel, axis_label.format(np.around(bins, 2 
-                - ndigits(bins))))
-            idx = np.isclose(r_full, bins, atol=(0.25 * r_bin_size))
-            x = x_full[idx]
-            # Debugging: make sure x is unique (up to bin size)
-            x_bin_idx = np.trunc(x / x_bin_size).astype(int)
-            un_idx, un_counts = np.unique(x_bin_idx, return_index=True, 
-                    return_counts=True)[1:]
-            self.logger.debug("Maximum unique counts in x for %s bin %f = %d", 
-                    "perpendicular" if is_rpo else "parallel", bins, 
-                    un_counts.max())
-            if un_counts.max() > 1:
-                self.logger.debug("Getting rid of extra points in x")
-                idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
-                x = x_full[idx]
-            d = data[self.col_names[0]][idx].copy()
-            s = data["sigma"][idx].copy()
-            line = plt.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+            line = plt.errorbar(data.index, data[self.col_names[0]], yerr=data["sigma"], fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                m = self.model_with_errors(x, bins, index=pd.Index(x))
-                plt.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
-                plt.plot(x, m[0.5], "C2-")
-            plt.legend([line], [labeli], loc="best", markerscale=0, 
-                    frameon=False)
-            plt.xlabel(xlabel)
-            plt.ylabel(ylabel)
+                plt.fill_between(mod.index, mod[0.16], mod[0.84], color="C2", alpha=0.4)
+                plt.plot(mod.index, mod[0.5], "C2-")
+            plt.legend([line], [axis_label.format(round(bins, 2 - ndigits(bins)))], loc="best", markerscale=0,
+                       frameon=False)
+            plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
-            grid = gridspec.GridSpec(bins.size, 1, hspace=0)
-            full_ax = fig.add_subplot(grid[:,:])
+            grid = gridspec.GridSpec(bins.size, 1, hspace=0, left=0.2)
+            full_ax = fig.add_subplot(grid[:])
             for loc in ["top", "bottom", "left", "right"]:
                 full_ax.spines[loc].set_color("none")
             full_ax.tick_params(labelcolor="w", top="off", bottom="off", 
                     left="off", right="off", which="both")
+            full_ax.set_ylabel(ylabel, labelpad=(2 * plt.rcParams["font.size"]))
+            full_ax.set_xlabel(xlabel)
             for i, r in enumerate(bins):
-                ax = fig.add_subplot(grid[i,:], sharex=full_ax)
+                ax = fig.add_subplot(grid[i], sharex=full_ax)
                 if logx:
                     ax.set_xscale("log")
                 if logy:
                     ax.set_yscale("log")
                 ax.axhline(exp, c="k")
-                labeli = r"{}{}".format(rlabel, axis_label.format(np.around(r,
-                    2 - ndigits(r))))
-                idx = np.isclose(r_full, r, atol=(0.25 * r_bin_size))
-                x = x_full[idx]
-                # Debugging: make sure x is unique (up to bin size)
-                x_bin_idx = np.trunc(x / x_bin_size).astype(int)
-                un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
-                        return_counts=True)[1:]
-                self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
-                        "perpendicular" if is_rpo else "parallel", r, 
-                        un_counts.max())
-                if un_counts.max() > 1:
-                    self.logger.debug("Getting rid of extra points in x")
-                    idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
-                    x = x_full[idx]
-                d = self.data[self.col_names[0]][idx].copy()
-                s = self.data["sigma"][idx].copy()
-                line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+                datai = data.loc[r]
+                line = ax.errorbar(datai.index, datai[self.col_names[0]], yerr=datai["sigma"], fmt="C0o",
+                                   alpha=0.6)[0]
                 if with_fit:
-                    m = self.model_with_errors(x, r, index=pd.Index(x))
-                    ax.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
-                    ax.plot(x, m[0.5], "C2-")
-                ax.legend([line], [labeli], loc="best", markerscale=0,
+                    mi = mod.loc[r]
+                    ax.fill_between(mi.index, mi[0.16], mi[0.84], color="C2", alpha=0.4)
+                    ax.plot(mi.index, mi[0.5], "C2-")
+                ax.legend([line], [axis_label.format(round(r, 2 - ndigits(r)))], loc="best", markerscale=0,
                         frameon=False)
-                if not ax.is_last_row():
-                    ax.tick_params(axis="x", which="both", labelcolor="w")
-            full_ax.set_xlabel(xlabel)
-            full_ax.set_ylabel(ylabel)
+                if ax.is_last_row():
+                    ax.tick_params(axis="x", which="both", direction="inout", top=False)
+                else:
+                    ax.tick_params(axis="x", which="both", direction="inout", top=False, labelbottom=False)
+            grid.tight_layout(fig, h_pad=0.0)
+            grid.update(hspace=0)
         if filename is not None:
             fig.savefig(filename, bbox_inches="tight")
         if display:
@@ -659,7 +644,7 @@ class AnalyticSingleFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.logger.debug("Setting up data and variance")
-        self.data = data
+        self.data = data.copy()
         self.index_names = index_names
         self.col_names = col_names
         self.data["ivar"] = 1. / self.data[col_names[1]]
@@ -806,106 +791,78 @@ class AnalyticSingleFitter(object):
         rlo = self.data.index.get_level_values(self.index_names[1])
 
         if is_rpo:
-            # x-axis will be RLO_BIN, bins are drawn from r=RPO_BIN
-            r_full = self.data.index.get_level_values(self.index_names[0])
-            x_full = self.data.index.get_level_values(self.index_names[1])
+            # x-axis will be RLO_BIN, bins are drawn from RPO_BIN
             r_bin_size = perp_bin_size
             x_bin_size = par_bin_size
             rlabel = rpo_label
             xlabel = rlo_label
+            data = self.data.copy().loc[bins]
         else:
-            # x-axis will be RPO_BIN, bins are drawn from r=RLO_BIN
-            r_full = self.data.index.get_level_values(self.index_names[1])
-            x_full = self.data.index.get_level_values(self.index_names[0])
+            # x-axis will be RPO_BIN, bins are drawn from RLO_BIN
             r_bin_size = par_bin_size
             x_bin_size = perp_bin_size
             rlabel = rlo_label
             xlabel = rpo_label
+            data = self.data.swaplevel(0, 1, axis=0).loc[bins]
 
-        axis_label = r"$ = {{}} \pm {}$".format(np.around(0.5 * r_bin_size,
-                                                       2 - ndigits(0.5 *
-                                                                   r_bin_size)))
+        axis_label = r"${} = {{}} \pm {}$".format(re.sub("\$", "", re.sub(r"([{}])", r"\1\1", rlabel)),
+                                                  np.around(0.5 * r_bin_size, 2 - ndigits(0.5 * r_bin_size)))
 
-        if with_fit and (self._c is None or self._c_err is None):
-            raise ValueError("with_fit=True, but no fit has been done")
+        if with_fit:
+            if (self._c is None or self._c_err is None):
+                raise ValueError("with_fit=True, but no fit has been done")
+            mod = self.model_with_errors(data.index.get_level_values(self.index_names[0]), data.index.get_level_values(self.index_names[1]), data.index)
 
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
             # In this case, we don't need any subplots
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel, labelpad=(2 * plt.rcParams["font.size"]))
             if logx:
                 plt.xscale("log")
             if logy:
                 plt.yscale("log")
             plt.axhline(exp, c="k")
-            labeli = r"{}{}".format(rlabel, axis_label.format(np.around(bins, 2
-                - ndigits(bins))))
-            idx = np.isclose(r_full, bins, atol=(0.25 * r_bin_size))
-            x = x_full[idx]
-            # Debugging: make sure x is unique up to bin size
-            x_bin_idx = np.trunc(x / x_bin_size).astype(int)
-            un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
-                    return_counts=True)[1:]
-            self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
-                    "perpendicular" if is_rpo else "parallel", bins, 
-                    un_counts.max())
-            if un_counts.max() > 1:
-                self.logger.debug("Getting rid of extra points in x")
-                idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
-                x = x_full[idx]
-            d = data[self.col_names[0]].iloc[idx].copy()
-            s = data["sigma"].iloc[idx].copy()
-            line = plt.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+            line = plt.errorbar(data.index, data[self.col_names[0]], yerr=data["sigma"], fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                m = self.model_with_errors(x, bins, index=pd.Index(x))
-                plt.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
-                plt.plot(x, m[0.5], "C2-")
-            plt.legend([line], [labeli], loc="best", markerscale=0,
-                    frameon=False)
-            plt.xlabel(xlabel)
-            plt.ylabel(ylabel)
+                plt.fill_between(mod.index, mod[0.16], mod[0.84], color="C2", alpha=0.4)
+                plt.plot(mod.index, mod[0.5], "C2-")
+            plt.legend([line], [axis_label.format(round(bins, 2 - ndigits(bins)))], loc="best", markerscale=0,
+                       frameon=False)
+            plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
             grid = gridspec.GridSpec(bins.size, 1, hspace=0)
-            full_ax = fig.add_subplot(grid[:,:])
+            full_ax = fig.add_subplot(grid[:])
             for loc in ["top", "bottom", "left", "right"]:
                 full_ax.spines[loc].set_color("none")
             full_ax.tick_params(labelcolor="w", top="off", bottom="off",
                     left="off", right="off", which="both")
+            full_ax.set_ylabel(ylabel, labelpad=(2 * plt.rcParams["font.size"]))
+            full_ax.set_xlabel(xlabel)
             for i, r in enumerate(bins):
-                ax = fig.add_subplot(grid[i, :], sharex=full_ax)
+                ax = fig.add_subplot(grid[i], sharex=full_ax)
                 if logx:
                     ax.set_xscale("log")
                 if logy:
                     ax.set_yscale("log")
                 ax.axhline(exp, c="k")
-                labeli = r"{}{}".format(rlabel, axis_label.format(np.around(r, 2
-                    - ndigits(r))))
-                idx = np.isclose(r_full, r, atol=(0.25 * r_bin_size))
-                x = x_full[idx]
-                # Debugging: make sure x is unique up to bin size
-                x_bin_idx = np.trunc(x / x_bin_size).astype(int)
-                un_idx, un_counts = np.unique(x_bin_idx, return_index=True,
-                        return_counts=True)[1:]
-                self.logger.debug("Maximum unique counts in x for %s bin %f = %d",
-                        "perpendicular" if is_rpo else "parallel", r,
-                        un_counts.max())
-                if un_counts.max() > 1:
-                    self.logger.debug("Getting rid of extra points in x")
-                    idx[np.in1d(np.arange(x.size), un_idx, invert=True)] = False
-                    x = x_full[idx]
-                d = data[self.col_names[0]].iloc[idx].copy()
-                s = data["sigma"].iloc[idx].copy()
-                line = ax.errorbar(x, d, yerr=s, fmt="C0o", alpha=0.6)[0]
+                datai = data.loc[r]
+                line = ax.errorbar(datai.index, datai[self.col_names[0]], yerr=datai["sigma"], fmt="C0o",
+                                    alpha=0.6)[0]
                 if with_fit:
-                    m = self.model_with_errors(x, r, index=pd.Index(x))
-                    ax.fill_between(x, m[0.16], m[0.84], color="C2", alpha=0.4)
-                    ax.plot(x, m[0.5], "C2-")
-                ax.legend([line], [labeli], loc="best", markerscale=0,
-                        frameon=False)
-                if not ax.is_last_row():
-                    ax.tick_params(axis="x", which="both", labelcolor="w")
-            full_ax.set_xlabel(xlabel)
-            full_ax.set_ylabel(ylabel)
+                    mi = mod.loc[r]
+                    ax.fill_between(mi.index, mi[0.16], mi[0.84], color="C2", alpha=0.4)
+                    ax.plot(mi.index, mi[0.5], "C2-")
+                ax.legend([line], [axis_label.format(round(r, 2 - ndigits(r)))], loc="best", markerscale=0,
+                          frameon=False)
+                if ax.is_last_row():
+                    ax.tick_params(axis="x", which="both", direction="inout", top=False)
+                else:
+                    ax.tick_params(axis="x", which="both", labelbottom=False, direction="inout", top=False)
+            grid.tight_layout(fig, h_pad=0.0)
+            # To make sure tight_layout didn't separate things again
+            grid.update(hspace=0.0)
         if filename is not None:
             fig.savefig(filename, bbox_inches="tight")
         if display:
@@ -981,8 +938,6 @@ class ProbFitter(object):
         self.logger.debug("Add extra data columns...[done]")
         self.logger.debug("Generate statistics...")
         self._get_stats()
-        self.rpo = self.stats.index.get_level_values("RPO_BIN")
-        self.rlo = self.stats.index.get_level_values("RLO_BIN")
         self.logger.debug("Generate statistics...[done]")
         self.logger.debug("Set up fitters...")
         self.logger.debug("mean_x")
