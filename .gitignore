@@ -38,3 +38,10 @@ dist/
 *.idea
 *cmake-build-debug
 *CountDistCPP.cbp
+
+# Older files: ignore all files except the ones that are still valid
+include/v4/*.h
+!includ/v4/calc_distances.h
+src/v4/*.cpp
+!src/v4/calc_distances.cpp
+!src/v4/bind_calc_distances.cpp
