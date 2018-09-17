@@ -1,5 +1,5 @@
 from __future__ import print_function
-from .utils import ndigits, init_logger
+from .utils import ndigits, init_logger, _initialize_cosmology
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from chainconsumer import ChainConsumer
@@ -997,9 +997,9 @@ class ProbFitter(object):
         :param sigma_z: The fractional redshift error :math:`\frac{\sigma_z}{
         1 + z}` to assume for the data
         :type sigma_z: `float`
-        :param cosmo: The cosmology for initializing the distance function
-        splines
-        :type cosmo: :class:`astropy.cosmology.FLRW` or similar
+        :param cosmo: The path to a cosmology ini file, from which the
+        cosmological functions can be set up
+        :type cosmo: `str`
         :param min_counts: The minimum number of pairs needed in a bin to be
         included in the fit. Default 200
         :type min_counts: `int`, optional
@@ -1011,7 +1011,7 @@ class ProbFitter(object):
         should be in Mpc. Default `None` (for no limits, all separations read)
         :type limits: `dict` or `None`
         """
-        CatalogUtils.initialize(cosmo)
+        CatalogUtils.initialize(_initialize_cosmology(cosmo))
         self._stats_group_switcher = {
             "mean_x": dict(function=self._get_delta_column,
                            args=["PERP", self._perp_mean_scale]),

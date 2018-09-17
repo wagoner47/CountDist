@@ -2,7 +2,7 @@ from __future__ import print_function
 from astropy.table import Table
 import subprocess
 import os, sys
-from .utils import MyConfigObj, init_logger
+from .utils import MyConfigObj, init_logger, _initialize_cosmology
 import logging
 import calculate_distances as _calculate_distances
 import math
@@ -10,27 +10,6 @@ import pandas as pd
 import numpy as np
 import astropy.cosmology
 import CatalogUtils
-
-
-def pylevel_to_cpplevel(logger):
-    """This function translates the python logging level filter from the logger
-    object to the equivalent level in my C++ code, which is numbered in reverse
-    order. It is more a convenience than anything, and should probably not be
-    called by the user.
-
-    Parameters
-    ----------
-    :param logger: A Logger instance with a level set.
-    :type logger: :class:`logging.Logger`
-
-    Returns
-    -------
-    :return: The integer for the corresponding level in the C++ code.
-    :rtype: `int`
-    """
-    cpplevel_mapper = {logging.CRITICAL: 10, logging.ERROR: 20, logging.WARNING:
-            30, logging.INFO: 40, logging.DEBUG: 50}
-    return cpplevel_mapper[logger.getEffectiveLevel()]
 
 
 def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None):
@@ -55,57 +34,6 @@ def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None):
         data[docol] = np.nan
     cat = _calculate_distances.fill_catalog_vector(data["RA"], data["DEC"], data[dtcol], data[docol])
     return cat
-
-
-def _initialize_cosmology(cosmo_file):
-    """A helper function to chose the correct cosmology to initialize based
-    on the parameters in the cosmology parameter file
-
-    Parameters
-    ----------
-    :param cosmo_file: The path to a file containing the cosmological
-    parameters
-    :type cosmo_file: `str`
-
-    Returns
-    -------
-    :return cosmo: The cosmology instance of the correct type from
-    `astropy.cosmology`
-    :rtype cosmo: An instance of one of the subclasses of
-    :class:`astropy.cosmology.FLRW`  
-    """
-    cosmo_mapper = {
-        "FlatLambda": astropy.cosmology.FlatLambdaCDM,
-        "Flatw0": astropy.cosmology.FlatwCDM,
-        "Flatw0wa": astropy.cosmology.Flatw0waCDM,
-        "Lambda": astropy.cosmology.LambdaCDM,
-        "w0": astropy.cosmology.wCDM,
-        "w0wa": astropy.cosmology.w0waCDM
-        }
-    cosmol_params = MyConfigObj(cosmo_file, file_error=True)
-    cosmol_params = cosmol_params["cosmological_parameters"]
-    cosmol_kwargs = dict(
-        H0=(100.0 * cosmol_params.as_float("h0")),
-        Om0=cosmol_params.as_float("omega_m")
-        )
-    if "omega_b" in cosmol_params:
-        cosmol_kwargs["Ob0"] = cosmol_params.as_float("omega_b")
-    if math.isclose(cosmol_params.as_float("omega_k"), 0.0):
-        func_name = "Flat"
-    else:
-        func_name = ""
-        cosmol_kwargs["Ode0"] = (1.0 - cosmol_params.as_float("omega_m") -
-                                 cosmol_params.as_float("omega_k"))
-    if math.isclose(cosmol_params.as_float("w"), -1.0):
-        func_name += "Lambda"
-    else:
-        func_name += "w0"
-        cosmol_kwargs["w0"] = cosmol_params.as_float("w")
-        if not math.isclose(cosmol_params.as_float("wa"), 0.0):
-            func_name += "wa"
-            cosmol_kwargs["wa"] = cosmol_params.as_float("wa")
-    cosmo = cosmo_mapper[func_name](**cosmol_kwargs)
-    return cosmo
 
 
 def calculate_survey_volume(cosmo_file, cat_file, zcol, map_file):

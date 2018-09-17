@@ -3,6 +3,17 @@ import os
 from configobj import ConfigObj
 import logging
 import numpy as np
+import math
+import astropy.cosmology
+
+cosmo_mapper = {
+    "FlatLambda": astropy.cosmology.FlatLambdaCDM,
+    "Flatw0": astropy.cosmology.FlatwCDM,
+    "Flatw0wa": astropy.cosmology.Flatw0waCDM,
+    "Lambda": astropy.cosmology.LambdaCDM,
+    "w0": astropy.cosmology.wCDM,
+    "w0wa": astropy.cosmology.w0waCDM
+    }
 
 class MyConfigObj(ConfigObj):
     def __init__(self, infile=None, options=None, configspec=None,
@@ -49,20 +60,20 @@ def ndigits(x):
     array-like
     :rtype digits: `int`, scalar or ndarray
     """
-    x = np.atleast_1d(x)
-    digits = np.ones(x.shape, dtype=int).flatten()
-    # Zeros must be separated because log10(0) = -inf: catch them by finding
-    # where x / 10 is the same as x
-    zeros = ((x / 10.0 == x)).flatten()
-    # The rest can be obtained using log10 and floor
-    digits[~zeros] = np.floor(np.log10(np.abs(x.flatten()[~zeros]))).astype(int)
-    if x.size == 1:
-        # Convert back to scalar if x was a scalar
-        digits = digits.item()
+    if not hasattr(x, "__len__"):
+        x = math.abs(x)
+        if math.isclose(x / 10.0, x):
+            digits = 1
+        else:
+            digits = int(math.floor(math.log10(x)))
     else:
-        # Reshape to match x
-        digits = digits.reshape(x.shape)
-    # Return the number of digits
+        x = np.absolute(x)
+        digits = np.ones(x.shape, dtype=int).flatten()
+        zeros = np.isclose(x.flatten() / 10.0, x.flatten())
+        digits[~zeros] = np.floor(
+            np.log10(
+                x.flatten()[~zeros])).astype(int)
+        digits.reshape(x.shape)
     return digits
 
 
@@ -103,3 +114,66 @@ def init_logger(name=None):
     logger = logging.getLogger(name)
     logger.setLevel(level)
     return logger
+
+def _cosmology_setup(params):
+    """A helper function for setting up the mapper name and key word arguments
+    for the various possible cosmologies.
+
+    :param params: The cosmological parameters section from the cosmology ini
+    file
+    :type params: :class:`MyConfigObj`
+
+    :return cosmo_func_name: The string that maps onto the correct
+    astropy.cosmology class
+    :rtype cosmo_func_name: `str`
+    :return ckwargs: A dictionary containing the key word arguments for
+    initializing the correct astropy.cosmology class
+    :rtype ckwargs: `dict`
+    """
+    ckwargs = dict(
+        H0=(100.0 * params.as_float("h0")),
+        Om0=params.as_float("omega_m")
+        )
+    if "omega_b" in params:
+        ckwargs["Ob0"] = params.as_float("omega_b")
+    
+    if math.isclose(math.abs(params.as_float("omega_k")), 0.0):
+        cosmo_func_name = "Flat"
+    else:
+        cosmo_func_name = ""
+        ckwargs["Ode0"] = (1.0 - params.as_float("omega_m") -
+                           params.as_float("omega_k"))
+
+    if math.isclose(params.as_float("w"), -1.0):
+        cosmo_func_name += "Lambda"
+    else:
+        cosmo_func_name += "w0"
+        ckwargs["w0"] = params.as_float("w")
+        if not math.isclose(math.abs(params.as_float("wa")), 0.0):
+            cosmo_func_name += "wa"
+            ckwargs["wa"] = params.as_float("wa")
+
+    return cosmo_func_name, ckwargs
+
+def _initialize_cosmology(cosmo_file):
+    """A helper function to chose the correct cosmology to initialize based
+    on the parameters in the cosmology parameter file
+
+    Parameters
+    ----------
+    :param cosmo_file: The path to a file containing the cosmological
+    parameters
+    :type cosmo_file: `str`
+
+    Returns
+    -------
+    :return cosmo: The cosmology instance of the correct type from
+    `astropy.cosmology`
+    :rtype cosmo: An instance of one of the subclasses of
+    :class:`astropy.cosmology.FLRW`  
+    """
+    cosmol_params = MyConfigObj(cosmo_file, file_error=True)
+    cosmo_func_name, cosmol_kwargs = _cosmology_setup(
+        cosmol_params["cosmological_parameters"])
+    cosmo = cosmo_mapper[cosmo_func_name](**cosmol_kwargs)
+    return cosmo
