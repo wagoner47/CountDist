@@ -1,24 +1,89 @@
 from __future__ import print_function
 from .utils import ndigits, init_logger
-from .file_io import read_db_multiple
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from chainconsumer import ChainConsumer
 import CatalogUtils
-from scipy.stats import kstat, kstatvar
+from scipy.stats import kstat, kstatvar, binned_statistic_2d
 from scipy.optimize import minimize
 import emcee
 import numpy as np
 import math
 import pandas as pd
 import pickle
-import os, re
+import os, re, itertools
 
 plt.rcParams["figure.facecolor"] = "white"
 
 
 # Custom ValueError for too few groups (for catching during debugging)
 class TooFewGroupsError(ValueError): pass
+
+
+class CustomGroupBy(object):
+    def __init__(self, keys, min_length=1):
+        self.logger = init_logger(self.__class__.__name__)
+        self.logger.debug("Get unique values and counts")
+        self.key_values, self.keys_as_int, self.key_counts = np.unique(
+            keys, axis=0, return_inverse=True, return_counts=True)
+        if min_length > 1:
+            self.logger.debug("Filter based on number of elements")
+            keep_keys = ((self.key_counts >= min_length))
+            self.key_values = self.key_values[keep_keys]
+            self.keys_as_int = self.keys_as_int[np.isin(self.keys_as_int,
+                                                        np.where(keep_keys)[0])]
+            self.key_counts = self.key_counts[keep_keys]
+        self.n_keys = max(self.keys_as_int)
+        self.set_indices()
+        self.set_series_index(keys)
+
+    def set_indices(self):
+        self.indices = [[] for i in range(self.n_keys+1)]
+        self.logger.debug("Set integer indices")
+        for i, k in enumerate(self.keys_as_int):
+            self.indices[k].append(i)
+        self.indices = [np.array(elt) for elt in self.indices]
+        self.logger.debug("Integer indices set")
+
+    def set_series_index(self, keys):
+        self.logger.debug("Set pandas index")
+        if self.key_values.ndim > 1:
+            self.logger.debug("Create MultiIndex")
+            self.key_values = [tuple(key_val) for key_val in self.key_values]
+            self.key_values = pd.MultiIndex.from_tuples(self.key_values,
+                                                        names=keys.columns)
+        else:
+            self.logger.debug("Create Index")
+            self.key_values = pd.Index(self.key_values, name=keys.name)
+        self.logger.debug("Pandas index set")
+
+    def apply(self, vector, function, *args, **kwargs):
+        result = np.zeros(len(self.key_values))
+        for k, idx in enumerate(self.indices):
+            result[self.keys_as_int[k]] = function(
+                vector.loc[self.key_values[idx]], *args, **kwargs)
+        return pd.Series(result, index=self.key_values, name=function.__name__)
+
+
+# Empty MultiIndex creation
+def empty_multi_index(names):
+    levels = [[] for i in range(len(names))]
+    labels = [[] for i in range(len(names))]
+    return pd.MultiIndex(levels=levels, labels=labels, names=names)
+
+
+# Wrapper for kstat that also checks number of objects first
+def kstat_check(arr, n, min_length):
+    if len(arr) < min_length:
+        return math.nan
+    return kstat(arr, n)
+
+
+# Wrapper for kstatvar that also checks number of objects first
+def kstatvar_check(arr, n, min_length):
+    if len(arr) < min_length:
+        return math.nan
+    return kstatvar(arr, n)
 
 
 def get_array(x):
@@ -190,17 +255,20 @@ def _check_pickleable(attrs):
     return True
 
 
-def _wrap_func(func, *args, **kwargs):
-    if func is None:
-        return None
-    def f(x, y, params, index=None):
-        if np.asarray(params).ndim > 1:
-            func_map = map(lambda paramsi: func(x, y, *paramsi, *args,
-                                                index=index, **kwargs), params)
-            dict_map = dict(zip(range(len(params)), func_map))
-            return pd.DataFrame.from_dict(dict_map)
-        return func(x, y, *params, *args, index=index, **kwargs)
-    return f
+# This class was borrowed/stolen (with slight modification) from emcee...
+class _FitFunctionWrapper(object):
+    """
+    A hack to make dynamically set functions with `args` and/or `kwargs`
+    pickleable
+    """
+    def __init__(self, f, args=None, kwargs=None):
+        self.f = f
+        self.args = [] if args is None else args
+        self.kwargs = {} if kwargs is None else kwargs
+
+    def __call__(self, x, y, theta, extra_kwargs=None):
+        extra_kwargs = {} if extra_kwargs is None else extra_kwargs
+        return self.f(x, y, *theta, *self.args, **self.kwargs, **extra_kwargs)
 
 
 class SingleFitter(object):
@@ -245,7 +313,7 @@ class SingleFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.logger.debug("Set up separations and data")
-        self.data = data.copy()
+        self.data = data
         self.index_names = index_names
         self.col_names = col_names
         self.data["ivar"] = 1. / self.data[col_names[1]]
@@ -281,21 +349,25 @@ class SingleFitter(object):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
                      fitter_name is not None else self.__class__.__name__)
 
-    def set_fit_func(self, func, param_names, *args, **kwargs):
+    def set_fit_func(self, func, param_names, args=None, kwargs=None):
         """Set a (new) fitting function with parameter names
 
         :param func: The fitting function to use
         :type func: `function` or `None`
         :param param_names: The names of the parameters for the fitting function
         :type param_names: 1D array-like `str` or `None`
-        :param *args: The additional positional arguments to pass to the fitting
-        function
-        :param **kwargs: Any keyword arguments to pass to the fitting function
+        :param args: The additional positional arguments to pass to the fitting
+        function, as a list. Default None
+        :type args: `list`, optional
+        :param kwargs: Any keyword arguments to pass to the fitting function,
+        as a dict. Default None
+        :type kwargs: `dict`, optional
         """
         if func is None:
             self.logger.debug("Setting fitting function to None")
             self.params = None
             self.ndim = None
+            self.f = None
         else:
             if param_names is None:
                 raise ValueError("Parameter names must be given when fitting "
@@ -303,7 +375,7 @@ class SingleFitter(object):
             self.logger.debug("Setting fitting function and parameters")
             self.params = param_names
             self.ndim = len(param_names)
-        setattr(self, "f", _wrap_func(func, *args, **kwargs))
+            self.f = _FitFunctionWrapper(func, args, kwargs)
         self.logger.debug("done")
 
     def set_prior_func(self, prior):
@@ -316,16 +388,17 @@ class SingleFitter(object):
             self.logger.debug("Setting prior to None")
         else:
             self.logger.debug("Setting up prior function")
-        setattr(self, "pr", prior)
+        self.pr = prior
         self.logger.debug("done")
 
     def lnlike(self, theta):
         if self.f is None:
             raise AttributeError("No fitting function set for likelihood")
-        feval = self.f(self.data.index.get_level_values(self.index_names[0]),
-                self.data.index.get_level_values(self.index_names[1]), theta)
-        return -0.5 * np.sum((self.data[self.col_names[0]] - feval) ** 2 *
-                self.data["ivar"])
+        return-0.5 * self.data.loc[:,self.col_names[0]].sub(
+            self.f(self.data.index.get_level_values(self.index_names[0]),
+                   self.data.index.get_level_values(self.index_names[1]),
+                   theta)).pow(2).div(
+            self.data.loc[:,self.col_names[1]].apply(math.sqrt)).sum()
 
     def lnprob(self, theta):
         if self.pr is None:
@@ -452,7 +525,7 @@ class SingleFitter(object):
         separations flattened
         :rtype m: scalar or :class:`pandas.Series` `float`
         """
-        m = self.f(rpo, rlo, self._best_fit_params, index=index)
+        m = self.f(rpo, rlo, self._best_fit_params, dict(index=index))
         return m
 
     def model_with_errors(self, rpo, rlo, index=None):
@@ -474,7 +547,7 @@ class SingleFitter(object):
         """
         samples = self.sampler.chain[:, self._nburnin:, :].reshape((-1,
                                                                     self.ndim))
-        meval = self.f(rpo, rlo, samples, index=index)
+        meval = self.f(rpo, rlo, samples, dict(index=index))
         if hasattr(meval, "index"):
             m = meval.quantile(q=[0.16, 0.5, 0.84], axis="columns").T
         else:
@@ -550,13 +623,17 @@ class SingleFitter(object):
             xlabel = rpo_label
             data = self.data.swaplevel(0, 1, axis=0).loc[bins]
 
-        axis_label = r"${} = {{}} \pm {}$".format(re.sub("\$", "", re.sub(r"([{}])", r"\1\1", rlabel)),
-                                                  round(0.5 * r_bin_size, 2 - ndigits(0.5 * r_bin_size)))
+        axis_label = r"${} = {{}} \pm {}$".format(
+            re.sub("\$", "", re.sub(r"([{}])", r"\1\1", rlabel)),
+            round(0.5 * r_bin_size, 2 - ndigits(0.5 * r_bin_size)))
         
         if with_fit:
             if self._best_fit_params is None:
                 raise ValueError("with_fit=True, but no fit has been done")
-            mod = self.model_with_errors(data.index.get_level_values(self.index_names[0]), data.index.get_level_values(self.index_names[1]), index=data.index)
+            mod = self.model_with_errors(
+                data.index.get_level_values(self.index_names[0]),
+                data.index.get_level_values(self.index_names[1]),
+                index=data.index)
         
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -568,12 +645,16 @@ class SingleFitter(object):
             if logy:
                 plt.yscale("log")
             plt.axhline(exp, c="k")
-            line = plt.errorbar(data.index, data[self.col_names[0]], yerr=data["sigma"], fmt="C0o", alpha=0.6)[0]
+            line = plt.errorbar(data.index, data.loc[:,self.col_names[0]],
+                                yerr=data.loc[:,self.col_names[1]].apply(
+                    math.sqrt), fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                plt.fill_between(mod.index, mod[0.16], mod[0.84], color="C2", alpha=0.4)
-                plt.plot(mod.index, mod[0.5], "C2-")
-            plt.legend([line], [axis_label.format(round(bins, 2 - ndigits(bins)))], loc="best", markerscale=0,
-                       frameon=False)
+                plt.fill_between(mod.index, mod.loc[:,0.16], mod.loc[:,0.84],
+                                 color="C2", alpha=0.4)
+                plt.plot(mod.index, mod.loc[:,0.5], "C2-")
+            plt.legend([line], [axis_label.format(
+                        round(bins, 2 - ndigits(bins)))], loc="best",
+                       markerscale=0, frameon=False)
             plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
@@ -592,19 +673,23 @@ class SingleFitter(object):
                 if logy:
                     ax.set_yscale("log")
                 ax.axhline(exp, c="k")
-                datai = data.loc[r]
-                line = ax.errorbar(datai.index, datai[self.col_names[0]], yerr=datai["sigma"], fmt="C0o",
-                                   alpha=0.6)[0]
+                line = ax.errorbar(data.loc[r].index,
+                                   data.loc[r,self.col_names[0]],
+                                   yerr=data.loc[r,self.col_names[1]].apply(
+                        math.sqrt), fmt="C0o", alpha=0.6)[0]
                 if with_fit:
-                    mi = mod.loc[r]
-                    ax.fill_between(mi.index, mi[0.16], mi[0.84], color="C2", alpha=0.4)
-                    ax.plot(mi.index, mi[0.5], "C2-")
-                ax.legend([line], [axis_label.format(round(r, 2 - ndigits(r)))], loc="best", markerscale=0,
-                        frameon=False)
+                    ax.fill_between(mod.loc[r].index, mod.loc[r,0.16],
+                                    mod.loc[r,0.84], color="C2", alpha=0.4)
+                    ax.plot(mod.loc[r].index, mod.loc[r,0.5], "C2-")
+                ax.legend([line], [axis_label.format(
+                            round(r, 2 - ndigits(r)))], loc="best",
+                          markerscale=0, frameon=False)
                 if ax.is_last_row():
-                    ax.tick_params(axis="x", which="both", direction="inout", top=False)
+                    ax.tick_params(axis="x", which="both", direction="inout",
+                                   top=True, bottom=True)
                 else:
-                    ax.tick_params(axis="x", which="both", direction="inout", top=False, labelbottom=False)
+                    ax.tick_params(axis="x", which="both", direction="inout",
+                                   top=True, bottom=False, labelbottom=False)
             grid.tight_layout(fig, h_pad=0.0)
             grid.update(hspace=0)
         if filename is not None:
@@ -644,11 +729,9 @@ class AnalyticSingleFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.logger.debug("Setting up data and variance")
-        self.data = data.copy()
+        self.data = data
         self.index_names = index_names
         self.col_names = col_names
-        self.data["ivar"] = 1. / self.data[col_names[1]]
-        self.data["sigma"] = np.sqrt(self.data[col_names[1]])
         self.logger.debug("__init__ complete")
         self._c = None
         self._c_err = None
@@ -666,11 +749,15 @@ class AnalyticSingleFitter(object):
                      fitter_name is not None else self.__class__.__name__)
 
     def _get_const(self):
-        self._c = np.sum(self.data[self.col_names[0]] * self.data["ivar"]) /\
-                np.sum(self.data["ivar"])
+        self._c = (self.data.loc[:,self.col_names[0]].div(
+            self.data.loc[:,self.col_names[1]]).sum() /
+                   self.data.loc[:,self.col_names[1]].apply(
+                lambda x: 1. / x).sum())
 
     def _get_err(self):
-        self._c_err = np.sqrt(1. / np.sum(self.data["ivar"]))
+        self._c_err = math.sqrt(1. /
+                                self.data.loc[:,self.col_names[1]].apply(
+                lambda x: 1. / x).sum())
 
     def fit(self):
         self._get_const()
@@ -805,13 +892,16 @@ class AnalyticSingleFitter(object):
             xlabel = rpo_label
             data = self.data.swaplevel(0, 1, axis=0).loc[bins]
 
-        axis_label = r"${} = {{}} \pm {}$".format(re.sub("\$", "", re.sub(r"([{}])", r"\1\1", rlabel)),
-                                                  np.around(0.5 * r_bin_size, 2 - ndigits(0.5 * r_bin_size)))
+        axis_label = r"${} = {{}} \pm {}$".format(
+            re.sub("\$", "", re.sub(r"([{}])", r"\1\1", rlabel)),
+            np.around(0.5 * r_bin_size, 2 - ndigits(0.5 * r_bin_size)))
 
         if with_fit:
             if (self._c is None or self._c_err is None):
                 raise ValueError("with_fit=True, but no fit has been done")
-            mod = self.model_with_errors(data.index.get_level_values(self.index_names[0]), data.index.get_level_values(self.index_names[1]), data.index)
+            mod = self.model_with_errors(data.index.get_level_values(
+                    self.index_names[0]), data.index.get_level_values(
+                    self.index_names[1]), data.index)
 
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -823,12 +913,16 @@ class AnalyticSingleFitter(object):
             if logy:
                 plt.yscale("log")
             plt.axhline(exp, c="k")
-            line = plt.errorbar(data.index, data[self.col_names[0]], yerr=data["sigma"], fmt="C0o", alpha=0.6)[0]
+            line = plt.errorbar(data.index, data.loc[:,self.col_names[0]],
+                                yerr=data.loc[:,self.col_names[1]].apply(
+                    math.sqrt), fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                plt.fill_between(mod.index, mod[0.16], mod[0.84], color="C2", alpha=0.4)
-                plt.plot(mod.index, mod[0.5], "C2-")
-            plt.legend([line], [axis_label.format(round(bins, 2 - ndigits(bins)))], loc="best", markerscale=0,
-                       frameon=False)
+                plt.fill_between(mod.index, mod.loc[:,0.16], mod.loc[:,0.84],
+                                 color="C2", alpha=0.4)
+                plt.plot(mod.index, mod.loc[:,0.5], "C2-")
+            plt.legend([line], [axis_label.format(
+                        round(bins, 2 - ndigits(bins)))], loc="best",
+                       markerscale=0, frameon=False)
             plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
@@ -847,19 +941,23 @@ class AnalyticSingleFitter(object):
                 if logy:
                     ax.set_yscale("log")
                 ax.axhline(exp, c="k")
-                datai = data.loc[r]
-                line = ax.errorbar(datai.index, datai[self.col_names[0]], yerr=datai["sigma"], fmt="C0o",
-                                    alpha=0.6)[0]
+                line = ax.errorbar(data.loc[r].index,
+                                   data.loc[r,self.col_names[0]],
+                                   yerr=data.loc[r,self.col_names[1]].apply(
+                        math.sqrt), fmt="C0o", alpha=0.6)[0]
                 if with_fit:
-                    mi = mod.loc[r]
-                    ax.fill_between(mi.index, mi[0.16], mi[0.84], color="C2", alpha=0.4)
-                    ax.plot(mi.index, mi[0.5], "C2-")
-                ax.legend([line], [axis_label.format(round(r, 2 - ndigits(r)))], loc="best", markerscale=0,
-                          frameon=False)
+                    ax.fill_between(m.loc[r].index, m.loc[r,0.16],
+                                    m.loc[r,0.84], color="C2", alpha=0.4)
+                    ax.plot(m.loc[r].index, m.loc[r,0.5], "C2-")
+                ax.legend([line], [axis_label.format(
+                            round(r, 2 - ndigits(r)))], loc="best",
+                          markerscale=0, frameon=False)
                 if ax.is_last_row():
-                    ax.tick_params(axis="x", which="both", direction="inout", top=False)
+                    ax.tick_params(axis="x", which="both", direction="inout",
+                                   top=True, bottom=True)
                 else:
-                    ax.tick_params(axis="x", which="both", labelbottom=False, direction="inout", top=False)
+                    ax.tick_params(axis="x", which="both", labelbottom=False,
+                                   direction="inout", top=True, bottom=False)
             grid.tight_layout(fig, h_pad=0.0)
             # To make sure tight_layout didn't separate things again
             grid.update(hspace=0.0)
@@ -876,19 +974,15 @@ class ProbFitter(object):
     generalized fitter, it assumes the means and variances follow specific
     functions that are not set by the user but hardcoded within.
     """
-
-    def __init__(self, db_file, table_name, perp_bin_size, par_bin_size,
+    
+    def __init__(self, separations, perp_bin_size, par_bin_size,
                  perp_bin_scale, par_bin_scale, sigma_z, cosmo, min_counts=200,
                  fitter_name=None, **kwargs):
         """
         Initialize the fitter with separations
-
-        :param db_file: The file path to the database containing the
-        separations. Assumed to be in the format that is output by the
-        distance functions within this module.
-        :type db_file: `str`
-        :param table_name: The name of the table within the database
-        :type table_name: `str`
+        :param separations: A DataFrame containing the true and observed
+        separations
+        :type separations: :class:`pandas.DataFrame`
         :param perp_bin_size: The bin size to use for the observed
         perpendicular separation, in Mpc
         :type perp_bin_size: `float`
@@ -918,45 +1012,29 @@ class ProbFitter(object):
         :type limits: `dict` or `None`
         """
         CatalogUtils.initialize(cosmo)
-        self._fitter_names = dict.fromkeys(["mean_x", "var_x", "mean_y",
-            "var_y", "mean_r"])
+        self._stats_group_switcher = {
+            "mean_x": dict(function=self._get_delta_column,
+                           args=["PERP", self._perp_mean_scale]),
+            "var_x": dict(function=self._get_delta_column,
+                          args=["PERP", self._perp_var_scale]),
+            "mean_y": dict(function=self._get_delta_column,
+                           args=["PAR", self._par_mean_scale]),
+            "var_y": dict(function=self._get_delta_column,
+                          args=["PAR", self._par_var_scale]),
+            "mean_r": dict(function=self._get_corr_column, args=[])
+            }
+        self._fitter_types = ["mean_x", "var_x", "mean_y", "var_y", "mean_r"]
+        self._fitter_names = dict.fromkeys(self._fitter_types)
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.sigma_z = sigma_z
         self.min_counts = min_counts
-        self._has_r = False
-        self._has_r_stat = False
-        self._fitters = dict.fromkeys(["mean_x", "var_x", "mean_y", "var_y",
-                                       "mean_r"])
-        self.logger.debug("Read data...")
-        self.seps = read_db_multiple(db_file, table_name, limits=kwargs.pop(
-            "limits", None))
-        self.logger.debug("Read data...[done]")
+        self._fitters = dict.fromkeys(self._fitter_types)
+        self.seps = separations.copy()
         self.logger.debug("Add extra data columns...")
         self._add_extra_columns(perp_bin_size, par_bin_size, perp_bin_scale,
                                 par_bin_scale)
         self.logger.debug("Add extra data columns...[done]")
-        self.logger.debug("Generate statistics...")
-        self._get_stats()
-        self.logger.debug("Generate statistics...[done]")
-        self.logger.debug("Set up fitters...")
-        self.logger.debug("mean_x")
-        self._fitters["mean_x"] = AnalyticSingleFitter(self.stats, ["RPO_BIN",
-            "RLO_BIN"], ["m_x", "var_m_x"], self._fitter_names["mean_x"])
-        self.logger.debug("var_x")
-        self._fitters["var_x"] = AnalyticSingleFitter(self.stats, ["RPO_BIN",
-            "RLO_BIN"], ["v_x", "var_v_x"], self._fitter_names["var_x"])
-        self.logger.debug("mean_y")
-        self._fitters["mean_y"] = SingleFitter(self.stats, ["RPO_BIN",
-            "RLO_BIN"], ["m_y", "var_m_y"], mean_y, prior_mean_y, [r"$a$",
-            r"$\alpha$", r"$\beta$", r"$s$"], self._fitter_names["mean_y"])
-        self.logger.debug("var_y")
-        self._fitters["var_y"] = SingleFitter(self.stats, ["RPO_BIN",
-            "RLO_BIN"], ["v_y", "var_v_y"], var_y, prior_var_y, [r"$b$",
-            r"$s_1$", r"$s_2$", r"$\rho$"], self._fitter_names["var_y"])
-        self.logger.debug("mean_r")
-        self._fitters["mean_r"] = None
-        self.logger.debug("Set up fitters...[done]")
         self.logger.debug("__init__ complete")
 
     def __repr__(self):
@@ -983,6 +1061,18 @@ class ProbFitter(object):
     def mean_r(self):
         return self._fitters["mean_r"]
 
+    @property
+    def stats(self):
+        stats = pd.DataFrame(columns=[], index=[])
+        for name, fitter in self._fitters.items():
+            if fitter is not None:
+                if stats.empty:
+                    stats = fitter.data.add_prefix("{}_".format(name))
+                else:
+                    stats = stats.join(fitter.data.add_prefix(
+                            "{}_".format(name)))
+        return stats
+
     def _get_name(self, fitter_name):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
                      fitter_name is not None else self.__class__.__name__)
@@ -1005,20 +1095,11 @@ class ProbFitter(object):
                 CatalogUtils.dr_dz(zbar))
 
     def _add_bin_column(self, orig_col_name, bin_col_name, bin_size, scale):
-        self.seps[bin_col_name] = ((np.floor(self.seps[orig_col_name] /
-                                             bin_size) + 0.5) * (bin_size /
-                                                                 scale))
+        self.seps[bin_col_name] = np.floor(self.seps[orig_col_name] /
+                                           bin_size).astype(int)
 
     def _add_zbar(self):
-        self.seps["ZBAR"] = CatalogUtils.z_at_chi(self.seps["AVE_OBS_LOS"])
-
-    def _add_delta_column(self, dirname, new_col_name, scale_func):
-        scale = 1. / scale_func(self.seps["R_PERP_O"], self.seps["R_PAR_O"],
-                                self.seps["ZBAR"])
-        tcol_name = "R_{}_T".format(dirname)
-        ocol_name = "R_{}_O".format(dirname)
-        self.seps[new_col_name] = ((self.seps[tcol_name] - self.seps[
-            ocol_name]) * scale)
+        self.seps["ZBAR"] = CatalogUtils.z_at_chi(self.seps["AVE_D_OBS"])
 
     def _add_extra_columns(self, perp_bin_size, par_bin_size, perp_bin_scale,
                            par_bin_scale):
@@ -1029,48 +1110,107 @@ class ProbFitter(object):
         self._add_bin_column("R_PAR_O", "RLO_BIN", par_bin_size, par_bin_scale)
         self.logger.debug("Add ZBAR")
         self._add_zbar()
-        self.logger.debug("Add DELTA_R_PERP")
-        self._add_delta_column("PERP", "DELTA_R_PERP", self._perp_mean_scale)
-        self.logger.debug("Add DELTA_R_PAR")
-        self._add_delta_column("PAR", "DELTA_R_PAR", self._par_mean_scale)
-        self.logger.debug("Add x")
-        self._add_delta_column("PERP", "x", self._perp_var_scale)
-        self.logger.debug("Add y")
-        self._add_delta_column("PAR", "y", self._par_var_scale)
 
-    def _group_seps(self):
-        grouped_all = self.seps.groupby(["RPO_BIN", "RLO_BIN"])
-        filtered = grouped_all.filter(lambda x: len(x) >= self.min_counts)
-        grouped = filtered.groupby(["RPO_BIN", "RLO_BIN"])
-        return grouped
+    def _get_delta_column(self, direction, scale_func):
+        scale = 1. / scale_func(self.seps["R_PERP_O"], self.seps["R_PAR_O"],
+                                self.seps["ZBAR"])
+        tcol_name = "R_{}_T".format(direction)
+        ocol_name = "R_{}_O".format(direction)
+        delta = self.seps.loc[:,tcol_name].sub(self.seps.loc[:,ocol_name]).mul(
+            scale)
+        return pd.DataFrame.from_dict({"RPO_BIN": self.seps.loc[:,"RPO_BIN"],
+                                       "RLO_BIN": self.seps.loc[:,"RLO_BIN"],
+                                       "DELTA": delta})
 
-    def _get_stats(self):
-        self.logger.debug("Group data...")
-        grouped = self._group_seps()
-        if len(grouped) <= 2:  ## Is this good enough, or should I require more?
-            raise TooFewGroupsError("Only {} groups with at least {} pairs. " \
-                                    "consider decreasing the minimum number " \
-                                    "of pairs, increasing the bin size, or " \
-                                    "using a larger catalog".format(len(
-                grouped), self.min_counts))
-        self.logger.debug("Group data...[done]")
-        self.stats = pd.DataFrame()
-        self.logger.debug("Sample mean of DELTA_R_PERP")
-        self.stats["m_x"] = grouped["DELTA_R_PERP"].agg(kstat, n=1)
-        self.logger.debug("Variance on sample mean of DELTA_R_PERP")
-        self.stats["var_m_x"] = grouped["DELTA_R_PERP"].agg(kstatvar, n=1)
-        self.logger.debug("Sample variance of x")
-        self.stats["v_x"] = grouped["x"].agg(kstat, n=2)
-        self.logger.debug("Variance on sample variance of x")
-        self.stats["var_v_x"] = grouped["x"].agg(kstatvar, n=2)
-        self.logger.debug("Sample mean of DELTA_R_PAR")
-        self.stats["m_y"] = grouped["DELTA_R_PAR"].agg(kstat, n=1)
-        self.logger.debug("Variance on sample mean of DELTA_R_PAR")
-        self.stats["var_m_y"] = grouped["DELTA_R_PAR"].agg(kstatvar, n=1)
-        self.logger.debug("Sample variance of y")
-        self.stats["v_y"] = grouped["y"].agg(kstat, n=2)
-        self.logger.debug("Variance on sample variance of y")
-        self.stats["var_v_y"] = grouped["y"].agg(kstatvar, n=2)
+    def _get_corr_column(self):
+        rpo = self.seps["R_PERP_O"]
+        rlo = self.seps["R_PAR_O"]
+        zbar = self.seps["ZBAR"]
+        self.logger.debug("Calculate mean R_PERP_T")
+        x_mean = self.mean_rpt(rpo, rlo, zbar)
+        self.logger.debug("Calculate mean R_PAR_T")
+        y_mean = self.mean_rlt(rpo, rlo, zbar)
+        self.logger.debug("Calculate var R_PERP_T")
+        x_var = self.var_rpt(rpo, rlo, zbar)
+        self.logger.debug("Calculate var R_PAR_T")
+        y_var = self.var_rlt(rpo, rlo, zbar)
+        self.logger.debug("Calculate correlations")
+        r = corr_coeff(self.seps["R_PERP_T"], self.seps["R_PAR_T"],
+                       x_mean, y_mean, x_var, y_var)
+        return pd.DataFrame.from_dict({"RPO_BIN": self.data.loc[:,"RPO_BIN"],
+                                       "RLO_BIN": self.data.loc[:,"RLO_BIN"],
+                                       "r": r})
+
+    def _get_stats(self, which):
+        col = "r" if which == "mean_r" else "DELTA"
+        n = 2 if "var" in which else 1
+        col_getter_dict = self._stats_group_switcher[which]
+        df_temp = col_getter_dict["function"](*col_getter_dict["args"])
+        self.logger.info("Number of pairs = {}".format(len(df_temp)))
+        stats = df_temp.groupby(["RPO_BIN", "RLO_BIN"]).filter(
+            lambda x: len(x) >= self.min_counts).groupby(
+            ["RPO_BIN", "RLO_BIN"]).agg([kstat, kstatvar], n).rename(
+                columns={"kstat": "mean", "kstatvar": "variance"})
+        self.logger.info("Number of unique groups = {}".format(len(stats)))
+        if len(stats) <= 2:
+            raise TooFewGroupsError(
+                "Only {} bins with at least {} pairs. Consider decreasing "\
+                    "the minimum number of pairs, increasing the bin size, "\
+                    "or using a larger catalog".format(len(stats),
+                                                       self.min_counts))
+        if stats.columns.nlevels == 2:
+            stats.columns = stats.columns.droplevel()
+        return stats
+
+    def initialize_mean_x(self):
+        self._fitters["mean_x"] = AnalyticSingleFitter(
+            self._get_stats("mean_x"), ["RPO_BIN", "RLO_BIN"],
+            ["mean", "variance"], self._fitter_names["mean_x"]
+            )
+
+    def initialize_var_x(self):
+        self._fitters["var_x"] = AnalyticSingleFitter(
+            self._get_stats("var_x"), ["RPO_BIN", "RLO_BIN"],
+            ["mean", "variance"], self._fitter_names["var_x"]
+            )
+
+    def initialize_mean_y(self):
+        self._fitters["mean_y"] = SingleFitter(
+            self._get_stats("mean_y"), ["RPO_BIN", "RLO_BIN"],
+            ["mean", "variance"], mean_y, prior_mean_y,
+            [r"$a$", r"$\alpha$", r"$\beta$", r"$s$"],
+            self._fitter_names["mean_y"]
+            )
+
+    def initialize_var_y(self):
+        self._fitters["var_y"] = SingleFitter(
+            self._get_stats("var_y"), ["RPO_BIN", "RLO_BIN"],
+            ["mean", "variance"], var_y, prior_var_y,
+            [r"$b$", r"$s_1$", r"$s_2$", r"$\rho$"],
+            self._fitter_names["var_y"]
+            )
+
+    def initialize_mean_r(self):
+        if not np.all([self._fitters[f].best_fit is not None for f in
+                       self._fitter_types[:-1]]):
+            self._fitters["mean_r"] = None
+        else:
+            self._fitters["mean_r"] = AnalyticSingleFitter(
+                self._get_stats("mean_r"), ["RPO_BIN", "RLO_BIN"],
+                ["mean", "variance"], self._fitter_names["mean_r"]
+                )
+
+    def initialize_fitters(self):
+        self.logger.debug("Initalize mean_x")
+        self.initialize_mean_x()
+        self.logger.debug("Initialize var_x")
+        self.initialize_var_x()
+        self.logger.debug("Initialize mean_y")
+        self.initialize_mean_y()
+        self.logger.debug("Initialize var_y")
+        self.initialize_var_y()
+        self.logger.debug("Initalize mean_r")
+        self.initialize_mean_r()
 
     def mean_rpt(self, rpo, rlo, zbar):
         """
@@ -1155,42 +1295,3 @@ class ProbFitter(object):
             index = rpo.index
         return (self._par_var_scale(rpo, rlo, zbar) ** 2 * self.var_y.model(
             rpo, rlo, index=index))
-
-    def _add_corr_column(self):
-        rpo = self.seps["R_PERP_O"]
-        rlo = self.seps["R_PAR_O"]
-        zbar = self.seps["ZBAR"]
-        self.logger.debug("Calculate mean R_PERP_T")
-        x_mean = self.mean_rpt(rpo, rlo, zbar)
-        self.logger.debug("Calculate mean R_PAR_T")
-        y_mean = self.mean_rlt(rpo, rlo, zbar)
-        self.logger.debug("Calculate var R_PERP_T")
-        x_var = self.var_rpt(rpo, rlo, zbar)
-        self.logger.debug("Calculate var R_PAR_T")
-        y_var = self.var_rlt(rpo, rlo, zbar)
-        self.logger.debug("Calculate correlations")
-        self.seps["r"] = corr_coeff(self.seps["R_PERP_T"], self.seps["R_PAR_T"],
-                x_mean, y_mean, x_var, y_var)
-        self._has_r = True
-
-    def _add_corr_stat(self):
-        if not self._has_r:
-            self.logger.debug("Get correlations...")
-            self._add_corr_column()
-            self.logger.debug("Get correlations...[done]")
-        self.logger.debug("Regroup data")
-        grouped = self._group_seps()
-        self.logger.debug("Sample mean of r")
-        self.stats["m_r"] = grouped["r"].agg(kstat, n=1)
-        self.logger.debug("Variance on sample mean of r")
-        self.stats["var_m_r"] = grouped["r"].agg(kstatvar, n=1)
-        self._has_r_stat = True
-
-    def init_corr_fitter(self):
-        if not self._has_r_stat:
-            self.logger.debug("Generate correlation statistics...")
-            self._add_corr_stat()
-            self.logger.debug("Generate correlation statistics...[done]")
-        self._fitters["mean_r"] = SingleFitter(self.stats, ["RPO_BIN",
-            "RLO_BIN"], ["m_r", "var_m_r"],
-            fitter_name=self._fitter_names["mean_r"])

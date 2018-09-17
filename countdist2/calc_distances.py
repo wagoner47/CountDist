@@ -1,9 +1,15 @@
 from __future__ import print_function
-from astropy.table import QTable
+from astropy.table import Table
 import subprocess
 import os, sys
 from .utils import MyConfigObj, init_logger
 import logging
+import calculate_distances as _calculate_distances
+import math
+import pandas as pd
+import numpy as np
+import astropy.cosmology
+import CatalogUtils
 
 
 def pylevel_to_cpplevel(logger):
@@ -27,6 +33,144 @@ def pylevel_to_cpplevel(logger):
     return cpplevel_mapper[logger.getEffectiveLevel()]
 
 
+def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None):
+    if has_obs:
+        print("Using column {} for true distances".format(dtcol))
+    if "fit" in os.path.splitext(file_name)[1]:
+        data = Table.read(file_name)
+    else:
+        names = ["RA", "DEC"]
+        if has_true:
+            names.append(dtcol)
+        if has_obs:
+            names.append(docol)
+        data = Table.read(file_name, format="ascii", names=names)
+    if not has_true:
+        if dtcol is None:
+            dtcol = "D_TRUE"
+        data[dtcol] = np.nan
+    if not has_obs:
+        if docol is None:
+            docol = "D_OBS"
+        data[docol] = np.nan
+    cat = _calculate_distances.fill_catalog_vector(data["RA"], data["DEC"], data[dtcol], data[docol])
+    return cat
+
+
+def _initialize_cosmology(cosmo_file):
+    """A helper function to chose the correct cosmology to initialize based
+    on the parameters in the cosmology parameter file
+
+    Parameters
+    ----------
+    :param cosmo_file: The path to a file containing the cosmological
+    parameters
+    :type cosmo_file: `str`
+
+    Returns
+    -------
+    :return cosmo: The cosmology instance of the correct type from
+    `astropy.cosmology`
+    :rtype cosmo: An instance of one of the subclasses of
+    :class:`astropy.cosmology.FLRW`  
+    """
+    cosmo_mapper = {
+        "FlatLambda": astropy.cosmology.FlatLambdaCDM,
+        "Flatw0": astropy.cosmology.FlatwCDM,
+        "Flatw0wa": astropy.cosmology.Flatw0waCDM,
+        "Lambda": astropy.cosmology.LambdaCDM,
+        "w0": astropy.cosmology.wCDM,
+        "w0wa": astropy.cosmology.w0waCDM
+        }
+    cosmol_params = MyConfigObj(cosmo_file, file_error=True)
+    cosmol_params = cosmol_params["cosmological_parameters"]
+    cosmol_kwargs = dict(
+        H0=(100.0 * cosmol_params.as_float("h0")),
+        Om0=cosmol_params.as_float("omega_m")
+        )
+    if "omega_b" in cosmol_params:
+        cosmol_kwargs["Ob0"] = cosmol_params.as_float("omega_b")
+    if math.isclose(cosmol_params.as_float("omega_k"), 0.0):
+        func_name = "Flat"
+    else:
+        func_name = ""
+        cosmol_kwargs["Ode0"] = (1.0 - cosmol_params.as_float("omega_m") -
+                                 cosmol_params.as_float("omega_k"))
+    if math.isclose(cosmol_params.as_float("w"), -1.0):
+        func_name += "Lambda"
+    else:
+        func_name += "w0"
+        cosmol_kwargs["w0"] = cosmol_params.as_float("w")
+        if not math.isclose(cosmol_params.as_float("wa"), 0.0):
+            func_name += "wa"
+            cosmol_kwargs["wa"] = cosmol_params.as_float("wa")
+    cosmo = cosmo_mapper[func_name](**cosmol_kwargs)
+    return cosmo
+
+
+def calculate_survey_volume(cosmo_file, cat_file, zcol, map_file):
+    """Calculate the volume of the survey from the catalog in the given
+    cosmology, assuming the range of redshifts is constant over the entire
+    area. The survey area is obtained from the HEALPix map given.
+
+    Parameters
+    ----------
+    :param cosmo_file: The path to a file containing the cosmological
+    parameters to use for calculations
+    :type cosmo_file: `str`
+    :param cat_file: The path to a file containing the galaxy positions
+    :type cat_file: `str`
+    :param zcol: The name of the column from the catalog to use for the redshift
+    :type zcol: `str`
+    :param map_file: The path to a file containing the HEALPix map for the
+    survey
+    :type map_file: `str`
+
+    Returns
+    -------
+    :return survey_volume: The volume of the survey in Mpc^3
+    :rtype survey_volume: `float`
+    """
+    cosmo = _initialize_cosmology(cosmo_file)
+    survey_area = CatalogUtils.calculate_survey_area(map_file)
+    z = Table.read(cat_file)[zcol]
+    zmin = z.min()
+    zmax = z.max()
+    spline_z_min = min(0.0, zmin)
+    spline_z_max = max(2.0, zmax)
+    CatalogUtils.initialize(cosmo, zmin=spline_z_min, zmax=spline_z_max)
+    survey_volume = CatalogUtils.vol(zmax, zmin, survey_area)
+    return survey_volume
+
+
+def _get_survey_volume(params):
+    """This function is meant to be used only by the code, to check if the
+    survey volume is already calculated in the parameter file or if it needs
+    to be calculated
+
+    Parameters
+    ----------
+    :param params: The dictionary of the parameters read from the config file
+    :type params: `dict`
+
+    Returns
+    -------
+    :return volume: The survey volume, either read from the parameters or
+    calculated
+    :rtype volume: `float`
+    """
+    try:
+        volume = params.as_float("survey_volume")
+    except:
+        volume = calculate_survey_volume(
+            params["cosmo_file"],
+            params["ifname2"],
+            params["zcol"],
+            params["survey_volume"]
+            )
+    return volume
+
+
 def run_calc(params_file):
     """This function runs the executable for finding the separations between
     galaxies. The only input is the location of the parameter file, which will
@@ -46,80 +190,34 @@ def run_calc(params_file):
     :type params_file: string
     """
     logger = init_logger(__name__)
-    logger.info("Reading parameter file and creating temporary parameter file")
+    logger.info("Reading parameter file")
     params_in = MyConfigObj(params_file, file_error=True)
     try:
         params_in = params_in["run_params"]
     except KeyError:
         pass
-    temp_params_fname = "{}_ascii{}".format(*os.path.splitext(params_file))
-    params_out = MyConfigObj(temp_params_fname)
-    params_out["rp_min"] = params_in["rp_min"]
-    params_out["rp_max"] = params_in["rp_max"]
-    params_out["rl_min"] = params_in["rl_min"]
-    params_out["rl_max"] = params_in["rl_max"]
-    params_out["use_true"] = params_in.as_bool("use_true")
-    params_out["use_obs"] = params_in.as_bool("use_obs")
-    params_out["has_true1"] = params_in.as_bool("has_true1")
-    params_out["has_obs1"] = params_in.as_bool("has_obs1")
-    params_out["has_true2"] = params_in.as_bool("has_true2")
-    params_out["has_obs2"] = params_in.as_bool("has_obs2")
-    params_out["table_name"] = params_in["table_name"]
-    params_out["meta_name1"] = params_in["meta_name1"]
-    params_out["meta_name2"] = params_in["meta_name2"]
-    params_out["table_name"] = params_in["table_name"]
-    if "db_file" in params_in:
-        params_out["db_file"] = params_in["db_file"]
+    survey_volume = _get_survey_volume(params_in)
+    cat1 = _read_catalog(params_in["ifname1"], params_in.as_bool("has_true1"), params_in.as_bool("has_obs1"), params_in["dtcol1"] if params_in.as_bool("has_true1") else None, params_in["docol1"] if params_in.as_bool("has_obs1") else None)
+    if params_in["ifname2"] != params_in["ifname1"]:
+        cat2 = _read_catalog(params_in["ifname2"], params_in.as_bool("has_true2"), params_in.as_bool("has_obs2"), params_in["dtcol2"] if params_in.as_bool("has_true2") else None, params_in["docol2"] if params_in.as_bool("has_obs2") else None)
+        is_auto = False
     else:
-        params_out["db_file"] = os.path.join(os.getcwd(), "seps_db.sqlite3")
-    os.makedirs(os.path.dirname(params_out["db_file"]), exist_ok=True)
-    if params_in.as_bool("has_true1"):
-        print("Using column '{}' for true distance in catalog 1".format(
-            params_in["dtcol1"]))
-    if params_in.as_bool("has_true2"):
-        print("Using column '{}' for true distance in catalog 2".format(
-            params_in["dtcol2"]))
-
-    params_out["ifname1"] = os.path.splitext(params_in["ifname1"])[0] + ".txt"
-    data_in = QTable.read(params_in["ifname1"])
-    params_out["SIGMA_R_EFF1"] = data_in.meta["SIGMAR"]
-    params_out["Z_EFF1"] = data_in.meta["ZEFF"]
-    params_out["SIGMA_Z1"] = data_in.meta["SIGMAZ"]
-    include_names = ["RA", "DEC"]
-    if params_in.as_bool("has_true1"):
-        include_names.append(params_in["dtcol1"])
-    if params_in.as_bool("has_obs1"):
-        include_names.append(params_in["docol1"])
-    data_in.write(params_out["ifname1"], format="ascii.no_header",
-                  include_names=include_names, overwrite=True)
-    del data_in
-
-    params_out["ifname2"] = os.path.splitext(params_in["ifname2"])[0] + ".txt"
-    data_in = QTable.read(params_in["ifname2"])
-    params_out["SIGMA_R_EFF2"] = data_in.meta["SIGMAR"]
-    params_out["Z_EFF2"] = data_in.meta["ZEFF"]
-    params_out["SIGMA_Z2"] = data_in.meta["SIGMAZ"]
-    include_names = ["RA", "DEC"]
-    if params_in.as_bool("has_true2"):
-        include_names.append(params_in["dtcol2"])
-    if params_in.as_bool("has_obs2"):
-        include_names.append(params_in["docol2"])
-    data_in.write(params_out["ifname2"], format="ascii.no_header",
-                  include_names=include_names, overwrite=True)
-    del data_in
-    params_out["is_auto"] = (params_out["ifname1"] == params_out["ifname2"])
-
-    params_out.write()
-
-    logger.info("Running executable")
-    sys.stdout.flush()
-    command = "run {} -l {}".format(temp_params_fname,
-            pylevel_to_cpplevel(logger))
-    subprocess.check_call(command, shell=True)
-    os.remove(temp_params_fname)
-    os.remove(params_out["ifname1"])
-    if not params_out["is_auto"]:
-        os.remove(params_out["ifname2"])
+        cat2 = cat1
+        is_auto = True
+    logger.info("Running calculation")
+    seps_out = _calculate_distances.get_separations(cat1, cat2, survey_volume, params_in.as_float("rp_min"), params_in.as_float("rp_max"), params_in.as_float("rl_min"), params_in.as_float("rl_max"), params_in.as_bool("use_true"), params_in.as_bool("use_obs"), is_auto)
+    logger.info("Converting result to DataFrame")
+    seps_result = pd.DataFrame.from_dict({"ID1": seps_out.id1, "ID2": seps_out.id2})
+    if params_in.as_bool("use_true") and params_in.as_bool("use_obs"):
+        seps_result = pd.DataFrame.from_dict({"R_PERP_T": seps_out.r_perp_t, "R_PAR_T": seps_out.r_par_t, "R_PERP_O": seps_out.r_perp_o, "R_PAR_O": seps_out.r_par_o, "AVE_D_OBS": seps_out.ave_r_obs}).join(seps_result)
+    elif params_in.as_bool("use_true"):
+        seps_result = pd.DataFrame.from_dict({"R_PERP": seps_out.r_perp_t, "R_PAR": seps_out.r_par_t}).join(seps_result)
+    elif params_in.as_bool("use_obs"):
+        seps_result = pd.DataFrame.from_dict({"R_PERP": seps_out.r_perp_o, "R_PAR": seps_out.r_par_o, "AVE_D_OBS": seps_out.ave_ro}).join(seps_result)
+    else:
+        # Should never get here, but check just in case
+        raise ValueError("Must use at least true or observed distances, or both")
+    return seps_result
 
 # def pair_counts_perp(rp_min, rp_max, nbins, log_bins=False, load_dir=None):
 #     """Get the perpendicular pair counts (i.e. histogram of perpendicular

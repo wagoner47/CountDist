@@ -91,8 +91,9 @@ void drop_table(sqlite3 *db, string table_name) {
     int drop_status = sqlite3_exec(db, drop_stmt.c_str(), 0, 0, 0);
     if (drop_status != SQLITE_OK) {
         cerr << "Cannot drop table " << table_name << " from database" << endl;
+	int errcode = sqlite3_extended_errcode(db);
         sqlite3_close(db);
-        exit(7);
+        exit(errcode);
     }
 }
 
@@ -104,75 +105,63 @@ void create_table(sqlite3 *db, string table_name, array<string, ncols> col_names
     }
     if (sqlite3_exec(db, create_stmt.c_str(), 0, 0, 0) != SQLITE_OK) {
 	cerr << "Cannot create table " << table_name << "in database" << endl;
+	int errcode = sqlite3_extended_errcode(db);
 	sqlite3_close(db);
-	exit(8);
+	exit(errcode);
     }
 }
 
-void setup_db(sqlite3 *db, string table_name, bool use_true, bool use_obs) {
-    drop_table(db, table_name);
-    if (!(use_true || use_obs)) {
-	cerr << "Must use at least true or observed separations, or both" << endl;
-	sqlite3_close(db);
-    }
-    else {
-        if (use_true && use_obs) {
-	    array<string, 5> col_names = {"R_PERP_T", "R_PAR_T", "R_PERP_O", "R_PAR_O", "AVE_OBS_LOS"};
-	    create_table(db, table_name, col_names);
-	}
-	else {
-	    array<string, 2> col_names = {"R_PERP", "R_PAR"};
-	    create_table(db, table_name, col_names);
-	}
-    }
+void setup_db(sqlite3 *db, string table_name, bool use_true_and_obs) {
+  drop_table(db, table_name);
+  if (use_true_and_obs) {
+    array<string, 5> col_names = {"R_PERP_T", "R_PAR_T", "R_PERP_O", "R_PAR_O", "AVE_OBS_LOS"};
+    create_table(db, table_name, col_names);
+  }
+  else {
+    array<string, 2> col_names = {"R_PERP", "R_PAR"};
+    create_table(db, table_name, col_names);
+  }
 }
 
-void setup_stmt(sqlite3 *db, sqlite3_stmt *&stmt, string table_name, bool use_true, bool use_obs) {
-    string sql_stmt = "INSERT INTO " + table_name + " VALUES (";
-    if (use_true && use_obs) {
-        sql_stmt += "?1, ?2, ?3, ?4, ?5)";
-    }
-    else if (use_true || use_obs) {
-        sql_stmt += "?1, ?2)";
-    }
-    else {
-        cerr << "Must use at least true or observed separations, or both" << endl;
-        sqlite3_close(db);
-        exit(2);
-    }
-    int prep_status = sqlite3_prepare_v2(db, sql_stmt.c_str(), -1, &stmt, 0);
-    if (prep_status != SQLITE_OK) {
-        cerr << "Cannot prepare SQL insert statement for transaction in database" << endl;
-        sqlite3_close(db);
-        exit(9);
-    }
+void setup_stmt(sqlite3 *db, sqlite3_stmt *&stmt, string table_name, bool use_true_and_obs) {
+  string sql_stmt = "INSERT INTO " + table_name + " VALUES (?1, ?2";
+  if (use_true_and_obs) {
+    sql_stmt += ", ?3, ?4, ?5";
+  }
+  sql_stmt += ")";
+  if (sqlite3_prepare_v2(db, sql_stmt.c_str(), -1, &stmt, 0) != SQLITE_OK) {
+    cerr << "Cannot prepare SQL insert statement for transaction in database" << endl;
+    int errcode = sqlite3_extended_errcode(db);
+    sqlite3_close(db);
+    exit(errcode);
+  }
     // Debug: check statement
     // cout << "SQL statement in setup_stmt: " << sqlite3_sql(stmt) << endl;
 }
 
 void begin_transaction(sqlite3 *db) {
-    int begin_status = sqlite3_exec(db, "BEGIN TRANSACTION", 0, 0, 0);
-    if (begin_status != SQLITE_OK) {
-        cerr << "Cannot begin transaction in database" << endl;
-        sqlite3_close(db);
-        exit(10);
-    }
+  if (sqlite3_exec(db, "BEGIN TRANSACTION", 0, 0, 0) != SQLITE_OK) {
+    cerr << "Cannot begin transaction in database" << endl;
+    int errcode = sqlite3_extended_errcode(db);
+    sqlite3_close(db);
+    exit(errcode);
+  }
 }
 
 void end_transaction(sqlite3 *db) {
-    int end_status = sqlite3_exec(db, "END TRANSACTION", 0, 0, 0);
-    if (end_status != SQLITE_OK) {
-        cerr << "Cannot complete transaction in database" << endl;
-        sqlite3_close(db);
-        exit(12);
-    }
+  if (sqlite3_exec(db, "END_TRANSACTION", 0, 0, 0) != SQLITE_OK) {
+    cerr << "Cannot complete transaction in database" << endl;
+    int errcode = sqlite3_extended_errcode(db);
+    sqlite3_close(db);
+    exit(errcode);
+  }
 }
 
 void start_sqlite(sqlite3*& db, sqlite3_stmt *&stmt, string db_file, string table_name, bool use_true, bool use_obs, bool use_omp) {
     setup_sqlite(use_omp);
     open_db(db, db_file);
-    setup_db(db, table_name, use_true, use_obs);
-    setup_stmt(db, stmt, table_name, use_true, use_obs);
+    setup_db(db, table_name, (use_true && use_obs));
+    setup_stmt(db, stmt, table_name, (use_true && use_obs));
     // Debug: check statement
     // cout << "SQL statement in start_sqlite: " << sqlite3_sql(stmt) << endl;
     begin_transaction(db);
@@ -212,16 +201,31 @@ void write_and_restart_check(sqlite3 *db, string table_name, size_t num_rows_exp
 }
 
 void bind_and_check(sqlite3 *db, sqlite3_stmt *&stmt, int position, double value) {
-    // Debug: get type of stmt
-    // cout << "Type for stmt: " << type(stmt) << endl;
-    // Debug: get sql statment and expanded statment
-    // cout << "SQL statement in bind_and_check: " << sqlite3_sql(stmt) << endl;
-    int bind_status = sqlite3_bind_double(stmt, position, value);
-    if (bind_status != SQLITE_OK) {
-	cerr << "Could not bind value " << value << " to position " << position << " to insert statment" << endl;
-	sqlite3_close(db);
-	exit(15);
-    }
+  if (sqlite3_bind_double(stmt, position, value) != SQLITE_OK) {
+    cerr << "Could not bind value " << value << " to position " << position << " to insert statment" << endl;
+    int errcode = sqlite3_extended_errcode(db);
+    sqlite3_close(db);
+    exit(errcode);
+  }
+}
+
+void take_step(sqlite3 *db, sqlite3_stmt *&stmt, vector<double> row_separations) {
+  for (int i = 0; i < row_separations.size(); i++) {
+    bind_and_check(db, stmt, i, row_separations[i]);
+  }
+  int step_status = sqlite3_step(stmt);
+  if (step_status != SQLITE_OK && step_status != SQLITE_DONE && step_status != SQLITE_ROW) {
+    cerr << "Error stepping sqlite statment" << endl;
+    int errcode = sqlite3_extended_errcode(db);
+    sqlite3_close(db);
+    exit(errcode);
+  }
+  if (sqlite3_reset(stmt) != SQLITE_OK) {
+    cerr << "Error resetting sqlite statement" << endl;
+    int errcode = sqlite3_extended_errcode(db);
+    sqlite3_close(db);
+    exit(errcode);
+  }
 }
 
 void step_stmt(sqlite3 *db, sqlite3_stmt *&stmt, tuple<double, double> rp, tuple<double, double> rl, double ave_dist, bool use_true, bool use_obs) {

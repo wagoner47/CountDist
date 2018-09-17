@@ -17,7 +17,7 @@ src/v1/
 src/v2/
 include/v1/
 include/v2/
-dist/*
+dist/
 
 # CMake stuff
 *CMakeCache.txt
@@ -29,6 +29,10 @@ dist/*
 *compile_commands.json
 *Testing
 *CTestTestfile.cmake
+
+# C++ compile stuff
+*.so
+*bin/
 
 # CLion stuff
 *.idea

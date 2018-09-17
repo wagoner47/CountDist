@@ -39,9 +39,9 @@ void drop_table(sqlite3* db, std::string table_name);
 template <std::size_t ncols>
 extern void create_table(sqlite3 *db, std::string table_name, std::array<std::string, ncols> col_names);
 
-void setup_db(sqlite3 *db, std::string table_name, bool use_true, bool use_obs);
+void setup_db(sqlite3 *db, std::string table_name, bool use_true_and_obs);
 
-void setup_stmt(sqlite3 *db, sqlite3_stmt *&stmt, std::string table_name, bool use_true, bool use_obs);
+void setup_stmt(sqlite3 *db, sqlite3_stmt *&stmt, std::string table_name, bool use_true_and_obs);
 
 void begin_transaction(sqlite3 *db);
 
@@ -56,6 +56,8 @@ void check_rows_written(sqlite3 *db, std::string table_name, std::size_t num_row
 void write_and_restart(sqlite3 *db);
 
 void write_and_restart_check(sqlite3 *db, std::string table_name, std::size_t num_rows_expected);
+
+void take_step(sqlite3 *db, sqlite3_stmt *&stmt, std::vector<double> row_separations);
 
 void step_stmt(sqlite3 *db, sqlite3_stmt *&stmt, std::tuple<double, double> rp, std::tuple<double, double> rl, double ave_dist, bool use_true, bool use_obs);
 

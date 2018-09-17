@@ -70,10 +70,16 @@ int main(int argc, char* argv[]) {
 	LOG(severity_level::info) << "Getting separations...";
 	//cout << "Getting separations...";
 	start = chrono::steady_clock::now();
-	get_dist(cat1, cat2, params.as_double("rp_min"), params.as_double("rp_max"), params.as_double("rl_min"), params.as_double("rl_max"), params["db_file"], params["table_name"], params.as_bool("use_true"), params.as_bool("use_obs"), params.as_bool("is_auto"));
+	tuple<vector<vector<double> >, vector<vector<size_t> > > seps_output = get_separations(cat1, cat2, params.as_double("rp_min"), params.as_double("rp_max"), params.as_double("rl_min"), params.as_double("rl_max"), params.as_bool("use_true"), params.as_bool("use_obs"), params.as_bool("is_auto"));
 	stop = chrono::steady_clock::now();
 	//cout << "[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]" << endl;
 	LOG(severity_level::info) << "Getting separations...[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]";
+
+	LOG(severity_level::info) << "Writing separations to database...";
+	start = chrono::steady_clock::now();
+	write_separations(get<0>(seps_output), params["db_file"], params["table_name"]);
+	stop = chrono::steady_clock::now();
+	LOG(severity_level::info) << "Writing separations to database...[done: " << (chrono::duration<double, ratio<1>>(stop - start)).count() << " sec]";
 
 	LOG(severity_level::info) << "Adding meta-data for catalog 1...";
 	//cout << "Adding meta-data for catalog 1...";

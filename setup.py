@@ -1,9 +1,13 @@
 from __future__ import print_function
-import os
-import re
+import os, sys, re, glob
+import platform, sysconfig
+from shutil import copyfile, copymode
 from setuptools import setup, Extension, Command
 from setuptools.command.install import install
 from setuptools.command.develop import develop
+from setuptools.command.build_ext import build_ext
+from setuptools.command.test import test as TestCommand
+from distutils.version import LooseVersion
 import subprocess
 
 cd_dir = os.path.abspath(os.path.dirname(__file__))
@@ -47,84 +51,112 @@ except OSError:
     pass
 
 
-def compile_code(v=None, omp_num_threads=None, prefix="/usr/local",
-        run_install=True):
-    if v is not None:
-        v_command = "VERS={} ".format(v)
-    else:
-        v_command = ""
-    if omp_num_threads is not None:
-        o_command = "OMP={} ".format(omp_num_threads)
-    else:
-        o_command = ""
-    cmake_command = "{}{}cmake -DCMAKE_INSTALL_PREFIX={} .".format(
-        v_command, o_command, prefix)
-    subprocess.check_call(cmake_command, shell=True)
-    subprocess.check_call("make", shell=True)
-    if run_install:
-        subprocess.check_call("make install", shell=True)
-    else:
-        os.link(os.path.join(cd_dir, "build", "bin", "run"),
-                os.path.join(prefix, "bin", "run"))
+class CMakeExtension(Extension):
+    def __init__(self, name, sourcedir=""):
+        Extension.__init__(self, name, sources=[])
+        self.sourcedir = os.path.abspath(sourcedir)
 
 
-class CustomInstall(install):
-    user_options = install.user_options + [
-        ("omp=", None,
-         "Number of threads to use for OpenMP: if None (default) or 0, "
-         "OpenMP not used"),
-        ("loc=", None,
-         "Prefix to use for executable install location, if not /usr/local"),
-        ("v=", None,
-         "Version of C++ code to use: if not given, will use version 4")]
+class CMakeBuild(build_ext):
+    user_options = build_ext.user_options + [
+        ("omp=", None, "Number of OpenMP threads to use, or 0 for no OpenMP"),
+        ("vers=", None, "Version of C++ code to compile")
+        ]
 
     def initialize_options(self):
-        """Set default values"""
-        install.initialize_options(self)
-        self.v = None
+        build_ext.initialize_options(self)
         self.omp = None
-        self.loc = "/usr/local"
+        self.vers = None
 
     def finalize_options(self):
-        """Post-process options"""
-        install.finalize_options(self)
-
+        build_ext.finalize_options(self)
+    
     def run(self):
-        with open("extras.txt", "w") as f:
-            f.write(os.path.join(self.loc, "bin", "run"))
-        compile_code(v=self.v, omp_num_threads=self.omp, prefix=self.loc)
-        install.run(self)
+        try:
+            out = subprocess.check_output(["cmake", "--version"])
+        except OSError:
+            raise RuntimeError("CMake must be installed to build the following extensions: " + ", ".join(e.name for e in self.extensions))
 
-class CustomDevelop(develop):
-    user_options = develop.user_options + [
-        ("omp=", None,
-         "Number of threads to use for OpenMP: if None (default) or 0, "
-         "OpenMP not used"),
-        ("loc=", None,
-         "Prefix to use for executable install location, if not /usr/local"),
-        ("v=", None,
-         "Version of C++ code to use: if not given, will use version 4")]
+        if platform.system() == "Windows":
+            cmake_version = LooseVersion(re.search(r'version\s*([\d.]+)', out.decode()).group(1))
+            if cmake_version < '3.1.0':
+                raise RuntimeError("CMake >= 3.1.0 is required on Windows")
 
-    def initialize_options(self):
-        self.v = None
-        self.omp = None
-        self.loc = "/usr/local"
-        develop.initialize_options(self)
+        for ext in self.extensions:
+            self.build_extension(ext)
 
-    def finalize_options(self):
-        develop.finalize_options(self)
+    def build_extension(self, ext):
+        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
+                      '-DPYTHON_EXECUTABLE=' + sys.executable]
+        if self.omp is not None:
+            cmake_args += ['-Domp=' + self.omp]
+        if self.vers is not None:
+            cmake_args += ['-Dvers=' + self.vers]
 
-    def run(self):
-        if self.uninstall:
-            with open("extras.txt") as f:
-                bin_copy = f.read()
-            os.unlink(bin_copy)
+        cfg = 'Debug' if self.debug else 'Release'
+        build_args = ['--config', cfg]
+
+        if platform.system() == "Windows":
+            cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(cfg.upper(), extdir)]
+            if sys.maxsize > 2**32:
+                cmake_args += ['-A', 'x64']
+            build_args += ['--', '/m']
         else:
-            with open("extras.txt", "w") as f:
-                f.write(os.path.join(self.loc, "bin", "run"))
-                compile_code(v=self.v, omp_num_threads=self.omp,
-                        prefix=self.loc, run_install=False)
-        develop.run(self)
+            cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
+            build_args += ['--', '-j2']
+
+        env = os.environ.copy()
+        env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(os.getenv('CXXFLAGS', ''),
+                                                              self.distribution.get_version())
+
+        os.makedirs(self.build_temp, exist_ok=True)
+        subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
+        subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=self.build_temp)
+        lib_file = glob.glob(os.path.join(extdir, "calculate_distances*.so"))[0]
+        try:
+            os.link(lib_file, os.path.join(cd_dir, "countdist2", "calculate_distances.so"))
+        except:
+            pass
+
+        test_bin = os.path.join(self.build_temp, "CountDistCPP_test{}".format(".exe" if platform.system() == "Windows" else ""))
+        self.copy_test_file(test_bin)
+
+    def copy_test_file(self, src_file):
+        dest_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "tests", "bin")
+        if dest_dir != "":
+            os.makedirs(dest_dir, exist_ok=True)
+
+        dest_file = os.path.join(dest_dir, os.path.basename(src_file))
+        copyfile(src_file, dest_file)
+        copymode(src_file, dest_file)
+
+
+class CatchTestCommand(TestCommand):
+    user_options = TestCommand.user_options + [
+        ("catch-args=", None, "Arguments to pass to Catch2 for C++ testing")
+        ]
+    def initialize_options(self):
+        TestCommand.initialize_options(self)
+        self.catch_args = None
+
+    def finalize_options(self):
+        TestCommand.finalize_options(self)
+        if self.catch_args is None:
+            self.catch_args = ""
+        
+    def distutils_dir_name(self, dname):
+        dir_name = "{dirname}.{platform}-{version[0]}.{version[1]}"
+        return dir_name.format(dirname=dname,
+                               platform=sysconfig.get_platform(),
+                               version=sys.version_info)
+
+    def run(self):
+        print("\nRunning Python tests...\n")
+        TestCommand.run(self)
+        print("\nRunning C++ tests...\n")
+        subprocess.call('./bin/*_test {}'.format(self.catch_args), cwd=os.path.join(cd_dir, 'tests'), shell=True)
 
 class UninstallCommand(Command):
     user_options = [("sudo=", None, "Password for sudo, if any")]
@@ -170,8 +202,10 @@ dist = setup(name="CountDist2", version=cd_version, author="Erika Wagoner",
              "separations between objects in catalogs", 
              packages=["countdist2"], include_package_data=True,
              install_requires=get_requirements(),
-             dependency_links=get_requirements(True), cmdclass={"clean":
-                 CleanCommand, "uninstall": UninstallCommand, "install":
-                 CustomInstall, "develop": CustomDevelop})
+             dependency_links=get_requirements(True),
+             test_suite="tests",
+             ext_modules=[CMakeExtension("calculate_distances")],
+             cmdclass={"clean": CleanCommand, "uninstall": UninstallCommand,
+                       "build_ext": CMakeBuild, "test": CatchTestCommand})
 
 os.chdir(cwd)
