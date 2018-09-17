@@ -45,3 +45,4 @@ include/v4/*.h
 src/v4/*.cpp
 !src/v4/calc_distances.cpp
 !src/v4/bind_calc_distances.cpp
+countdist2/file_io.py
