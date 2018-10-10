@@ -4,65 +4,25 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from chainconsumer import ChainConsumer
 import CatalogUtils
-from scipy.stats import kstat, kstatvar, binned_statistic_2d
+from scipy.stats import kstat, kstatvar, describe
 from scipy.optimize import minimize
+from scipy.linalg import block_diag
 import emcee
 import numpy as np
 import math
 import pandas as pd
+from astropy.table import Table
 import pickle
-import os, re, itertools
+import os, re, itertools, warnings
 
 plt.rcParams["figure.facecolor"] = "white"
+plt.style.use("seaborn-colorblind")
+
+glogger = init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
 
 # Custom ValueError for too few groups (for catching during debugging)
 class TooFewGroupsError(ValueError): pass
-
-
-class CustomGroupBy(object):
-    def __init__(self, keys, min_length=1):
-        self.logger = init_logger(self.__class__.__name__)
-        self.logger.debug("Get unique values and counts")
-        self.key_values, self.keys_as_int, self.key_counts = np.unique(
-            keys, axis=0, return_inverse=True, return_counts=True)
-        if min_length > 1:
-            self.logger.debug("Filter based on number of elements")
-            keep_keys = ((self.key_counts >= min_length))
-            self.key_values = self.key_values[keep_keys]
-            self.keys_as_int = self.keys_as_int[np.isin(self.keys_as_int,
-                                                        np.where(keep_keys)[0])]
-            self.key_counts = self.key_counts[keep_keys]
-        self.n_keys = max(self.keys_as_int)
-        self.set_indices()
-        self.set_series_index(keys)
-
-    def set_indices(self):
-        self.indices = [[] for i in range(self.n_keys+1)]
-        self.logger.debug("Set integer indices")
-        for i, k in enumerate(self.keys_as_int):
-            self.indices[k].append(i)
-        self.indices = [np.array(elt) for elt in self.indices]
-        self.logger.debug("Integer indices set")
-
-    def set_series_index(self, keys):
-        self.logger.debug("Set pandas index")
-        if self.key_values.ndim > 1:
-            self.logger.debug("Create MultiIndex")
-            self.key_values = [tuple(key_val) for key_val in self.key_values]
-            self.key_values = pd.MultiIndex.from_tuples(self.key_values,
-                                                        names=keys.columns)
-        else:
-            self.logger.debug("Create Index")
-            self.key_values = pd.Index(self.key_values, name=keys.name)
-        self.logger.debug("Pandas index set")
-
-    def apply(self, vector, function, *args, **kwargs):
-        result = np.zeros(len(self.key_values))
-        for k, idx in enumerate(self.indices):
-            result[self.keys_as_int[k]] = function(
-                vector.loc[self.key_values[idx]], *args, **kwargs)
-        return pd.Series(result, index=self.key_values, name=function.__name__)
 
 
 # Empty MultiIndex creation
@@ -71,28 +31,10 @@ def empty_multi_index(names):
     labels = [[] for i in range(len(names))]
     return pd.MultiIndex(levels=levels, labels=labels, names=names)
 
-
-# Wrapper for kstat that also checks number of objects first
-def kstat_check(arr, n, min_length):
-    if len(arr) < min_length:
-        return math.nan
-    return kstat(arr, n)
-
-
-# Wrapper for kstatvar that also checks number of objects first
-def kstatvar_check(arr, n, min_length):
-    if len(arr) < min_length:
-        return math.nan
-    return kstatvar(arr, n)
-
-
-def get_array(x):
-    """Get x as a 1D array"""
-    try:
-        arr_x = x.values
-    except AttributeError:
-        arr_x = np.atleast_1d(x).flatten()
-    return arr_x
+def empty_multi_index_nonames(nlevels):
+    levels = [[] for i in range(nlevels)]
+    labels = [[] for i in range(nlevels)]
+    return pd.MultiIndex(levels=levels, labels=labels)
 
 
 def corr_coeff(x, y, x_mean, y_mean, x_var, y_var):
@@ -122,7 +64,7 @@ def corr_coeff(x, y, x_mean, y_mean, x_var, y_var):
     return r
 
 
-def mean_y(rpo, rlo, a, alpha, beta, s, index=None):
+def mean_y(rpo, rlo, a, alpha, beta, s, **kwargs):
     """
     The mean of :math:`\frac{\Delta R_\parallel}{R_\parallel^O}`. This
     function looks like :math:`a x^\alpha y^\beta \exp[-y^2 / 2 s]`, where x
@@ -147,21 +89,30 @@ def mean_y(rpo, rlo, a, alpha, beta, s, index=None):
     with names ['RPO_BIN', 'RLO_BIN']. Default `None`
     :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or `None`,
     optional
+    :key index: Optional index to use for returning a Series rather than an
+    array for array-like :param:`rpo` and/or :param:`rlo`. Default `None`
+    :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`, optional
     :return f: The function evaluated at the separation(s)
-    :rtype f: scalar or 1D :class:`pandas.Series` `float`
+    :rtype f: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
+    `float`
     """
     if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
         f = a * (rpo**alpha) * (rlo**beta) * math.exp(-0.5 * rlo**2 / s)
     else:
+        index = kwargs.pop("index", None)
         if index is not None:
             f = pd.Series(a * (rpo**alpha) * (rlo**beta) * \
                           np.exp(-0.5 * rlo**2 / s), index=index)
         else:
+            if hasattr(rpo, "values"):
+                rpo = rpo.values
+            if hasattr(rlo, "values"):
+                rlo = rlo.values
             f = a * (rpo**alpha) * (rlo**beta) * np.exp(-0.5 * rlo**2 / s)
     return f
 
 
-def var_y(rpo, rlo, b, s1, s2, rho, index=None):
+def var_y(rpo, rlo, b, s1, s2, rho, **kwargs):
     """
     The variance of :math:`\frac{\Delta R_\parallel}{\sqrt{2} \chi'(\bar{z})
     \sigma_z(\bar{z})}`. This function looks like :math:`1 - b \exp[-0.5 \vec{
@@ -187,13 +138,12 @@ def var_y(rpo, rlo, b, s1, s2, rho, index=None):
     :param rho: The mixing of the perpendicular and parallel contriubtions to
     the exponential
     :type rho: scalar `float`
-    :param index: The index to add to the Series, if needed. Ignored for scalar
-    output. If `None`, the index is made from :param:`rpo` and :param:`rlo`,
-    with names ['RPO_BIN', 'RLO_BIN']. Default `None`
-    :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or `None`,
-    optional
+    :key index: Optional index to use for returning a Series rather than an
+    array for array-like :param:`rpo` and/or :param:`rlo`. Default `None`
+    :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`, optional
     :return f: The function evaluated at the separation(s)
-    :rtype f: scalar or 1D :class:`pandas.Series` `float`
+    :rtype f: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
+    `float`
     """
     inv_weight = 1. / (s1 * s2 * (1 - rho**2))
     cinv = [x * inv_weight for x in [s2, s1, -2 * rho * math.sqrt(s1 * s2)]]
@@ -201,11 +151,18 @@ def var_y(rpo, rlo, b, s1, s2, rho, index=None):
         f = 1.0 - b * math.exp(-0.5 * (rpo**2 * cinv[0] + rlo**2 * cinv[1] + rpo
             * rlo * cinv[2]))
     else:
-        if index is None:
-            index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN", 
-                "RLO_BIN"])
-        f = 1.0 - b * np.exp(-0.5 * pd.Series(rpo**2 * cinv[0] + rlo**2 *
-            cinv[1] + rpo * rlo * cinv[2], index=index))
+        index = kwargs.pop("index", None)
+        if index is not None:
+            f = 1.0 - b * np.exp(
+                -0.5 * pd.Series(rpo**2 * cinv[0] + rlo**2 *
+                                 cinv[1] + rpo * rlo * cinv[2], index=index))
+        else:
+            if hasattr(rpo, "values"):
+                rpo = rpo.values
+            if hasattr(rlo, "values"):
+                rlo = rlo.values
+            f = 1.0 - b * np.exp(-0.5 * (rpo**2 * cinv[0] + rlo**2 * cinv[1] +
+                                         rpo * rlo * cinv[2]))
     return f
 
 
@@ -254,6 +211,226 @@ def _check_pickleable(attrs):
             return False
     return True
 
+def _perp_mean_scale(rpo, rlo, zbar, sigma_z):
+    return rpo
+
+def _perp_var_scale(rpo, rlo, zbar, sigma_z):
+    return ((np.sqrt(0.5) * rpo * sigma_z * (1 + zbar) *
+             CatalogUtils.dr_dz(zbar)) / CatalogUtils.dist(zbar))
+
+def _par_mean_scale(rpo, rlo, zbar, sigma_z):
+    return rlo
+
+def _par_var_scale(rpo, rlo, zbar, sigma_z):
+    return (np.sqrt(2.0) * sigma_z * (1 + zbar) *
+            CatalogUtils.dr_dz(zbar))
+
+def _add_bin_column(seps, orig_col_name, bin_col_name, bin_size, scale):
+    seps[bin_col_name] = ((np.floor(seps.loc[:,orig_col_name] /
+                                    bin_size) + 0.5) *
+                          (bin_size / scale))
+
+def _add_zbar(seps):
+    seps["ZBAR"] = CatalogUtils.z_at_chi(seps["AVE_D_OBS"])
+
+def _add_delta_column(seps, direction, scale_func, dcol_name, sigma_z):
+    tcol_name = "R_{}_T".format(direction)
+    ocol_name = "R_{}_O".format(direction)
+    scale = 1. / scale_func(seps.loc[:,"R_PERP_O"], seps.loc[:,"R_PAR_O"],
+                            seps.loc[:,"ZBAR"], sigma_z)
+    seps[dcol_name] = seps[tcol_name].sub(seps[ocol_name]).mul(scale)
+
+def add_extra_columns(seps, perp_bin_size, par_bin_size, perp_bin_scale,
+                      par_bin_scale, sigma_z):
+    """This function adds some of the extra data columns to the input DataFrame
+    that are needed for grouping and generating the statistics. It does not
+    add the column for the correlation, that is handled by a separate function.
+
+    :param seps: The DataFrame of the separations which should already contain,
+    at a minimum, columns 'R_PERP_O', 'R_PAR_O', 'R_PERP_T', 'R_PAR_T', and
+    'AVE_D_OBS'. Additional columns are ignored
+    :type seps: :class:`pandas.DataFrame`
+    :param perp_bin_size: The bin size to use for binning 'R_PERP_O', in the
+    same units as 'R_PERP_O'
+    :type perp_bin_size: `float`
+    :param par_bin_size: The bin size to use for binning 'R_PAR_O', in the same
+    units as 'R_PAR_O'
+    :type par_bin_size: `float`
+    :param perp_bin_scale: The scaling to use for the 'R_PERP_O' bins, in the
+    same units as 'R_PERP_O'
+    :type perp_bin_scale: `float`
+    :param par_bin_scale: The scaling to use for the 'R_PAR_O' bins, in the
+    same units as 'R_PAR_O'
+    :type par_bin_scale: `float`
+    :param sigma_z: The redshift error assumed for the separations
+    :type sigma_z: `float`
+    """
+    logger = glogger.getChild(__name__)
+    logger.debug("Add column RPO_BIN")
+    _add_bin_column(seps, "R_PERP_O", "RPO_BIN", perp_bin_size,
+                    perp_bin_scale)
+    logger.debug("Add column RLO_BIN")
+    _add_bin_column(seps, "R_PAR_O", "RLO_BIN", par_bin_size, par_bin_scale)
+    logger.debug("Add column ZBAR")
+    _add_zbar(seps)
+    logger.debug("Add column DELTA_R_PERP")
+    _add_delta_column(seps, "PERP", _perp_mean_scale, "DELTA_R_PERP", sigma_z)
+    logger.debug("Add column x")
+    _add_delta_column(seps, "PERP", _perp_var_scale, "x", sigma_z)
+    logger.debug("Add column DELTA_R_PAR")
+    _add_delta_column(seps, "PAR", _par_mean_scale, "DELTA_R_PAR", sigma_z)
+    logger.debug("Add column y")
+    _add_delta_column(seps, "PAR", _par_var_scale, "y", sigma_z)
+
+def get_delta_stats(seps, min_counts=200, min_bins=2):
+    """Calculate the sample means/variances and the variances on them for each
+    of the four 'delta' columns: 'DELTA_R_PERP', 'x', 'DELTA_R_PAR', and 'y'.
+    The return will have MultiIndex rows labeled by their perpendicular and
+    parallel separation bins ('RPO_BIN' and 'RLO_BIN'), and MultiIndex columns
+    where the 0th level is which statistic it is ('mean_x' for 'DELTA_R_PERP',
+    'var_x' for 'x', 'mean_y' for 'DELTA_R_PAR', and 'var_y' for 'y') and the
+    1st level labels which item it is ('mean' is always the statistic and
+    'variance' is always the variance on it, although 'mean' is actually the
+    sample variance in the case of 'var_x' and 'var_y').
+
+    If the extra columns needed for the calculations have not been added yet
+    via :function:`add_extra_columns`, an AttributeError will be raised. Please
+    make sure to call that function first to have all needed columns
+
+    :param seps: The DataFrame of the separations, which must have columns
+    'RPO_BIN', 'RLO_BIN', 'DELTA_R_PERP', 'x', 'DELTA_R_PAR', and 'y'. All of
+    these columns may be added with a single call to
+    :function:`add_extra_columns`
+    :type seps: :class:`pandas.DataFrame`
+    :param min_counts: The minimum number of pairs in each bin in order to
+    keep the bin. If there are fewer than :param:`min_bins` of these, an error
+    will be thrown and the statistics will not be calculated. Default 200
+    :type min_counts: `int`, optional
+    :param min_bins: The minimum number of bins needed after filtering based
+    on number of pairs. If there aren't at least this many bins, an error
+    will be thrown, and the statistics will not be calculated. Default 2
+    :type min_bins: `int`, optional
+    :returns stats: A DataFrame containing the statistics functions calculated.
+    See above for the index names and column descriptions
+    :rtype stats: :class:`pandas.DataFrame`
+    :raises AttributeError: if any of the needed columns are missing
+    :riases TooFewGroupsError: if there are fewer than :param:`min_bins`
+    bins with at least :param:`min_counts` pairs
+    """
+    logger = glogger.getChild(__name__)
+    logger.debug("Drop NAN columns")
+    seps_filt = seps.dropna(axis=1)
+    required_cols = ["RPO_BIN", "RLO_BIN",
+                     "DELTA_R_PERP", "x",
+                     "DELTA_R_PAR", "y"]
+    logger.debug("Check for missing required columns")
+    missing_cols = [col not in seps_filt for col in required_cols]
+    if np.any(missing_cols):
+        raise AttributeError("Missing required column(s): {}".format(
+                list(itertools.compress(required_cols, missing_cols))))
+    logger.debug("Select only needed columns for grouping")
+    sub_seps = seps_filt.loc[:,required_cols].copy()
+    logger.debug("Group separations and filter based on number of pairs")
+    grouped = sub_seps.groupby(["RPO_BIN", "RLO_BIN"]).filter(
+        lambda x: len(x) >= min_counts).groupby(["RPO_BIN", "RLO_BIN"])
+    logger.debug("Check for enough bins")
+    if len(grouped) <= min_bins:
+        raise TooFewGroupsError(
+            "Only {} bins with at least {} pairs. Consider decreasing "\
+                "the minimum number of pairs, increasing the bin size, "\
+                "or using a larger catalog".format(len(grouped), min_counts))
+    logger.debug("Get sample mean of (R_PERP_T - R_PERP_O) / R_PERP_O")
+    stats_mx = pd.concat([grouped["DELTA_R_PERP"].agg(kstat, 1),
+                          grouped["DELTA_R_PERP"].agg(kstatvar, 1)],
+                         keys=["mean", "variance"], axis=1)
+    logger.debug("Get sample variance of x")
+    stats_vx = pd.concat([grouped["x"].agg(kstat, 2),
+                          grouped["x"].agg(kstatvar, 2)],
+                         keys=["mean", "variance"], axis=1)
+    logger.debug("Get sample mean of (R_PAR_T - R_PAR_O) / R_PAR_O")
+    stats_my = pd.concat([grouped["DELTA_R_PAR"].agg(kstat, 1),
+                          grouped["DELTA_R_PAR"].agg(kstatvar, 1)],
+                         keys=["mean", "variance"], axis=1)
+    logger.debug("Get sample variance of y")
+    stats_vy = pd.concat([grouped["y"].agg(kstat, 2),
+                          grouped["y"].agg(kstatvar, 2)],
+                         keys=["mean", "variance"], axis=1)
+    logger.debug("Concatenate statistics")
+    stats = pd.concat([stats_mx, stats_vx, stats_my, stats_vy],
+                      keys=["mean_x", "var_x", "mean_y", "var_y"],
+                      axis=1)
+    return stats
+
+def add_corr_column(seps, x_mean, y_mean, x_var, y_var):
+    """Add a column for the correlation for each pair to the input DataFrame.
+    the means and variances may be calculated from the data or fit. The added
+    column has name 'r'
+
+    :param seps: The DataFrame of the separations, which must have a minimum
+    columns 'R_PERP_T' and 'R_PAR_T'
+    :type seps: :class:`pandas.DataFrame`
+    :param x_mean: The mean of 'R_PERP_T' for each pair, based on their
+    observed positions and separations
+    :type x_mean: 1D array-like `float`
+    :param y_mean: The mean of 'R_PAR_T' for each pair, based on their
+    observed positions and separations
+    :type y_mean: 1D array-like `float`
+    :param x_var: The variance of 'R_PERP_T' for each pair, based on their
+    observed positions and separations
+    :type x_var: 1D array-like `float`
+    :param y_var: The variance of 'R_PERP_T' for each pair, based on their
+    observed positions and separations
+    :type y_var: 1D array-like `float`
+    """
+    seps["r"] = corr_coeff(seps.loc[:,"R_PERP_T"], seps.loc[:,"R_PAR_T"],
+                           x_mean, y_mean, x_var, y_var)
+
+def get_corr_stats(seps, min_counts=200, min_bins=2):
+    """Get the sample mean and variance on sample mean of the correlation.
+    The returned DataFrame will have columns 'mean' and 'variance', and indices
+    labeled 'RPO_BIN' and 'RLO_BIN'.
+
+    :param seps: The DataFrame of the separations, containing at least columns
+    'RPO_BIN', 'RLO_BIN', and 'r'
+    :type seps: :class:`pandas.DataFrame`
+    :param min_counts: The minimum number of pairs needed in each bin. Bins
+    with fewer pairs will be discarded. Default 200
+    :type min_counts: `int`, optional
+    :param min_bins: The minimum number of bins that need to be kept. Default 2
+    :type min_bins: `int`, optional
+    :returns stats: A DataFrame containing a column 'mean' for the sample mean
+    of 'r' and 'variance' for the variance on the sample mean
+    :rtype stats: :class:`pandas.DataFrame`
+    :raises AttributeError: if any of the required columns are missing
+    :raises TooFewGroupsError: if fewer than :param:`min_bins` bins have at
+    least :param:`min_counts` pairs
+    """
+    logger = glogger.getChild(__name__)
+    logger.debug("Drop NAN columns")
+    seps_filt = seps.dropna(axis=1)
+    required_cols = ["RPO_BIN", "RLO_BIN", "r"]
+    logger.debug("Check for missing required columns")
+    missing_cols = [col not in seps_filt for col in required_cols]
+    if np.any(missing_cols):
+        raise AttributeError("Missing required column(s): {}".format(
+            list(itertools.compress(required_cols, missing_cols))))
+    logger.debug("Select only needed columns for grouping")
+    sub_seps = seps_filt.loc[:,required_cols].copy()
+    logger.debug("Groupd separations and filter based on number of pairs")
+    grouped = sub_seps.groupby(["RPO_BIN", "RLO_BIN"]).filter(
+        lambda x: len(x) >= min_counts).groupby(["RPO_BIN", "RLO_BIN"])
+    logger.debug("Check for enough bins")
+    if len(grouped) <= min_bins:
+        raise TooFewGroupsError(
+            "Only {} bins with at least {} pairs. Consider decreasing "\
+                "the minimum number of pairs, increasing the bin size, "\
+                "or using a larger catalog".format(len(grouped), min_counts))
+    logger.debug("Get sample mean of Corr(R_PERP_T, R_PAR_T)")
+    stats = pd.concat([grouped["r"].agg([kstat, kstatvar], 2).rename(
+                columns={"kstat": "mean", "kstatvar": "variance"})],
+                      keys=["mean_r"], axis=1)
+    return stats
+
 
 # This class was borrowed/stolen (with slight modification) from emcee...
 class _FitFunctionWrapper(object):
@@ -263,12 +440,20 @@ class _FitFunctionWrapper(object):
     """
     def __init__(self, f, args=None, kwargs=None):
         self.f = f
+        self.func_name = f.__name__
         self.args = [] if args is None else args
         self.kwargs = {} if kwargs is None else kwargs
 
-    def __call__(self, x, y, theta, extra_kwargs=None):
-        extra_kwargs = {} if extra_kwargs is None else extra_kwargs
-        return self.f(x, y, *theta, *self.args, **self.kwargs, **extra_kwargs)
+    def __call__(self, x, y, theta, **kwargs):
+        try:
+            return self.f(x, y, *theta, *self.args, **self.kwargs, **kwargs)
+        except TypeError:
+            print("TypeError when calling ", self.func_name, flush=True)
+            print("\ttheta = ", theta, flush=True)
+            print("\targs = ", self.args, flush=True)
+            print("\tfixed kwargs = ", self.kwargs, flush=True)
+            print("\tadditional kwargs = ", kwargs, flush=True)
+            raise
 
 
 class SingleFitter(object):
@@ -312,23 +497,21 @@ class SingleFitter(object):
         """
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
-        self.logger.debug("Set up separations and data")
+        self.logger.debug("Set up data and variance")
+        self.logger.debug("Data columns: \n{}".format(data.columns))
         self.data = data
         self.index_names = index_names
         self.col_names = col_names
-        self.data["ivar"] = 1. / self.data[col_names[1]]
-        self.data["sigma"] = np.sqrt(self.data[col_names[1]])
         self.logger.debug("Set fitting function and prior")
         self.set_fit_func(func, param_names)
         self.set_prior_func(prior)
         self.logger.debug("Initialize sampler and best fit parameters as None")
-        self.sampler = None
         self._best_fit_params = None
+        self._samples = None
         self.logger.debug("__init__ complete")
 
     def __repr__(self):
-        return "%s(%r, %r, %r, %r)" % (self.name, self.data, self.ndim,
-                                       self.f, self.sampler)
+        return "%s(ndim=%r, sampler=%r)" % (self.name, self.ndim, self.sampler)
 
     @property
     def nburnin(self):
@@ -344,6 +527,10 @@ class SingleFitter(object):
     @property
     def best_fit(self):
         return self._best_fit_params
+
+    @property
+    def samples(self):
+        return self._samples
 
     def _get_name(self, fitter_name):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
@@ -394,11 +581,12 @@ class SingleFitter(object):
     def lnlike(self, theta):
         if self.f is None:
             raise AttributeError("No fitting function set for likelihood")
-        return-0.5 * self.data.loc[:,self.col_names[0]].sub(
-            self.f(self.data.index.get_level_values(self.index_names[0]),
-                   self.data.index.get_level_values(self.index_names[1]),
-                   theta)).pow(2).div(
-            self.data.loc[:,self.col_names[1]].apply(math.sqrt)).sum()
+        fev = self.f(self.data.index.get_level_values(self.index_names[0]),
+                     self.data.index.get_level_values(self.index_names[1]),
+                     theta)
+        diff2 = self.data.loc[:,self.col_names[0]].sub(fev).pow(2)
+        diffdiv = diff2.div(self.data.loc[:,self.col_names[1]])
+        return -0.5 * diffdiv.sum()
 
     def lnprob(self, theta):
         if self.pr is None:
@@ -425,7 +613,7 @@ class SingleFitter(object):
         return res
 
     def fit_mcmc(self, nsteps, nburnin, init_guess=None, nwalkers=None,
-                 nthreads=1, reset=False, with_init=True):
+                 nthreads=1, sampler=None, with_init=True):
         """Fit the data using an MCMC (via `emcee`). If an MCMC has already
         been run and :param:`reset` is set to `False`, this will merely
         continue running the chains for another :param:`nsteps`, and all
@@ -454,24 +642,45 @@ class SingleFitter(object):
         parameter is ignored when continuing chains. It may be overridden if
         pickling will fail. Default 1
         :type nthreads: `int`, optional
-        :param reset: If `True`, start a new sampler even if a previous one
-        has been run. This makes the optional arguments (other than
-        :param:`nthreads`) required. Default `False`
-        :type reset: `bool`, optional
+        :param sampler: If given, this is a sampler that has already been
+        initialized and possibly run. This will override the options for
+        :param:`nwalkers` and :param:`nthreads` if they were given. Also,
+        if a chain has already been run with the sampler, the options
+        :param:`init_guess` and :param:`with_init` will be overridden.
+        When not passed, a new sampler is created. The resulting sampler
+        (either newly created or modified) is also returned. If number of
+        dimensions for sampler is wrong, the sampler will be overwritten.
+        Default `None`
+        :type sampler: :class:`emcee.EnsembleSampler`, optional
         :param with_init: If `True`, use
         :function:`SingleFitter.fit_minimize` as a first pass fit before
         running the MCMC. Ignored when continuing chains. Default `True`
         :type with_init: `bool`, optional
+        :return sampler: The EnsembleSampler for the MCMC run. This will either
+        be one that was initialized here and run, or one that was updated
+        (unless no update was needed for number of steps plus burn-in
+        requested).
+        :rtype sampler: :class:`emcee.EnsembleSampler`
         """
         attrs_needed = [self.lnlike, self.lnprob]
         if not _check_pickleable(attrs_needed):
             self.logger.debug("Setting number of threads to 1 because not "
                     "pickleable")
             nthreads = 1
-        if self.sampler is not None and not reset:
+        self.logger.debug("Set internal burn-in")
+        self._nburnin = nburnin
+        if sampler is None or sampler.chain.shape[-1] != self.ndim:
+            self.logger.debug("Initializing sampler")
+            sampler = emcee.EnsembleSampler(nwalkers, self.ndim, self.lnprob,
+                                            threads=nthreads)
+        if sampler.chain.shape[1] > 0:
             self.logger.debug("Continuing chains")
-            self.sampler.run_mcmc(None, nsteps)
-
+            nsteps_needed = (nsteps + nburnin) - sampler.chain.shape[1]
+            if nsteps_needed <= 0:
+                self.logger.debug("No further steps needed")
+            else:
+                sampler.run_mcmc(None, nsteps_needed)
+        
         else:
             if init_guess is None or nwalkers is None:
                 raise ValueError("Must give initial guess and number of "
@@ -485,28 +694,25 @@ class SingleFitter(object):
             self.logger.debug("Setting up initial ball")
             p0 = [init_guess + 10 ** -4 * np.random.randn(self.ndim) for i in
                   range(nwalkers)]
-            self.logger.debug("Initializing sampler")
-            self.sampler = emcee.EnsembleSampler(nwalkers, self.ndim,
-                                                 self.lnprob, threads=nthreads)
             self.logger.debug("Running new MCMC")
-            self.sampler.run_mcmc(p0, nsteps + nburnin)
-        self.logger.debug("Set internal burn-in and current best fit "
-                          "parameters")
-        self._nburnin = nburnin
-        samples = self.sampler.chain[:, nburnin, :].reshape((-1, self.ndim))
-        self._best_fit_params = np.median(samples, axis=0)
+            sampler.run_mcmc(p0, nsteps + nburnin)
+        self.logger.debug("Set current best fit parameters")
+        samples = sampler.chain[:, nburnin, :].reshape((-1, self.ndim))
         self.logger.debug("Set up Chain Consumer objects")
         c_walks = ChainConsumer()
-        c_walks.add_chain(self.sampler.flatchain, parameters=self.params,
-                          posterior=self.sampler.flatlnprobability,
+        c_walks.add_chain(sampler.flatchain, parameters=self.params,
+                          posterior=sampler.flatlnprobability,
                           walkers=nwalkers)
         self.c_walkers = c_walks.divide_chain()
-        samples = self.sampler.chain[:, self._nburnin:, :].reshape((-1,
-                                                                    self.ndim))
-        lnprobs = self.sampler.lnprobability[:, self._nburnin:].flatten()
+        self._samples = sampler.chain[:, self._nburnin:, :].reshape(
+            (-1, self.ndim))
+        self._best_fit_params = np.median(self._samples, axis=0)
+        lnprobs = sampler.lnprobability[:, self._nburnin:].flatten()
         self.c = ChainConsumer()
-        self.c.add_chain(samples, parameters=self.params, posterior=lnprobs)
+        self.c.add_chain(self._samples, parameters=self.params,
+                         posterior=lnprobs)
         self.logger.debug("done")
+        return sampler
 
     def model(self, rpo, rlo, index=None):
         """Get the best fit model at the given separations
@@ -525,7 +731,10 @@ class SingleFitter(object):
         separations flattened
         :rtype m: scalar or :class:`pandas.Series` `float`
         """
-        m = self.f(rpo, rlo, self._best_fit_params, dict(index=index))
+        if self._best_fit_params is None:
+            raise AttributeError("Cannot get best fit model without "\
+                                     "best fit parameters")
+        m = self.f(rpo, rlo, self._best_fit_params, index=index)
         return m
 
     def model_with_errors(self, rpo, rlo, index=None):
@@ -540,19 +749,25 @@ class SingleFitter(object):
         separation. If `None`, the index will be created from :param:`rpo` and
         :param:`rlo`, with names ['RPO_BIN', 'RLO_BIN']. Default `None`
         :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or
+        `None`, optional
         :return m: The 16th, 50th, and 84th percentiles of the model at the
         points. The 0th axis is the percentiles, and the first axis is the
         flattened points, if not both scalar
         :rtype m: :class:`pandas.Series` or :class:`pandas.DataFrame` `float`
         """
-        samples = self.sampler.chain[:, self._nburnin:, :].reshape((-1,
-                                                                    self.ndim))
-        meval = self.f(rpo, rlo, samples, dict(index=index))
-        if hasattr(meval, "index"):
-            m = meval.quantile(q=[0.16, 0.5, 0.84], axis="columns").T
+        if self._samples is None:
+            raise AttributeError("Cannot get model with errors if samples "\
+                                     "not available")
+        samples = self._samples
+        meval = dict(zip(range(len(samples)), map(
+                    lambda params: self.f(rpo, rlo, params, index=index),
+                    samples)))
+        if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
+            meval = pd.Series(meval)
+            m = meval.quantile([0.16, 0.5, 0.84])
         else:
-            m = pd.Series(np.percentile(meval, [0.16, 0.5, 0.84]),
-                                        index=pd.Index([0.16, 0.5, 0.84]))
+            meval = pd.DataFrame.from_dict(meval)
+            m = meval.quantile(q=[0.16, 0.5, 0.84], axis="columns").T
         return m
 
     def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_size, 
@@ -629,11 +844,13 @@ class SingleFitter(object):
         
         if with_fit:
             if self._best_fit_params is None:
-                raise ValueError("with_fit=True, but no fit has been done")
-            mod = self.model_with_errors(
-                data.index.get_level_values(self.index_names[0]),
-                data.index.get_level_values(self.index_names[1]),
-                index=data.index)
+                warnings.warn("Ignoring with_fit option when no fit is done")
+                with_fit = False
+            else:
+                mod = self.model_with_errors(
+                    data.index.get_level_values(self.index_names[0]),
+                    data.index.get_level_values(self.index_names[1]),
+                    index=data.index)
         
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -649,12 +866,19 @@ class SingleFitter(object):
                                 yerr=data.loc[:,self.col_names[1]].apply(
                     math.sqrt), fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                plt.fill_between(mod.index, mod.loc[:,0.16], mod.loc[:,0.84],
-                                 color="C2", alpha=0.4)
-                plt.plot(mod.index, mod.loc[:,0.5], "C2-")
-            plt.legend([line], [axis_label.format(
-                        round(bins, 2 - ndigits(bins)))], loc="best",
-                       markerscale=0, frameon=False)
+                fit_fill = plt.fill_between(mod.index, mod.loc[:,0.16],
+                                            mod.loc[:,0.84], color="C1",
+                                            alpha=0.4)
+                fit_line, = plt.plot(mod.index, mod.loc[:,0.5], "C1-")
+            label_leg = plt.legend([line], [axis_label.format(
+                        round(bins, 2 - ndigits(bins)))],
+                                   loc=2, markerscale=0, frameon=False)
+            if with_fit and with_combined_fit:
+                plt.legend(
+                    [(fit_fill, fit_line), (cfit_fill, cfit_line)],
+                    [r"Best fit", r"Combined best fit"],
+                    loc=1)
+            plt.gca().add_artist(label_leg)
             plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
@@ -678,12 +902,20 @@ class SingleFitter(object):
                                    yerr=data.loc[r,self.col_names[1]].apply(
                         math.sqrt), fmt="C0o", alpha=0.6)[0]
                 if with_fit:
-                    ax.fill_between(mod.loc[r].index, mod.loc[r,0.16],
-                                    mod.loc[r,0.84], color="C2", alpha=0.4)
-                    ax.plot(mod.loc[r].index, mod.loc[r,0.5], "C2-")
-                ax.legend([line], [axis_label.format(
-                            round(r, 2 - ndigits(r)))], loc="best",
-                          markerscale=0, frameon=False)
+                    fit_fill = ax.fill_between(mod.loc[r].index,
+                                               mod.loc[r,0.16],
+                                               mod.loc[r,0.84],
+                                               color="C1", alpha=0.4)
+                    fit_line, = ax.plot(mod.loc[r].index, mod.loc[r,0.5], "C1-")
+                label_leg = ax.legend([line], [axis_label.format(
+                            round(r, 2 - ndigits(r)))], loc=2,
+                                      markerscale=0, frameon=False)
+                if with_fit and with_combined_fit:
+                    ax.legend(
+                        [(fit_fill, fit_line), (cfit_fill, cfit_line)],
+                        [r"Best fit", r"Combined best fit"],
+                        loc=1)
+                ax.add_artist(label_leg)
                 if ax.is_last_row():
                     ax.tick_params(axis="x", which="both", direction="inout",
                                    top=True, bottom=True)
@@ -729,6 +961,7 @@ class AnalyticSingleFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self.logger.debug("Setting up data and variance")
+        self.logger.debug("Data columns: \n{}".format(data.columns))
         self.data = data
         self.index_names = index_names
         self.col_names = col_names
@@ -737,12 +970,15 @@ class AnalyticSingleFitter(object):
         self._c_err = None
 
     def __repr__(self):
-        return "%s(%r, %r, %r, %r)" % (self.name, self.data, self._c,
-                                       self._c_err)
+        return "%s(c=%r, c_err=%r)" % (self.name, self._c, self._c_err)
 
     @property
     def best_fit(self):
-        return np.array([self._c])
+        return np.array([self._c]) if self._c is not None else None
+
+    @property
+    def best_fit_err(self):
+        return np.array([self._c_err]) if self._c_err is not None else None
 
     def _get_name(self, fitter_name):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
@@ -780,13 +1016,17 @@ class AnalyticSingleFitter(object):
         separations flattened
         :rtype m: scalar or :class:`pandas.Series` `float`
         """
+        if self._c is None:
+            raise AttributeError("Cannot get best fit model if fit has "\
+                                     "not been done")
+        c = self._c
         if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
-            m = self._c
+            m = c
         else:
             if index is None:
                 index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN",
                     "RLO_BIN"])
-            m = pd.Series(self._c, index=index)
+            m = pd.Series(c, index=index)
         return m
 
     def model_with_errors(self, rpo, rlo, index=None):
@@ -801,13 +1041,19 @@ class AnalyticSingleFitter(object):
         separation. If `None`, the index will be created from :param:`rpo` and
         :param:`rlo`, with names ['RPO_BIN', 'RLO_BIN']. Default `None`
         :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or
+        `None`, optional
         :return m: The (median - 1 sigma), median, and (median + 1 sigma)
         values of the model at the points. The 0th axis is the percentiles,
         and the first axis is the flattened points, if not both scalar
         :rtype m: :class:`pandas.Series` or :class:`pandas.DataFrame` `float`
         """
+        if self._c is None or self._c_err is None:
+            raise AttributeError("Cannot get best fit model with errors "\
+                                     "if fit has not been done")
+        c = self._c
+        c_err = self._c_err
         if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
-            m = np.array([self._c - self._c_err, self._c, self._c + self._c_err])
+            m = pd.Series([c - c_err, c, c + c_err], index=[0.16, 0.5, 0.84])
         else:
             if index is None:
                 if not hasattr(rpo, "__len__"):
@@ -817,8 +1063,8 @@ class AnalyticSingleFitter(object):
                 else:
                     index = pd.MultiIndex.from_arrays([rpo, rlo], 
                             names=["RPO_BIN", "RLO_BIN"])
-            m = pd.DataFrame({0.16: self._c - self._c_err, 0.5: self._c, 0.84:
-                self._c + self._c_err}, index=index)
+            m = pd.DataFrame({0.16: c - c_err, 0.5: c, 0.84: c + c_err},
+                             index=index)
         return m
 
     def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_size,
@@ -898,10 +1144,12 @@ class AnalyticSingleFitter(object):
 
         if with_fit:
             if (self._c is None or self._c_err is None):
-                raise ValueError("with_fit=True, but no fit has been done")
-            mod = self.model_with_errors(data.index.get_level_values(
-                    self.index_names[0]), data.index.get_level_values(
-                    self.index_names[1]), data.index)
+                warnings.warn("Ignoring with_fit because no fit has been done")
+                with_fit = False
+            mod = self.model_with_errors(
+                data.index.get_level_values(self.index_names[0]),
+                data.index.get_level_values(self.index_names[1]),
+                index=data.index)
 
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -917,12 +1165,19 @@ class AnalyticSingleFitter(object):
                                 yerr=data.loc[:,self.col_names[1]].apply(
                     math.sqrt), fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                plt.fill_between(mod.index, mod.loc[:,0.16], mod.loc[:,0.84],
-                                 color="C2", alpha=0.4)
-                plt.plot(mod.index, mod.loc[:,0.5], "C2-")
-            plt.legend([line], [axis_label.format(
-                        round(bins, 2 - ndigits(bins)))], loc="best",
-                       markerscale=0, frameon=False)
+                fit_fill = plt.fill_between(mod.index, mod.loc[:,0.16],
+                                            mod.loc[:,0.84], color="C1",
+                                            alpha=0.4)
+                fit_line, = plt.plot(mod.index, mod.loc[:,0.5], "C1-")
+            label_leg = plt.legend([line], [axis_label.format(
+                        round(bins, 2 - ndigits(bins)))], loc=2,
+                                   markerscale=0, frameon=False)
+            if with_fit and with_combined_fit:
+                plt.legend(
+                    [(fit_fill, fit_line), (cfit_fill, cfit_line)],
+                    [r"Best fit", r"Combined best fit"],
+                    loc=1)
+            plt.gca().add_artist(label_leg)
             plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
@@ -946,12 +1201,20 @@ class AnalyticSingleFitter(object):
                                    yerr=data.loc[r,self.col_names[1]].apply(
                         math.sqrt), fmt="C0o", alpha=0.6)[0]
                 if with_fit:
-                    ax.fill_between(m.loc[r].index, m.loc[r,0.16],
-                                    m.loc[r,0.84], color="C2", alpha=0.4)
-                    ax.plot(m.loc[r].index, m.loc[r,0.5], "C2-")
-                ax.legend([line], [axis_label.format(
-                            round(r, 2 - ndigits(r)))], loc="best",
-                          markerscale=0, frameon=False)
+                    fit_fill = ax.fill_between(mod.loc[r].index,
+                                               mod.loc[r,0.16],
+                                               mod.loc[r,0.84], color="C1",
+                                               alpha=0.4)
+                    fit_line, = ax.plot(mod.loc[r].index, mod.loc[r,0.5], "C1-")
+                label_leg = ax.legend([line], [axis_label.format(
+                            round(r, 2 - ndigits(r)))], loc=2,
+                                      markerscale=0, frameon=False)
+                if with_fit and with_combined_fit:
+                    ax.legend(
+                        [(fit_fill, fit_line), (cfit_fill, cfit_line)],
+                        [r"Best fit", r"Combined best fit"],
+                        loc=1)
+                ax.add_artist(label_leg)
                 if ax.is_last_row():
                     ax.tick_params(axis="x", which="both", direction="inout",
                                    top=True, bottom=True)
@@ -974,72 +1237,37 @@ class ProbFitter(object):
     generalized fitter, it assumes the means and variances follow specific
     functions that are not set by the user but hardcoded within.
     """
-    
-    def __init__(self, separations, perp_bin_size, par_bin_size,
-                 perp_bin_scale, par_bin_scale, sigma_z, cosmo, min_counts=200,
-                 fitter_name=None, **kwargs):
+    _fitter_types = ["mean_x", "var_x", "mean_y", "var_y", "mean_r"]
+    def __init__(self, statistics=None, fitter_name=None):
         """
-        Initialize the fitter with separations
-        :param separations: A DataFrame containing the true and observed
-        separations
-        :type separations: :class:`pandas.DataFrame`
-        :param perp_bin_size: The bin size to use for the observed
-        perpendicular separation, in Mpc
-        :type perp_bin_size: `float`
-        :param par_bin_size: The bin size to use for the observed parallel
-        separation, in Mpc
-        :type par_bin_size: `float`
-        :param perp_bin_scale: The scale to use on observed perpendicular
-        bins, in Mpc
-        :type perp_bin_scale: `float`
-        :param par_bin_scale: The scale to use on observed parallel bins, in Mpc
-        :type par_bin_scale: `float`
-        :param sigma_z: The fractional redshift error :math:`\frac{\sigma_z}{
-        1 + z}` to assume for the data
-        :type sigma_z: `float`
-        :param cosmo: The path to a cosmology ini file, from which the
-        cosmological functions can be set up
-        :type cosmo: `str`
-        :param min_counts: The minimum number of pairs needed in a bin to be
-        included in the fit. Default 200
-        :type min_counts: `int`, optional
+        Initialize the fitter with calculated statistics
+        :param statistics: A DataFrame containing pre-computed sample means
+        and variances for at least one of the fitters. The DataFrame columns
+        must be multi-level, with the 0th level giving the quantity being
+        calculated (of 'mean_x', 'var_x', 'mean_y', 'var_y', 'mean_r') and
+        the 1st level being columns 'mean' (for sample mean/variance) and
+        'variance' (for variance on the 'mean' column). If not passed, will
+        need to be set later.
+        :type statistics: :class:`pandas.DataFrame`, optional
         :param fitter_name: A name to use for this instance of the fitter. If
         `None`, the name will be set to 'ProbFitter'. Default `None`
         :type fitter_name: `str` or `None`, optional
-        :keyword limits: A dictionary of limits to place on the separations
-        being considered and/or the average observed LOS distance. All limits
-        should be in Mpc. Default `None` (for no limits, all separations read)
-        :type limits: `dict` or `None`
         """
-        CatalogUtils.initialize(_initialize_cosmology(cosmo))
-        self._stats_group_switcher = {
-            "mean_x": dict(function=self._get_delta_column,
-                           args=["PERP", self._perp_mean_scale]),
-            "var_x": dict(function=self._get_delta_column,
-                          args=["PERP", self._perp_var_scale]),
-            "mean_y": dict(function=self._get_delta_column,
-                           args=["PAR", self._par_mean_scale]),
-            "var_y": dict(function=self._get_delta_column,
-                          args=["PAR", self._par_var_scale]),
-            "mean_r": dict(function=self._get_corr_column, args=[])
-            }
-        self._fitter_types = ["mean_x", "var_x", "mean_y", "var_y", "mean_r"]
-        self._fitter_names = dict.fromkeys(self._fitter_types)
+        self._init_switcher = dict(mean_x=self.initialize_mean_x,
+                                   var_x=self.initialize_var_x,
+                                   mean_y=self.initialize_mean_y,
+                                   var_y=self.initialize_var_y,
+                                   mean_r=self.initialize_mean_r)
+        self._fitter_names = dict.fromkeys(self.__class__._fitter_types)
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
-        self.sigma_z = sigma_z
-        self.min_counts = min_counts
-        self._fitters = dict.fromkeys(self._fitter_types)
-        self.seps = separations.copy()
-        self.logger.debug("Add extra data columns...")
-        self._add_extra_columns(perp_bin_size, par_bin_size, perp_bin_scale,
-                                par_bin_scale)
-        self.logger.debug("Add extra data columns...[done]")
+        self._fitters = dict.fromkeys(self._fitter_types, None)
+        self.logger.debug("Add statistics")
+        self.add_stats(statistics)
         self.logger.debug("__init__ complete")
 
     def __repr__(self):
-        return "%s(%r, %r, %r)" % (self.name, self._fitters, self._has_r,
-                                   self._has_r_stat)
+        return "{name}(mean_x={f[0]}, var_x={f[1]}, mean_y={f[2]}, var_y={f[3]}, mean_r={f[4]})".format(name=self.name, f=list(self._fitters.values()))
 
     @property
     def mean_x(self):
@@ -1062,7 +1290,30 @@ class ProbFitter(object):
         return self._fitters["mean_r"]
 
     @property
+    def rpo_bin(self):
+        fitters_init = [f for f in list(self._fitters.values()) if f is
+                        not None]
+        if len(fitters_init) == 0:
+            return None
+        return fitters_init[0].data.index.get_level_values("RPO_BIN")
+
+    @property
+    def rlo_bin(self):
+        fitters_init = [f for f in list(self._fitters.values()) if f is
+                        not None]
+        if len(fitters_init) == 0:
+            return None
+        return fitters_init[0].data.index.get_level_values("RLO_BIN")
+
+    @property
     def stats(self):
+        names = [name for name in self._fitters.keys() if
+                 self._fitters[name] is not None]
+        data = [self._fitters[name].data for name in names]
+        return pd.concat(data, axis=1, keys=names)
+
+    @property
+    def stats_table(self):
         stats = pd.DataFrame(columns=[], index=[])
         for name, fitter in self._fitters.items():
             if fitter is not None:
@@ -1071,7 +1322,8 @@ class ProbFitter(object):
                 else:
                     stats = stats.join(fitter.data.add_prefix(
                             "{}_".format(name)))
-        return stats
+        stats.reset_index(inplace=True)
+        return Table.from_pandas(stats)
 
     def _get_name(self, fitter_name):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
@@ -1080,142 +1332,83 @@ class ProbFitter(object):
             self._fitter_names[name] = ("{}_{}".format(fitter_name, name) if
                 fitter_name is not None else name)
 
-    def _perp_mean_scale(self, rpo, rlo, zbar):
-        return rpo
-
-    def _perp_var_scale(self, rpo, rlo, zbar):
-        return ((np.sqrt(0.5) * rpo * self.sigma_z * (1 + zbar) *
-                 CatalogUtils.dr_dz(zbar)) / CatalogUtils.dist(zbar))
-
-    def _par_mean_scale(self, rpo, rlo, zbar):
-        return rlo
-
-    def _par_var_scale(self, rpo, rlo, zbar):
-        return (np.sqrt(2.0) * self.sigma_z * (1 + zbar) *
-                CatalogUtils.dr_dz(zbar))
-
-    def _add_bin_column(self, orig_col_name, bin_col_name, bin_size, scale):
-        self.seps[bin_col_name] = np.floor(self.seps[orig_col_name] /
-                                           bin_size).astype(int)
-
-    def _add_zbar(self):
-        self.seps["ZBAR"] = CatalogUtils.z_at_chi(self.seps["AVE_D_OBS"])
-
-    def _add_extra_columns(self, perp_bin_size, par_bin_size, perp_bin_scale,
-                           par_bin_scale):
-        self.logger.debug("Add RPO_BIN")
-        self._add_bin_column("R_PERP_O", "RPO_BIN", perp_bin_size,
-                             perp_bin_scale)
-        self.logger.debug("Add RLO_BIN")
-        self._add_bin_column("R_PAR_O", "RLO_BIN", par_bin_size, par_bin_scale)
-        self.logger.debug("Add ZBAR")
-        self._add_zbar()
-
-    def _get_delta_column(self, direction, scale_func):
-        scale = 1. / scale_func(self.seps["R_PERP_O"], self.seps["R_PAR_O"],
-                                self.seps["ZBAR"])
-        tcol_name = "R_{}_T".format(direction)
-        ocol_name = "R_{}_O".format(direction)
-        delta = self.seps.loc[:,tcol_name].sub(self.seps.loc[:,ocol_name]).mul(
-            scale)
-        return pd.DataFrame.from_dict({"RPO_BIN": self.seps.loc[:,"RPO_BIN"],
-                                       "RLO_BIN": self.seps.loc[:,"RLO_BIN"],
-                                       "DELTA": delta})
-
-    def _get_corr_column(self):
-        rpo = self.seps["R_PERP_O"]
-        rlo = self.seps["R_PAR_O"]
-        zbar = self.seps["ZBAR"]
-        self.logger.debug("Calculate mean R_PERP_T")
-        x_mean = self.mean_rpt(rpo, rlo, zbar)
-        self.logger.debug("Calculate mean R_PAR_T")
-        y_mean = self.mean_rlt(rpo, rlo, zbar)
-        self.logger.debug("Calculate var R_PERP_T")
-        x_var = self.var_rpt(rpo, rlo, zbar)
-        self.logger.debug("Calculate var R_PAR_T")
-        y_var = self.var_rlt(rpo, rlo, zbar)
-        self.logger.debug("Calculate correlations")
-        r = corr_coeff(self.seps["R_PERP_T"], self.seps["R_PAR_T"],
-                       x_mean, y_mean, x_var, y_var)
-        return pd.DataFrame.from_dict({"RPO_BIN": self.data.loc[:,"RPO_BIN"],
-                                       "RLO_BIN": self.data.loc[:,"RLO_BIN"],
-                                       "r": r})
-
-    def _get_stats(self, which):
-        col = "r" if which == "mean_r" else "DELTA"
-        n = 2 if "var" in which else 1
-        col_getter_dict = self._stats_group_switcher[which]
-        df_temp = col_getter_dict["function"](*col_getter_dict["args"])
-        self.logger.info("Number of pairs = {}".format(len(df_temp)))
-        stats = df_temp.groupby(["RPO_BIN", "RLO_BIN"]).filter(
-            lambda x: len(x) >= self.min_counts).groupby(
-            ["RPO_BIN", "RLO_BIN"]).agg([kstat, kstatvar], n).rename(
-                columns={"kstat": "mean", "kstatvar": "variance"})
-        self.logger.info("Number of unique groups = {}".format(len(stats)))
-        if len(stats) <= 2:
-            raise TooFewGroupsError(
-                "Only {} bins with at least {} pairs. Consider decreasing "\
-                    "the minimum number of pairs, increasing the bin size, "\
-                    "or using a larger catalog".format(len(stats),
-                                                       self.min_counts))
-        if stats.columns.nlevels == 2:
-            stats.columns = stats.columns.droplevel()
-        return stats
-
-    def initialize_mean_x(self):
+    def initialize_mean_x(self, stats):
+        self.logger.debug("init_mean_x")
         self._fitters["mean_x"] = AnalyticSingleFitter(
-            self._get_stats("mean_x"), ["RPO_BIN", "RLO_BIN"],
-            ["mean", "variance"], self._fitter_names["mean_x"]
-            )
+            stats["mean_x"].copy(), ["RPO_BIN", "RLO_BIN"],
+            ["mean", "variance"], self._fitter_names["mean_x"])
+        self.logger.debug("init_mean_x: {}".format(self._fitters["mean_x"]))
 
-    def initialize_var_x(self):
+    def initialize_var_x(self, stats):
+        self.logger.debug("init_var_x")
         self._fitters["var_x"] = AnalyticSingleFitter(
-            self._get_stats("var_x"), ["RPO_BIN", "RLO_BIN"],
+            stats["var_x"].copy(), ["RPO_BIN", "RLO_BIN"],
             ["mean", "variance"], self._fitter_names["var_x"]
             )
+        self.logger.debug("init_var_x: {}".format(self._fitters["var_x"]))
 
-    def initialize_mean_y(self):
+    def initialize_mean_y(self, stats):
+        self.logger.debug("init_mean_y")
         self._fitters["mean_y"] = SingleFitter(
-            self._get_stats("mean_y"), ["RPO_BIN", "RLO_BIN"],
+            stats["mean_y"].copy(), ["RPO_BIN", "RLO_BIN"],
             ["mean", "variance"], mean_y, prior_mean_y,
             [r"$a$", r"$\alpha$", r"$\beta$", r"$s$"],
             self._fitter_names["mean_y"]
             )
+        self.logger.debug("init_mean_y: {}".format(self._fitters["mean_y"]))
 
-    def initialize_var_y(self):
+    def initialize_var_y(self, stats):
+        self.logger.debug("init_var_y")
         self._fitters["var_y"] = SingleFitter(
-            self._get_stats("var_y"), ["RPO_BIN", "RLO_BIN"],
+            stats["var_y"].copy(), ["RPO_BIN", "RLO_BIN"],
             ["mean", "variance"], var_y, prior_var_y,
             [r"$b$", r"$s_1$", r"$s_2$", r"$\rho$"],
             self._fitter_names["var_y"]
             )
+        self.logger.debug("init_var_y: {}".format(self._fitters["var_y"]))
 
-    def initialize_mean_r(self):
-        if not np.all([self._fitters[f].best_fit is not None for f in
-                       self._fitter_types[:-1]]):
-            self._fitters["mean_r"] = None
-        else:
-            self._fitters["mean_r"] = AnalyticSingleFitter(
-                self._get_stats("mean_r"), ["RPO_BIN", "RLO_BIN"],
-                ["mean", "variance"], self._fitter_names["mean_r"]
-                )
+    def initialize_mean_r(self, stats):
+        self.logger.debug("init_mean_r")
+        self._fitters["mean_r"] = AnalyticSingleFitter(
+            stats["mean_r"].copy(), ["RPO_BIN", "RLO_BIN"],
+            ["mean", "variance"], self._fitter_names["mean_r"])
+        self.logger.debug("init_mean_r: {}".format(self._fitters["mean_r"]))
 
-    def initialize_fitters(self):
-        self.logger.debug("Initalize mean_x")
-        self.initialize_mean_x()
-        self.logger.debug("Initialize var_x")
-        self.initialize_var_x()
-        self.logger.debug("Initialize mean_y")
-        self.initialize_mean_y()
-        self.logger.debug("Initialize var_y")
-        self.initialize_var_y()
-        self.logger.debug("Initalize mean_r")
-        self.initialize_mean_r()
+    def add_stats(self, stats):
+        """Add statistics for initializing the fitters, with the columns as
+        described in the __init__. This does the initialization for the
+        appropriate fitters, if they haven't already been initialized
 
-    def mean_rpt(self, rpo, rlo, zbar):
+        :param stats: The statistics to use for initializing fitters
+        :type stats: :class:`pandas.DataFrame`
+        """
+        if stats is not None:
+            self.logger.debug("Drop NAN columns")
+            stats_filt = stats.dropna(axis=1)
+            if not stats_filt.empty:
+                self.logger.debug("Stats (first 5): \n{}".format(
+                        stats_filt.head()))
+                self.logger.debug("Stats columns: \n{}".format(
+                        stats_filt.columns))
+                ftypes_in_stats = [col in stats_filt for col in
+                                   self.__class__._fitter_types]
+                self.logger.debug(ftypes_in_stats)
+                if np.any(ftypes_in_stats):
+                    for ftype in list(itertools.compress(
+                            self.__class__._fitter_types, ftypes_in_stats)):
+                        if self._fitters[ftype] is None:
+                            self.logger.debug("Initialize {}".format(ftype))
+                            self._init_switcher[ftype](stats_filt)
+                            self.logger.debug(self._fitters[ftype])
+                        else:
+                            pass
+        self.logger.debug(self.__repr__())
+
+    def mean_rpt(self, rpo, rlo, zbar, sigma_z):
         """
         Get the mean of the true perpendicular separation. All inputs must be
-        scalar or 1D array-like with the same size
+        scalar or 1D array-like with the same size, except
+        :param:`sigma_z`, which can only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1223,20 +1416,26 @@ class ProbFitter(object):
         :type rlo: scalar or 1D array-like `float`
         :param zbar: The average observed redshift at which to calculate
         :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if not hasattr(rpo, "index"):
-            index = pd.Index(rpo.size)
+        if hasattr(rpo, "__len__"):
+            if not hasattr(rpo, "index"):
+                index = pd.Index(len(rpo))
+            else:
+                index = rpo.index
         else:
-            index = rpo.index
-        return (self._perp_mean_scale(rpo, rlo, zbar) * self.mean_x.model(
-            rpo, rlo, index=index) + rpo)
+            index = None
+        return (_perp_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_x.model(
+                rpo, rlo, index=index) + rpo)
 
-    def var_rpt(self, rpo, rlo, zbar):
+    def var_rpt(self, rpo, rlo, zbar, sigma_z):
         """
         Get the variance of the true perpendicular separation. All inputs
-        must be scalar or 1D array-like with the same size
+        must be scalar or 1D array-like with the same size, except
+        :param:`sigma_z`, which can only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1244,20 +1443,26 @@ class ProbFitter(object):
         :type rlo: scalar or 1D array-like `float`
         :param zbar: The average observed redshift at which to calculate
         :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if not hasattr(rpo, "index"):
-            index = pd.Index(rpo.size)
+        if hasattr(rpo, "__len__"):
+            if not hasattr(rpo, "index"):
+                index = pd.Index(len(rpo))
+            else:
+                index = rpo.index
         else:
-            index = rpo.index
-        return (self._perp_var_scale(rpo, rlo, zbar) ** 2 * self.var_x.model(
-            rpo, rlo, index=index))
+            index = None
+        return (_perp_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_x.model(
+                rpo, rlo, index=index))
 
-    def mean_rlt(self, rpo, rlo, zbar):
+    def mean_rlt(self, rpo, rlo, zbar, sigma_z):
         """
         Get the mean of the true parallel separation. All inputs must be
-        scalar or 1D array-like with the same size
+        scalar or 1D array-like with the same size, except
+        :param:`sigma_z`, which can only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1265,20 +1470,26 @@ class ProbFitter(object):
         :type rlo: scalar or 1D array-like `float`
         :param zbar: The average observed redshift at which to calculate
         :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if not hasattr(rpo, "index"):
-            index = pd.Index(rpo.size)
+        if hasattr(rpo, "__len__"):
+            if not hasattr(rpo, "index"):
+                index = pd.Index(len(rpo))
+            else:
+                index = rpo.index
         else:
-            index = rpo.index
-        return (self._par_mean_scale(rpo, rlo, zbar) * self.mean_y.model(
-            rpo, rlo, index=index) + rlo)
+            index = None
+        return (_par_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_y.model(
+                rpo, rlo, index=index) + rlo)
 
-    def var_rlt(self, rpo, rlo, zbar):
+    def var_rlt(self, rpo, rlo, zbar, sigma_z):
         """
         Get the variance of the true parallel separation. All inputs
-        must be scalar or 1D array-like with the same size
+        must be scalar or 1D array-like with the same size, except
+        :param:`sigma_z`, which can only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1286,12 +1497,224 @@ class ProbFitter(object):
         :type rlo: scalar or 1D array-like `float`
         :param zbar: The average observed redshift at which to calculate
         :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if not hasattr(rpo, "index"):
-            index = pd.Index(rpo.size)
+        if hasattr(rpo, "__len__"):
+            if not hasattr(rpo, "index"):
+                index = pd.Index(len(rpo))
+            else:
+                index = rpo.index
         else:
+            index = None
+        return (_par_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_y.model(
+                rpo, rlo, index=index))
+
+    def cov_rpt_rlt(self, rpo, rlo, zbar, sigma_z):
+        """
+        Get the covariance of the true perpendicular and parallel separations.
+        All inputs must be scalar or 1D array-like with the same size, except
+        :param:`sigma_z`, which can only be scalar
+
+        :param rpo: The observed perpendicular separation at which to calculate
+        :type rpo: scalar or 1D array-like `float`
+        :param rlo: The observed parallel separation at which to calculate
+        :type rlo: scalar or 1D array-like `float`
+        :param zbar: The average observed redshift at which to calculate
+        :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
+        :return: The covariance between the perpendicular and parallel
+        directions
+        :rtype: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
+        `float`
+        """
+        if hasattr(rpo, "__len__"):
+            if not hasattr(rpo, "index"):
+                index = pd.Index(len(rpo))
+            else:
+                index = rpo.index
+        else:
+            index = None
+        return (np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z) *
+                        self.var_rlt(rpo, rlo, zbar, sigma_z)) *
+                self.mean_r.model(rpo, rlo, index=index))
+
+    def det_cov_matrix(self, rpo, rlo, zbar, sigma_z):
+        """
+        Get the determinant of the covariance matrix of the true perpendicular
+        and parallel separations. All inputs must be scalar or 1D array-like
+        with the same size, except :param:`sigma_z`, which can only be scalar.
+
+        :param rpo: The observed perpendicular separation at which to calculate
+        :type rpo: scalar or 1D array-like `float`
+        :param rlo: The observed parallel separation at which to calculate
+        :type rlo: scalar or 1D array-like `float`
+        :param zbar: The average observed redshift at which to calculate
+        :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
+        :return d: The determinant of the covariance matrix between the
+        perpendicular and parallel directions
+        :rtype d: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
+        `float`
+        """
+        scalar = False
+        as_series = False
+        if not hasattr(rpo, "__len__"):
+            index = None
+            scalar = True
+        else:
+            if hasattr(rpo, "index"):
+                index = rpo.index
+                as_series = True
+            else:
+                index = pd.Index(np.arange(len(rpo)))
+        d = (self.var_rpt(rpo, rlo, zbar, sigma_z) *
+             self.var_rlt(rpo, rlo, zbar, sigma_z) *
+             (1. - self.mean_r.model(rpo, rlo, index=index)**2))
+        if not scalar and not as_series:
+            return d.values
+        return d
+
+    def inverse_cov_matrix(self, rpo, rlo, zbar, sigma_z):
+        """
+        Get the inverse covariance matrix of the true perpendicular and
+        parallel separations. All inputs must be scalar or 1D array-like with
+        the same size, except :param:`sigma_z`, which can only be scalar. The
+        output will be a nx2x2 matrix where n is the length of the inputs, and
+        is 1 for scalars.
+
+        :param rpo: The observed perpendicular separation at which to calculate
+        :type rpo: scalar or 1D array-like `float`
+        :param rlo: The observed parallel separation at which to calculate
+        :type rlo: scalar or 1D array-like `float`
+        :param zbar: The average observed redshift at which to calculate
+        :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
+        :return icov: The inverse covariance matrix between the perpendicular
+        and parallel directions
+        :rtype icov: :class:`numpy.ndarray` `float` with shape nx2x2, for input
+        of length n (n = 1 for scalars)
+        """
+        if not hasattr(rpo, "__len__"):
+            icov = np.empty((1, 2, 2))
+            index = None
+        else:
+            icov = np.empty((len(rpo), 2, 2))
+            if hasattr(rpo, "index"):
+                index = rpo.index
+            else:
+                index = pd.Index(np.arange(len(rpo)))
+        inv_det = 1. / self.det_cov_matrix(rpo, rlo, zbar, sigma_z)
+        icov[:,0,0] = self.var_rlt(rpo, rlo, zbar, sigmaz) * inv_det
+        icov[:,0,1] = -(self.mean_r.model(rpo, rlo, index=index) *
+                        np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z) *
+                                self.var_rlt(rpo, rlo, zbar, sigma_z)) *
+                        inv_det)
+        icov[:,1,0] = icov[:,0,1]
+        icov[:,1,1] = self.var_rpt(rpo, rlo, zbar, sigmaz) * inv_det
+        return icov
+
+
+    def data_vector(self, rpt, rlt, rpo, rlo, zbar, sigma_z):
+        """
+        Get the "data vector" :math:`\vec{x} - \vec{\mu_x}` for the 2D data
+        of the true parallel and perpendicular separations. The inputs must all
+        be scalar or 1D array-like with the same size, except :param:`sigma_z`,
+        which can only be scalar. The output will be an array of shape nx2,
+        where n is the length of the inputs, and is 1 for scalars.
+
+        :param rpt: The true perpendicular separation at which to calculate
+        :type rpt: scalar or 1D array-like `float`
+        :param rlt: The true parallel separation at which to calculate
+        :type rlt: scalar or 1D array-like `float`
+        :param rpo: The observed perpendicular separation at which to calculate
+        :type rpo: scalar or 1D array-like `float`
+        :param rlo: The observed parallel separation at which to calculate
+        :type rlo: scalar or 1D array-like `float`
+        :param zbar: The average observed redshift at which to calculate
+        :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
+        :return dvec: The inverse covariance matrix between the perpendicular
+        and parallel directions
+        :rtype dvec: :class:`numpy.ndarray` `float` with shape nx2, for input
+        of length n (n = 1 for scalars)
+        """
+        if not hasattr(rpo, "__len__"):
+            dvec = np.empty((1, 2))
+        else:
+            dvec = np.empty((len(rpo), 2))
+        dvec[:,0] = rpt - self.mean_rpt(rpo, rlo, zbar, sigma_z)
+        dvec[:,1] = rlt - self.mean_rlt(rpo, rlo, zbar, sigma_z)
+        return dvec
+        
+
+    def prob(self, rpt, rlt, rpo, rlo, zbar, sigma_z):
+        """
+        Get the probability of the true separations given the input observed
+        separations, the average observed redshift, and the fractional redshift
+        uncertainty. All parameters must be scalar or 1D array-like with the
+        same size, except for :param:`sigma_z`, which can only be scalar
+
+        :param rpt: The true perpendicular separation at which to find the
+        probability
+        :type rpt: scalar or 1D array-like `float`
+        :param rlt: The true parallel separation at which to find the
+        probability
+        :type rlt: scalar or 1D array-like `float`
+        :param rpo: The observed perpendicular separation at which to calculate
+        :type rpo: scalar or 1D array-like `float`
+        :param rlo: The observed parallel separation at which to calculate
+        :type rlo: scalar or 1D array-like `float`
+        :param zbar: The average observed redshift at which to calculate
+        :type zbar: scalar or 1D array-like `float`
+        :param sigma_z: The redshift uncertainty
+        :type sigma_z: scalar `float`
+        :return p: The probability of the true separations given the set of
+        observed separations and average observed redshifts as well as the
+        redshift uncertainty
+        :rtype p: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
+        `float`
+        """
+        icov = self.inverse_cov_matrix(rpo, rlo, zbar, sigma_z)
+        det = self.det_cov_matrix(rpo, rlo, zbar, sigma_z)
+        dvec = self.data_vector(rpt, rlt, rpo, rlo, zbar, sigma_z)
+        if hasattr(rpo, "index"):
             index = rpo.index
-        return (self._par_var_scale(rpo, rlo, zbar) ** 2 * self.var_y.model(
-            rpo, rlo, index=index))
+        else:
+            index = None
+        if not hasattr(rpo, "__len__"):
+            temp_exp = math.exp
+            temp_pi = math.pi
+            temp_sqrt = math.sqrt
+        else:
+            temp_exp = np.exp
+            temp_pi = np.pi
+            temp_sqrt = np.sqrt
+        p = (temp_exp(-0.5 * double_einsum(dvec, icov)) /
+             (2. * temp_pi * temp_sqrt(det)))
+        if index is not None:
+            p = pd.Series(p, index=index)
+        return p
+
+
+def double_einsum(a, b):
+    """
+    This is a helper function for doing
+    :math:`\vec{a_i} \cdot \mathbf{b_i} \cdot \vec{a_i}` over all
+    elements i in a and b.
+
+    :param a: An array of vectors with shape (N,M)
+    :type a: :class:`numpy.ndarray`
+    :param b: An array of matrices with shape (N,M,M)
+    :type b: class:`numpy.ndarray`
+    :return: An array containing the chained dot product a.b.a for each
+    element along the zeroth axis, with shape (N,)
+    :rtype: :class:`numpy.ndarray`
+    """
+    return np.einsum("ik,ik->i", np.einsum("ij,ijk->ik", a, b), a)

@@ -422,7 +422,7 @@ TEST_CASE("Catalog auto-separations", "[seps][catalog][auto]") {
     std::vector<Pos> catalog = fill_catalog_vector(ra_vec, dec_vec, rt_vec, ro_vec);
     // Get the separations for the catalog
     INFO("Getting catalog separations");
-    VectorSeparation seps_result = get_separations(catalog, catalog, 200.0, 0.0, 1.e7, 0.0, 1.e7, true, false, true);
+    VectorSeparation seps_result = get_separations(catalog, catalog, 0.0, 1.e7, 0.0, 1.e7, true, false, true);
     REQUIRE(seps_result.size() == seps_expected.size());
     for (std::size_t i = 0; i < seps_expected.size(); i++) {
 	CAPTURE(i);

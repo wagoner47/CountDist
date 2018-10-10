@@ -124,7 +124,6 @@ def run_calc(params_file):
         params_in = params_in["run_params"]
     except KeyError:
         pass
-    survey_volume = _get_survey_volume(params_in)
     cat1 = _read_catalog(params_in["ifname1"], params_in.as_bool("has_true1"), params_in.as_bool("has_obs1"), params_in["dtcol1"] if params_in.as_bool("has_true1") else None, params_in["docol1"] if params_in.as_bool("has_obs1") else None)
     if params_in["ifname2"] != params_in["ifname1"]:
         cat2 = _read_catalog(params_in["ifname2"], params_in.as_bool("has_true2"), params_in.as_bool("has_obs2"), params_in["dtcol2"] if params_in.as_bool("has_true2") else None, params_in["docol2"] if params_in.as_bool("has_obs2") else None)
@@ -133,7 +132,7 @@ def run_calc(params_file):
         cat2 = cat1
         is_auto = True
     logger.info("Running calculation")
-    seps_out = _calculate_distances.get_separations(cat1, cat2, survey_volume, params_in.as_float("rp_min"), params_in.as_float("rp_max"), params_in.as_float("rl_min"), params_in.as_float("rl_max"), params_in.as_bool("use_true"), params_in.as_bool("use_obs"), is_auto)
+    seps_out = _calculate_distances.get_separations(cat1, cat2, params_in.as_float("rp_min"), params_in.as_float("rp_max"), params_in.as_float("rl_min"), params_in.as_float("rl_max"), params_in.as_bool("use_true"), params_in.as_bool("use_obs"), is_auto)
     logger.info("Converting result to DataFrame")
     seps_result = pd.DataFrame.from_dict({"ID1": seps_out.id1, "ID2": seps_out.id2})
     if params_in.as_bool("use_true") and params_in.as_bool("use_obs"):

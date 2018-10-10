@@ -61,7 +61,7 @@ def ndigits(x):
     :rtype digits: `int`, scalar or ndarray
     """
     if not hasattr(x, "__len__"):
-        x = math.abs(x)
+        x = math.fabs(x)
         if math.isclose(x / 10.0, x):
             digits = 1
         else:
@@ -137,7 +137,7 @@ def _cosmology_setup(params):
     if "omega_b" in params:
         ckwargs["Ob0"] = params.as_float("omega_b")
     
-    if math.isclose(math.abs(params.as_float("omega_k")), 0.0):
+    if math.isclose(math.fabs(params.as_float("omega_k")), 0.0):
         cosmo_func_name = "Flat"
     else:
         cosmo_func_name = ""
@@ -149,7 +149,7 @@ def _cosmology_setup(params):
     else:
         cosmo_func_name += "w0"
         ckwargs["w0"] = params.as_float("w")
-        if not math.isclose(math.abs(params.as_float("wa")), 0.0):
+        if not math.isclose(math.fabs(params.as_float("wa")), 0.0):
             cosmo_func_name += "wa"
             ckwargs["wa"] = params.as_float("wa")
 

@@ -9,7 +9,8 @@ cd_dir = os.path.dirname(__file__)
 import calculate_distances as _calculate_distances
 from .options import set_logging_level
 from .fit_probabilities import SingleFitter, AnalyticSingleFitter, \
-    ProbFitter, TooFewGroupsError
+    ProbFitter, TooFewGroupsError, add_extra_columns, \
+    get_delta_stats, add_corr_column, get_corr_stats
 from .utils import MyConfigObj
 from . import calc_distances
 from .calc_distances import run_calc

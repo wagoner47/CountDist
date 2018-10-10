@@ -172,28 +172,28 @@ VectorSeparation(std::vector<Separation> s_vec) : seps_vec(s_vec), size_(s_vec.s
     std::vector<double> r_par_t() {
 	std::vector<double> out(size_);
 	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_perp_t;
+	    out[i] = seps_vec[i].r_par_t;
 	}
 	return out;
     }
     std::vector<double> r_perp_o() {
 	std::vector<double> out(size_);
 	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_par_t;
+	    out[i] = seps_vec[i].r_perp_o;
 	}
 	return out;
     }
     std::vector<double> r_par_o() {
 	std::vector<double> out(size_);
 	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_perp_o;
+	    out[i] = seps_vec[i].r_par_o;
 	}
 	return out;
     }
     std::vector<double> ave_ro() {
 	std::vector<double> out(size_);
 	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_par_o;
+	    out[i] = seps_vec[i].ave_ro;
 	}
 	return out;
     }
@@ -246,7 +246,7 @@ bool check_lims(double val, double min, double max);
 
 bool check_2lims(Pos pos1, Pos pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true);
 
-VectorSeparation get_separations(std::vector<Pos> pos1, std::vector<Pos> pos2, double volume, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true, bool use_obs, bool is_auto);
+VectorSeparation get_separations(std::vector<Pos> pos1, std::vector<Pos> pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true, bool use_obs, bool is_auto);
 
 /*
 void write_separations(std::vector<std::vector<double> > separations, std::string db_file, std::string table_name);
