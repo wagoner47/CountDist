@@ -5,7 +5,7 @@ import matplotlib.gridspec as gridspec
 from chainconsumer import ChainConsumer
 import CatalogUtils
 from scipy.stats import kstat, kstatvar, describe
-from scipy.optimize import minimize
+from scipy.optimize import minimize, OptimizeResult
 from scipy.linalg import block_diag
 import emcee
 import numpy as np
@@ -14,6 +14,7 @@ import pandas as pd
 from astropy.table import Table
 import pickle
 import os, re, itertools, warnings
+import copy, logging
 
 plt.rcParams["figure.facecolor"] = "white"
 plt.style.use("seaborn-colorblind")
@@ -64,13 +65,18 @@ def corr_coeff(x, y, x_mean, y_mean, x_var, y_var):
     return r
 
 
+def _delatexify(string):
+    return re.sub(r"[\$_\\]", "", string)
+_delatexify = np.vectorize(_delatexify)
+
+
 def mean_y(rpo, rlo, a, alpha, beta, s, **kwargs):
     """
-    The mean of :math:`\frac{\Delta R_\parallel}{R_\parallel^O}`. This
-    function looks like :math:`a x^\alpha y^\beta \exp[-y^2 / 2 s]`, where x
-    is the perpendicular separation and y is the parallel separation. If
-    :param:`rpo` or :param:`rlo` has a length, it will be assumed that they are
-    the indices from a Series/DataFrame, and a Series will be returned.
+    The mean of :math:`\frac{\Delta R_\parallel}{R_\parallel^O}`. This function
+    looks like :math:`a x^\alpha y^\beta \exp[-y^2 / 2 s]`, where x is the
+    perpendicular separation and y is the parallel separation. If :param:`rpo`
+    or :param:`rlo` has a length, it will be assumed that they are the indices
+    from a Series/DataFrame, and a Series will be returned.
 
     :param rpo: The observed perpendicular separation
     :type rpo: scalar or array-like `float`
@@ -84,31 +90,33 @@ def mean_y(rpo, rlo, a, alpha, beta, s, **kwargs):
     :type beta: scalar `float`
     :param s: The scale of the exponential term
     :type s: scalar `float`
-    :param index: The index to add to the Series, if needed. Ignored for scalar
-    output. If `None`, the index is made from :param:`rpo` and :param:`rlo`,
-    with names ['RPO_BIN', 'RLO_BIN']. Default `None`
-    :type index: :class:`pandas.Index`, :class:`pandas.MultiIndex`, or `None`,
-    optional
     :key index: Optional index to use for returning a Series rather than an
     array for array-like :param:`rpo` and/or :param:`rlo`. Default `None`
     :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`, optional
+    :key rpo_scale: Optional scaling to apply to the observed perpendicular
+    separation. The default is 1.0 (in the same units as :param:`rpo`)
+    :type rpo_scale: `float`
+    :key rlo_scale: Optional scaling to apply to the observed parallel
+    separation. The default is 1.0 (in the same units as :param:`rlo`)
+    :type rlo_scale: `float`
     :return f: The function evaluated at the separation(s)
     :rtype f: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
     `float`
     """
+    index = kwargs.pop("index", None)
+    rpo_scale = kwargs.pop("rpo_scale", 1.0)
+    rlo_scale = kwargs.pop("rlo_scale", 1.0)
+    new_rpo = rpo / rpo_scale
+    new_rlo = rlo / rlo_scale
     if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
-        f = a * (rpo**alpha) * (rlo**beta) * math.exp(-0.5 * rlo**2 / s)
+        fexp = math.exp
     else:
-        index = kwargs.pop("index", None)
-        if index is not None:
-            f = pd.Series(a * (rpo**alpha) * (rlo**beta) * \
-                          np.exp(-0.5 * rlo**2 / s), index=index)
-        else:
-            if hasattr(rpo, "values"):
-                rpo = rpo.values
-            if hasattr(rlo, "values"):
-                rlo = rlo.values
-            f = a * (rpo**alpha) * (rlo**beta) * np.exp(-0.5 * rlo**2 / s)
+        fexp = np.exp
+    f = a * (new_rpo**alpha) * (new_rlo**beta) * fexp(-0.5 * new_rlo**2 / s**2)
+    if index is not None:
+        if not hasattr(f, "__len__"):
+            f = [f]
+        f = pd.Series(f, index=index)
     return f
 
 
@@ -117,11 +125,11 @@ def var_y(rpo, rlo, b, s1, s2, rho, **kwargs):
     The variance of :math:`\frac{\Delta R_\parallel}{\sqrt{2} \chi'(\bar{z})
     \sigma_z(\bar{z})}`. This function looks like :math:`1 - b \exp[-0.5 \vec{
     r}^T C^{-1} \vec{r}]`, where :math:`\vec{r}` is a vector of the observed
-    perpendicular and parallel separations, and C looks like a covariance
-    matrix if :param:`s1` and :param:`s2` are variances and :param:`rho` is
-    the correlation coefficient. If :param:`rpo` or :param:`rlo` has a length,
-    both will assumed to be indices from a Series/DataFrame, and a Series will
-    be returned.
+    perpendicular and parallel separations, and C looks like a covariance matrix
+    if :param:`s1` and :param:`s2` are variances and :param:`rho` is the
+    correlation coefficient. If :param:`rpo` or :param:`rlo` has a length, both
+    will assumed to be indices from a Series/DataFrame, and a Series will be
+    returned.
 
     :param rpo: The observed perpendicular separations
     :type rpo: scalar or array-like `float`
@@ -141,36 +149,41 @@ def var_y(rpo, rlo, b, s1, s2, rho, **kwargs):
     :key index: Optional index to use for returning a Series rather than an
     array for array-like :param:`rpo` and/or :param:`rlo`. Default `None`
     :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`, optional
+    :key rpo_scale: Optional scaling to apply to the observed perpendicular
+    separation. The default is 1.0 (in the same units as :param:`rpo`)
+    :type rpo_scale: `float`
+    :key rlo_scale: Optional scaling to apply to the observed parallel
+    separation. The default is 1.0 (in the same units as :param:`rlo`)
+    :type rlo_scale: `float`
     :return f: The function evaluated at the separation(s)
     :rtype f: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
     `float`
     """
-    inv_weight = 1. / (s1 * s2 * (1 - rho**2))
-    cinv = [x * inv_weight for x in [s2, s1, -2 * rho * math.sqrt(s1 * s2)]]
+    index = kwargs.pop("index", None)
+    rpo_scale = kwargs.pop("rpo_scale", 1.0)
+    rlo_scale = kwargs.pop("rlo_scale", 1.0)
+    new_rpo = rpo / rpo_scale
+    new_rlo = rlo / rlo_scale
+    inv_weight = 1. / (s1**2 * s2**2 * (1 - rho**2))
+    cinv = [x * inv_weight for x in [s2**2, s1**2, -2 * rho * s1 * s2]]
     if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
-        f = 1.0 - b * math.exp(-0.5 * (rpo**2 * cinv[0] + rlo**2 * cinv[1] + rpo
-            * rlo * cinv[2]))
+        fexp = math.exp
     else:
-        index = kwargs.pop("index", None)
-        if index is not None:
-            f = 1.0 - b * np.exp(
-                -0.5 * pd.Series(rpo**2 * cinv[0] + rlo**2 *
-                                 cinv[1] + rpo * rlo * cinv[2], index=index))
-        else:
-            if hasattr(rpo, "values"):
-                rpo = rpo.values
-            if hasattr(rlo, "values"):
-                rlo = rlo.values
-            f = 1.0 - b * np.exp(-0.5 * (rpo**2 * cinv[0] + rlo**2 * cinv[1] +
-                                         rpo * rlo * cinv[2]))
+        fexp = np.exp
+    f = 1.0 - b * fexp(-0.5 * (new_rpo**2 * cinv[0] + new_rlo**2 * cinv[1] +
+                               new_rpo * new_rlo * cinv[2]))
+    if index is not None:
+        if not hasattr(f, "__len__"):
+            f = [f]
+        f = pd.Series(f, index=index)
     return f
 
 
 def prior_mean_y(theta):
     """
     The prior on the mean of the scaled difference in parallel separations.
-    This is flat in the allowed regions (we only require that the scale of
-    the exponential be positive).
+    This is flat in the allowed regions (we only require that the scale of the
+    exponential be positive).
 
     :param theta: The parameters at which to calculate the prior likelihood.
     This should be in the order [a, alpha, beta, s]
@@ -179,8 +192,7 @@ def prior_mean_y(theta):
     otherwise
     :rtype: `float`
     """
-    a, alpha, beta, s = theta
-    if s > 0.0:
+    if theta["s"] > 0.0:
         return 0.0
     return -math.inf
 
@@ -198,18 +210,20 @@ def prior_var_y(theta):
     otherwise
     :rtype: `float`
     """
-    b, s1, s2, rho = theta
-    if s1 > 0.0 and s2 > 0.0 and -1.0 < rho < 1.0:
+    if (0.0 <= theta["b"] < 1.0 and 0.5 <= theta["s1"] <= 50.0 and
+        0.05 <= theta["s2"] <= 5.0 and -1.0 < theta["rho"] < 1.0):
         return 0.0
     return -math.inf
 
 def _check_pickleable(attrs):
+    pickles = []
     for attr in attrs:
         try:
             pickle.dumps(attr)
+            pickles.append(False)
         except (pickle.PicklingError, TypeError):
-            return False
-    return True
+            pickles.append(True)
+    return (not any(pickles), pickles)
 
 def _perp_mean_scale(rpo, rlo, zbar, sigma_z):
     return rpo
@@ -225,10 +239,9 @@ def _par_var_scale(rpo, rlo, zbar, sigma_z):
     return (np.sqrt(2.0) * sigma_z * (1 + zbar) *
             CatalogUtils.dr_dz(zbar))
 
-def _add_bin_column(seps, orig_col_name, bin_col_name, bin_size, scale):
-    seps[bin_col_name] = ((np.floor(seps.loc[:,orig_col_name] /
-                                    bin_size) + 0.5) *
-                          (bin_size / scale))
+def _add_bin_column(seps, orig_col_name, bin_col_name, bin_size):
+    seps[bin_col_name] = np.floor(seps.loc[:,orig_col_name] / bin_size).astype(
+        int)
 
 def _add_zbar(seps):
     seps["ZBAR"] = CatalogUtils.z_at_chi(seps["AVE_D_OBS"])
@@ -240,11 +253,10 @@ def _add_delta_column(seps, direction, scale_func, dcol_name, sigma_z):
                             seps.loc[:,"ZBAR"], sigma_z)
     seps[dcol_name] = seps[tcol_name].sub(seps[ocol_name]).mul(scale)
 
-def add_extra_columns(seps, perp_bin_size, par_bin_size, perp_bin_scale,
-                      par_bin_scale, sigma_z):
+def add_extra_columns(seps, perp_bin_size, par_bin_size, sigma_z):
     """This function adds some of the extra data columns to the input DataFrame
-    that are needed for grouping and generating the statistics. It does not
-    add the column for the correlation, that is handled by a separate function.
+    that are needed for grouping and generating the statistics. It does not add
+    the column for the correlation, that is handled by a separate function.
 
     :param seps: The DataFrame of the separations which should already contain,
     at a minimum, columns 'R_PERP_O', 'R_PAR_O', 'R_PERP_T', 'R_PAR_T', and
@@ -256,21 +268,14 @@ def add_extra_columns(seps, perp_bin_size, par_bin_size, perp_bin_scale,
     :param par_bin_size: The bin size to use for binning 'R_PAR_O', in the same
     units as 'R_PAR_O'
     :type par_bin_size: `float`
-    :param perp_bin_scale: The scaling to use for the 'R_PERP_O' bins, in the
-    same units as 'R_PERP_O'
-    :type perp_bin_scale: `float`
-    :param par_bin_scale: The scaling to use for the 'R_PAR_O' bins, in the
-    same units as 'R_PAR_O'
-    :type par_bin_scale: `float`
     :param sigma_z: The redshift error assumed for the separations
     :type sigma_z: `float`
     """
     logger = glogger.getChild(__name__)
     logger.debug("Add column RPO_BIN")
-    _add_bin_column(seps, "R_PERP_O", "RPO_BIN", perp_bin_size,
-                    perp_bin_scale)
+    _add_bin_column(seps, "R_PERP_O", "RPO_BIN", perp_bin_size)
     logger.debug("Add column RLO_BIN")
-    _add_bin_column(seps, "R_PAR_O", "RLO_BIN", par_bin_size, par_bin_scale)
+    _add_bin_column(seps, "R_PAR_O", "RLO_BIN", par_bin_size)
     logger.debug("Add column ZBAR")
     _add_zbar(seps)
     logger.debug("Add column DELTA_R_PERP")
@@ -293,9 +298,9 @@ def get_delta_stats(seps, min_counts=200, min_bins=2):
     'variance' is always the variance on it, although 'mean' is actually the
     sample variance in the case of 'var_x' and 'var_y').
 
-    If the extra columns needed for the calculations have not been added yet
-    via :function:`add_extra_columns`, an AttributeError will be raised. Please
-    make sure to call that function first to have all needed columns
+    If the extra columns needed for the calculations have not been added yet via
+    :function:`add_extra_columns`, an AttributeError will be raised. Please make
+    sure to call that function first to have all needed columns
 
     :param seps: The DataFrame of the separations, which must have columns
     'RPO_BIN', 'RLO_BIN', 'DELTA_R_PERP', 'x', 'DELTA_R_PAR', and 'y'. All of
@@ -386,8 +391,8 @@ def add_corr_column(seps, x_mean, y_mean, x_var, y_var):
                            x_mean, y_mean, x_var, y_var)
 
 def get_corr_stats(seps, min_counts=200, min_bins=2):
-    """Get the sample mean and variance on sample mean of the correlation.
-    The returned DataFrame will have columns 'mean' and 'variance', and indices
+    """Get the sample mean and variance on sample mean of the correlation.  The
+    returned DataFrame will have columns 'mean' and 'variance', and indices
     labeled 'RPO_BIN' and 'RLO_BIN'.
 
     :param seps: The DataFrame of the separations, containing at least columns
@@ -426,9 +431,10 @@ def get_corr_stats(seps, min_counts=200, min_bins=2):
                 "the minimum number of pairs, increasing the bin size, "\
                 "or using a larger catalog".format(len(grouped), min_counts))
     logger.debug("Get sample mean of Corr(R_PERP_T, R_PAR_T)")
-    stats = pd.concat([grouped["r"].agg([kstat, kstatvar], 2).rename(
-                columns={"kstat": "mean", "kstatvar": "variance"})],
-                      keys=["mean_r"], axis=1)
+    stats = pd.concat([grouped["r"].agg(kstat, 2),
+                       grouped["r"].agg(kstatvar, 2)],
+                      keys=[("mean_r", "mean"), ("mean_r", "variance")],
+                      axis=1)
     return stats
 
 
@@ -446,7 +452,7 @@ class _FitFunctionWrapper(object):
 
     def __call__(self, x, y, theta, **kwargs):
         try:
-            return self.f(x, y, *theta, *self.args, **self.kwargs, **kwargs)
+            return self.f(x, y, *self.args, **theta, **self.kwargs, **kwargs)
         except TypeError:
             print("TypeError when calling ", self.func_name, flush=True)
             print("\ttheta = ", theta, flush=True)
@@ -456,13 +462,201 @@ class _FitFunctionWrapper(object):
             raise
 
 
+# def lnlike(theta, fitter):
+#     if not isinstance(theta, dict):
+#         theta = dict((p, t) for p, t in zip(_delatexify(fitter.params), theta))
+#     x = ((fitter.data.index.get_level_values(fitter.index_names[0]) + 0.5) *
+#          fitter.rpo_size)
+#     y = ((fitter.data.index.get_level_values(fitter.index_names[1]) + 0.5) *
+#          fitter.rlo_size)
+#     data = fitter.data.loc[:,fitter.col_names[0]]
+#     var = fitter.data.loc[:,fitter.col_names[1]]
+#     fev = fitter.f(x, y, **theta)
+#     return -0.5 * np.sum((data - fev)**2 / var)
+# 
+# 
+# def lnprob(theta, fitter):
+#     if not isinstance(theta, dict):
+#         theta = dict((p, t) for p, t in zip(_delatexify(fitter.params), theta))
+#     lp = fitter.pr(theta)
+#     if not math.isfinite(lp):
+#         return -math.inf
+#     return lp + lnlike(theta, fitter)
+# 
+# 
+# def fit_minimize(fitter, init_guess):
+#     """Fit the data to the function in :param:`fitter` using
+#     :function:`scipy.optimize.minimize`
+# 
+#     :param fitter: The instance to be fit
+#     :type fitter: :class:`SingleFitter`
+#     :param init_guess: A starting point for the fit, which must have the correct
+#     size for the number of dimensions of the fit function in :param:`fitter`
+#     :type init_guess: 1D array-like
+#     :return res: The result of running the minimizer, with fit parameters and
+#     convergence information. See the documentation from :module:`scipy` for more
+#     information
+#     :rtype res: :class:`scipy.optimize.OptimizeResult`
+#     """
+#     logger = glogger.getChild(__name__ + "(" + fitter.name + ")")
+#     logger.debug("Check init_guess parameters")
+#     if len(init_guess) != fitter.ndim:
+#         raise ValueError("Wrong number of parameters in init_guess")
+#     logger.debug("Defining negative lnprob")
+#     nll = lambda theta: -self.lnprob(theta)
+#     logger.debug("Running minimization")
+#     res = minimize(nll, init_guess)
+#     # This will update fitter, because it is mutable!
+#     fitter._best_fit_params = res.x
+#     return res
+# 
+# 
+# def fit_mcmc(fitter, nsteps, nburnin=0, init_guess=None, nwalkers=None,
+#              nthreads=1, sampler=None):
+#     """Fit the data to the function in :param:`fitter` using an MCMC (as
+#     implemented in :module:`emcee`). A sampler that has already been initialized
+#     may be passed, which will ignore the parameters :param:`nwalkers` and
+#     :param:`nthreads` unless the sampler number of dimensions is incorrect (in
+#     which case a new sampler will be created to replace it). If the sampler has
+#     already been previously run, and the number of parameters associated with it
+#     are still correct, an additional :param:`nsteps` will be taken from the
+#     current position, so that :param:`init_guess` is also not needed. The
+#     :param:`init_guess` parameter may be given as a 1D array-like with shape
+#     (fitter.ndim,), an instance of :class:`scipy.optimize.OptimizeResult`, or a
+#     2D array-like with shape (nwalkers, fitter.ndim). The first option will be
+#     used to set the mean of the walker initial positions, and they will be
+#     scattered around that mean by a Gaussian random with width determined by the
+#     order of magnitude of each parameter value. The second option will be used
+#     similarly, but with the best fit parameters from the OptimizeResult being
+#     used as the mean. The final option is useful when some other method of
+#     populating the walkers over some area in allowed parameter space needs to be
+#     used, and is used as the initial positions without change.
+# 
+#     At the end of the MCMC, the best fit parameters are added to the fitter, and
+#     the sampler is returned for analyzing walker behavior and checking parameter
+#     distributions. The samples are also added to the fitter, as well as the
+#     burn-in length, for future reference.
+# 
+#     :param fitter: The instance to be fit
+#     :type fitter: :class:`SingleFitter`
+#     :param nsteps: The number of MCMC steps to take with each walker
+#     :type nsteps: `int`
+#     :param nburnin: The number of steps to omit from each walker for the burn-in
+#     phase. Note that while this parameter is optional, the default value is not
+#     necessarily safe and a warning will be raised if this is not changed and the
+#     value in the fitter is not set. Default 0 or fitter.nburnin
+#     :type nburnin: `int`, optional
+#     :param init_guess: The initial guess for the walker starting positions. As
+#     described above, this can either be used as the mean for generating walker
+#     positions, or it can be the precomputed positions for all walkers. Ignored
+#     if :param:`sampler` is valid for :param:`fitter` and has already been run
+#     previously, but is required for a new MCMC run if there is no best fit set
+#     in :param:`fitter`. Default `None` or :attr:`fitter.best_fit`
+#     :type init_guess: 1D array-like, 2D array-like, or
+#     :class:`scipy.optimize.OptimizeResult`, optional
+#     :param nwalkers: The number of walkers to utilize for the MCMC. Required for
+#     new samplers. Default `None`
+#     :type nwalkers: `int`, optional
+#     :param nthreads: The number of threads to use for parallelized MCMC. Set to
+#     1 if no parallelization should be used. This will be overridden if
+#     parallelization is not possible for this run. This parameter is also ignored
+#     when a valid :param:`sampler` is given
+#     :type nthreads: `int`, optional
+#     :param sampler: A sampler instance to use for the MCMC, or for continuing an
+#     MCMC. If it is not valid given :param:`fitter`, a new sampler will be
+#     created. The updated or newly created sampler is returned at the end of the
+#     function. Default `None`
+#     :type sampler: :class:`emcee.EnsembleSampler`
+#     :return new_sampler: The sampler that was used for this run. This is either
+#     a new sampler that was created and run, or the given sampler run for
+#     :param:`nsteps`.
+#     :rtype new_sampler: :class:`emcee.EnsembleSampler`
+#     """
+#     logger = glogger.getChild(__name__ + "(" + fitter.name + ")")
+#     
+#     logger.debug("Check the burn-in")
+#     if nburnin == 0 and fitter.nburnin is None:
+#         warnings.warn("Using burn-in of 0 is ill-advised and will likely "\
+#                           "result in improper best fit values being set")
+#     elif nburnin == 0:
+#         nburnin = fitter.nburnin
+#     fitter.nburnin = nburnin
+# 
+#     logger.debug("Check if passed sampler is valid")
+#     new_sampler = copy.deepcopy(sampler)
+#     if new_sampler is not None and sampler.chain.shape[-1] != fitter.ndim:
+#         warnings.warn("Invalid sampler given, creating new sampler instead")
+#         new_sampler = None
+#     if new_sampler is None:
+#         logger.debug("Check pickleable attributes for parallelization")
+#         attrs_needed = [fitter.data, fitter.index_names, fitter.col_names,
+#                         fitter.f, fitter.pr, fitter.ndim, fitter,
+#                         lnlike, lnprob]
+#         attrs_needed_names = np.array(["data", "index names list",
+#                                        "column names list",
+#                                        "fit function", "prior funcion",
+#                                        "number of dimensions", "fitter",
+#                                        "lnlike", "lnprob"])
+#         pickleable = _check_pickleable(attrs_needed)
+#         if not pickleable[0]:
+#             logger.info("Setting number of threads to 1 because not "\
+#                                  "pickleable")
+#             logger.debug("Non-pickleable attributes: {}".format(
+#                     attrs_needed_names[pickleable[1]]))
+#         nthreads = 1
+#         logger.debug("Check number of walkers")
+#         if nwalkers is None:
+#             raise ValueError("Must give number of walkers for new sampler")
+#         logger.debug("Create a new sampler")
+#         new_sampler = emcee.EnsembleSampler(nwalkers, fitter.ndim,
+#                                             fitter.lnprob, threads=nthreads)
+# 
+#     logger.debug("Set initial position")
+#     if new_sampler.chain.shape[1] > 0:
+#         logger.debug("Continue chain from current position")
+#         init_guess = None
+#     else:
+#         if init_guess is None:
+#             raise ValueError("Must give init_guess for new MCMC")
+#         if isinstance(init_guess, OptimizeResult):
+#             if len(init_guess.x) != fitter.ndim:
+#                 raise ValueError("Wrong number of parameters for initial "\
+#                                      "guess from OptimizeResult")
+#             init_guess = init_guess.x
+#         if not hasattr(init_guess[0], "__len__"):
+#             logger.debug("Set initial walker positions from mean")
+#             if len(init_guess) != fitter.ndim:
+#                 raise ValueError("Wrong number of parameters for initial "\
+#                                      "guess mean values")
+#             init_guess = [init_guess + (10**(-4 + ndigits(init_guess)) *
+#                                         np.random.randn(fitter.ndim))
+#                           for i in range(nwalkers)]
+#         else:
+#             if len(init_guess) != nwalkers:
+#                 raise ValueError("Wrong number of walker positions for "\
+#                                      "initial guess positions")
+#             if len(init_guess[0]) != fitter.ndim:
+#                 raise ValueError("Wrong number of parameters for initial "\
+#                                      "guess positions")
+#             pass
+#     logger.debug("Running MCMC")
+#     new_sampler.run_mcmc(init_guess, nsteps)
+#     logger.debug("Add chain to fitter")
+#     fitter._samples = new_sampler.chain
+#     logger.debug("Calculate best fit parameters and add to fitter")
+#     samples = new_sampler.chain[:,nburnin:,:].reshape((-1, fitter.ndim))
+#     fitter._best_fit_params = np.median(samples, axis=0)
+#     logger.debug("Done")
+#     return new_sampler
+
+
 class SingleFitter(object):
     """
     Fit a single function to a single set of data.
     """
 
     def __init__(self, data, index_names, col_names, func=None, prior=None,
-                 param_names=None, fitter_name=None):
+                 param_names=None, fitter_name=None, **kwargs):
         """Initialize the SingleFitter
 
         :param data: A DataFrame containing the observed parallel and
@@ -494,6 +688,21 @@ class SingleFitter(object):
         for representation. If `None`, the name will be set to
         'SingleFitter'. Default `None`
         :type fitter_name: `str` or `None`, optional
+        :key rpo_size: The size of the observed perpendicular separation bins
+        to assume is used in the data. Default 1.0
+        :type rpo_size: `float`
+        :key rlo_size: The size of the observed parallel separation bins to
+        assume is used in the data. Default 1.0
+        :type rlo_size: `float`
+        :key func_kwargs: The keyword arguments to use for the fitting
+        function, if it has been given, as a dictionary. Default `None` for
+        no keyword arguments if the function is given.
+        :type func_kwargs: `dict`
+        :key func_args: The positional arguments (other than the separations
+        and the parameters) to use for the fitting function, if it has been
+        given, as an array-like. Default `None` for no additional positional
+        arguments if the function is given.
+        :type func_args: array-like
         """
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
@@ -502,8 +711,11 @@ class SingleFitter(object):
         self.data = data
         self.index_names = index_names
         self.col_names = col_names
+        self.rpo_size = kwargs.pop("rpo_size", 1.0)
+        self.rlo_size = kwargs.pop("rlo_size", 1.0)
         self.logger.debug("Set fitting function and prior")
-        self.set_fit_func(func, param_names)
+        self.set_fit_func(func, param_names, kwargs.pop("func_args", None),
+                          kwargs.pop("func_kwargs", None))
         self.set_prior_func(prior)
         self.logger.debug("Initialize sampler and best fit parameters as None")
         self._best_fit_params = None
@@ -511,7 +723,48 @@ class SingleFitter(object):
         self.logger.debug("__init__ complete")
 
     def __repr__(self):
-        return "%s(ndim=%r, sampler=%r)" % (self.name, self.ndim, self.sampler)
+        return "%s(ndim=%r, best_fit=%r)" % (self.name, self.ndim,
+                                             self._best_fit_params)
+
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        if "logger" in d:
+            d["logger"] = (d["logger"].name, d["logger"].getEffectiveLevel())
+        if "c" in d:
+            d["c"] = (d["c"].chains, d["c"].config, d["c"].config_truth)
+        if "c_walkers" in d:
+            d["c_walkers"] = (d["c_walkers"].chains, d["c_walkers"].config,
+                              d["c_walkers"].config_truth)
+        return d
+
+    def __setstate__(self, d):
+        if "logger" in d:
+            level = d["logger"][1]
+            d["logger"] = logging.getLogger(d["logger"][0])
+            d["logger"].setLevel(level)
+        if "c" in d:
+            c = ChainConsumer()
+            [c.add_chain(chain.chain, parameters=chain.parameters,
+                         name=chain.name, posterior=chain.posterior,
+                         color=chain.color, walkers=chain.walkers) for
+             chain in d["c"][0]]
+            for i, chain in enumerate(d["c"][0]):
+                c.chains[i].config = chain.config
+            c.config = d["c"][1]
+            c.config_truth = d["c"][2]
+            d["c"] = c
+        if "c_walkers" in d:
+            c = ChainConsumer()
+            [c.add_chain(chain.chain, parameters=chain.parameters,
+                         name=chain.name, posterior=chain.posterior,
+                         color=chain.color, walkers=chain.walkers) for
+             chain in d["c_walkers"][0]]
+            for i, chain in enumerate(d["c_walkers"][0]):
+                c.chains[i].config = chain.config
+            c.config = d["c_walkers"][1]
+            c.config_truth = d["c_walkers"][2]
+            d["c_walkers"] = c
+        self.__dict__.update(d)
 
     @property
     def nburnin(self):
@@ -520,9 +773,6 @@ class SingleFitter(object):
     @nburnin.setter
     def nburnin(self, value):
         self._nburnin = value
-        if self.sampler is not None:
-            samples = self.sampler.chain[:, value:, :].reshape((-1, self.ndim))
-            self._best_fit_params = np.median(samples, axis=0)
 
     @property
     def best_fit(self):
@@ -578,142 +828,6 @@ class SingleFitter(object):
         self.pr = prior
         self.logger.debug("done")
 
-    def lnlike(self, theta):
-        if self.f is None:
-            raise AttributeError("No fitting function set for likelihood")
-        fev = self.f(self.data.index.get_level_values(self.index_names[0]),
-                     self.data.index.get_level_values(self.index_names[1]),
-                     theta)
-        diff2 = self.data.loc[:,self.col_names[0]].sub(fev).pow(2)
-        diffdiv = diff2.div(self.data.loc[:,self.col_names[1]])
-        return -0.5 * diffdiv.sum()
-
-    def lnprob(self, theta):
-        if self.pr is None:
-            raise AttributeError("No prior function set for lnprob")
-        lp = self.pr(theta)
-        if not np.isfinite(lp):
-            return -np.inf
-        return lp + self.lnlike(theta)
-
-    def fit_minimize(self, init_guess):
-        """Fit the data using :function:`scipy.optimize.minimize`.
-
-        :param init_guess: The guess for the starting point of the fit
-        :type init_guess: 1D array-like `float`
-        :return res: The result of the minimizer, with the fit parameters and
-        convergence information
-        :rtype res: :class:`scipy.optimize.OptimizeResult`
-        """
-        self.logger.debug("Defining negative lnprob")
-        nll = lambda theta: -self.lnprob(theta)
-        self.logger.debug("Running minimization")
-        res = minimize(nll, init_guess)
-        self._best_fit_params = res.x
-        return res
-
-    def fit_mcmc(self, nsteps, nburnin, init_guess=None, nwalkers=None,
-                 nthreads=1, sampler=None, with_init=True):
-        """Fit the data using an MCMC (via `emcee`). If an MCMC has already
-        been run and :param:`reset` is set to `False`, this will merely
-        continue running the chains for another :param:`nsteps`, and all
-        other optional parameters will be ignored. If no run has been done or
-        :param:`reset` is set to `True`, this will start a new sampler,
-        and possibly initialize using :function:`SingleFitter.fit_minimize`
-        if :param:`with_init` is set to `True`. In all instances,
-        :param:`nburnin` is required for setting the internal burn-in length
-        for parameter estimation.
-
-        :param nsteps: The number of MCMC steps to take with each walker
-        :type nsteps: `int`
-        :param nburnin: The length of the burn-in on the MCMC
-        :type nburnin: `int`
-        :param init_guess: The inital guess for the parameters. This is
-        ignored if continuing chains. Otherwise, it is either used to
-        initialize the walkers or passed to the minimizer for initialization,
-        depending on :param:`with_init`. Default `None`
-        :type init_guess: 1D array-like `float` or `None`, optional
-        :param nwalkers: The number of MCMC walkers to use in `emcee`. This
-        is ignored when continuing chains, but required otherwise. Default
-        `None`
-        :type nwalkers: `int` or `None`, optional
-        :param nthreads: The number of threads to use for multiprocessing
-        with `emcee`. If set to 1, multiprocessing will not be used. This
-        parameter is ignored when continuing chains. It may be overridden if
-        pickling will fail. Default 1
-        :type nthreads: `int`, optional
-        :param sampler: If given, this is a sampler that has already been
-        initialized and possibly run. This will override the options for
-        :param:`nwalkers` and :param:`nthreads` if they were given. Also,
-        if a chain has already been run with the sampler, the options
-        :param:`init_guess` and :param:`with_init` will be overridden.
-        When not passed, a new sampler is created. The resulting sampler
-        (either newly created or modified) is also returned. If number of
-        dimensions for sampler is wrong, the sampler will be overwritten.
-        Default `None`
-        :type sampler: :class:`emcee.EnsembleSampler`, optional
-        :param with_init: If `True`, use
-        :function:`SingleFitter.fit_minimize` as a first pass fit before
-        running the MCMC. Ignored when continuing chains. Default `True`
-        :type with_init: `bool`, optional
-        :return sampler: The EnsembleSampler for the MCMC run. This will either
-        be one that was initialized here and run, or one that was updated
-        (unless no update was needed for number of steps plus burn-in
-        requested).
-        :rtype sampler: :class:`emcee.EnsembleSampler`
-        """
-        attrs_needed = [self.lnlike, self.lnprob]
-        if not _check_pickleable(attrs_needed):
-            self.logger.debug("Setting number of threads to 1 because not "
-                    "pickleable")
-            nthreads = 1
-        self.logger.debug("Set internal burn-in")
-        self._nburnin = nburnin
-        if sampler is None or sampler.chain.shape[-1] != self.ndim:
-            self.logger.debug("Initializing sampler")
-            sampler = emcee.EnsembleSampler(nwalkers, self.ndim, self.lnprob,
-                                            threads=nthreads)
-        if sampler.chain.shape[1] > 0:
-            self.logger.debug("Continuing chains")
-            nsteps_needed = (nsteps + nburnin) - sampler.chain.shape[1]
-            if nsteps_needed <= 0:
-                self.logger.debug("No further steps needed")
-            else:
-                sampler.run_mcmc(None, nsteps_needed)
-        
-        else:
-            if init_guess is None or nwalkers is None:
-                raise ValueError("Must give initial guess and number of "
-                                 "walkers for new MCMC sampler")
-            if len(init_guess) != self.ndim:
-                raise ValueError("Wrong number of parameters in initial guess")
-            if with_init:
-                self.logger.debug("Initializing with minimizer")
-                res = self.fit_minimize(init_guess)
-                init_guess = res.x
-            self.logger.debug("Setting up initial ball")
-            p0 = [init_guess + 10 ** -4 * np.random.randn(self.ndim) for i in
-                  range(nwalkers)]
-            self.logger.debug("Running new MCMC")
-            sampler.run_mcmc(p0, nsteps + nburnin)
-        self.logger.debug("Set current best fit parameters")
-        samples = sampler.chain[:, nburnin, :].reshape((-1, self.ndim))
-        self.logger.debug("Set up Chain Consumer objects")
-        c_walks = ChainConsumer()
-        c_walks.add_chain(sampler.flatchain, parameters=self.params,
-                          posterior=sampler.flatlnprobability,
-                          walkers=nwalkers)
-        self.c_walkers = c_walks.divide_chain()
-        self._samples = sampler.chain[:, self._nburnin:, :].reshape(
-            (-1, self.ndim))
-        self._best_fit_params = np.median(self._samples, axis=0)
-        lnprobs = sampler.lnprobability[:, self._nburnin:].flatten()
-        self.c = ChainConsumer()
-        self.c.add_chain(self._samples, parameters=self.params,
-                         posterior=lnprobs)
-        self.logger.debug("done")
-        return sampler
-
     def model(self, rpo, rlo, index=None):
         """Get the best fit model at the given separations
 
@@ -734,6 +848,8 @@ class SingleFitter(object):
         if self._best_fit_params is None:
             raise AttributeError("Cannot get best fit model without "\
                                      "best fit parameters")
+        theta = dict((p, t) for p, t in
+                     zip(_delatexify(self.params), self._best_fit_params))
         m = self.f(rpo, rlo, self._best_fit_params, index=index)
         return m
 
@@ -758,7 +874,9 @@ class SingleFitter(object):
         if self._samples is None:
             raise AttributeError("Cannot get model with errors if samples "\
                                      "not available")
-        samples = self._samples
+        samples = [dict((p, t) for p, t in
+                        zip(_delatexify(self.params), theta)) for theta in
+                   self._samples[:,self._nburnin:,:].reshape((-1, self.ndim))]
         meval = dict(zip(range(len(samples)), map(
                     lambda params: self.f(rpo, rlo, params, index=index),
                     samples)))
@@ -770,12 +888,12 @@ class SingleFitter(object):
             m = meval.quantile(q=[0.16, 0.5, 0.84], axis="columns").T
         return m
 
-    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_size, 
-             par_bin_size, exp, is_rpo=False, logx=False, logy=False, 
+    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_scale, 
+             par_bin_scale, exp, is_rpo=False, logx=False, logy=False, 
              filename=None, figsize=None, display=False, text_size=22, 
              with_fit=False):
-        """Plot the data (and optionally the best fit to the data) at a
-        number of individual perpendicular or parallel separations.
+        """Plot the data (and optionally the best fit to the data) at a number
+        of individual perpendicular or parallel separations.
 
         :param rpo_label: The label to use for the x-axis (if :param:`is_rpo`
         is `False`) or the axes (if :param:`is_rpo` is `True`)
@@ -787,12 +905,12 @@ class SingleFitter(object):
         :type ylabel: `str`
         :param bins: The values of the fixed separation to use
         :type bins: scalar or array-like `float`
-        :param perp_bin_size: The size of the bins in the perpendicular
+        :param perp_bin_scale: The scale of the bins in the perpendicular
         direction, in the same units as the perpendicular separations
-        :type perp_bin_size: `float`
-        :param par_bin_size: The size of the bins in the parallel direction, in
-        the same units as the parallel separations
-        :type par_bin_size: `float`
+        :type perp_bin_scale: `float`
+        :param par_bin_scale: The scale of the bins in the parallel direction,
+        in the same units as the parallel separations
+        :type par_bin_scale: `float`
         :param exp: The expected constant for the limiting behavior. This is
         likely to be 0 for means and 1 for variances
         :type exp: scalar `float`
@@ -825,15 +943,15 @@ class SingleFitter(object):
 
         if is_rpo:
             # x-axis will be RLO_BIN, bins are drawn from RPO_BIN
-            r_bin_size = perp_bin_size
-            x_bin_size = par_bin_size
+            r_bin_size = self.rpo_size / perp_bin_scale
+            x_bin_size = self.rlo_size / par_bin_scale
             rlabel = rpo_label
             xlabel = rlo_label
             data = self.data.copy().loc[bins]
         else:
             # x-axis will be RPO_BIN, bins are drawn from RLO_BIN
-            r_bin_size = par_bin_size
-            x_bin_size = perp_bin_size
+            r_bin_size = self.rlo_size / par_bin_scale
+            x_bin_size = self.rpo_size / perp_bin_scale
             rlabel = rlo_label
             xlabel = rpo_label
             data = self.data.swaplevel(0, 1, axis=0).loc[bins]
@@ -847,10 +965,25 @@ class SingleFitter(object):
                 warnings.warn("Ignoring with_fit option when no fit is done")
                 with_fit = False
             else:
+                if isinstance(data.index, pd.MultiIndex):
+                    all_r = data.index.get_level_values(0).unique(
+                        ).sort_values()
+                    all_x = data.index.get_level_values(1).unique(
+                        ).sort_values()
+                    mod_index = pd.MultiIndex.from_product(
+                        [all_r, all_x], names=data.index.names)
+                    all_r = mod_index.get_level_values(0)
+                    all_x = mod_index.get_level_values(1)
+                else:
+                    all_x = data.index
+                    all_r = np.repeat(bins, all_x.size)
+                    mod_index = all_x
                 mod = self.model_with_errors(
-                    data.index.get_level_values(self.index_names[0]),
-                    data.index.get_level_values(self.index_names[1]),
-                    index=data.index)
+                    (mod_index.get_level_values(self.index_names[0]) + 0.5) *
+                    self.rpo_size,
+                    (mod_index.get_level_values(self.index_names[1]) + 0.5) *
+                    self.rlo_size,
+                    index=mod_index)
         
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -862,22 +995,21 @@ class SingleFitter(object):
             if logy:
                 plt.yscale("log")
             plt.axhline(exp, c="k")
-            line = plt.errorbar(data.index, data.loc[:,self.col_names[0]],
+            line = plt.errorbar((data.index + 0.5) * x_bin_size,
+                                data.loc[:,self.col_names[0]],
                                 yerr=data.loc[:,self.col_names[1]].apply(
                     math.sqrt), fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                fit_fill = plt.fill_between(mod.index, mod.loc[:,0.16],
+                fit_fill = plt.fill_between((mod.index + 0.5) * x_bin_size,
+                                            mod.loc[:,0.16],
                                             mod.loc[:,0.84], color="C1",
                                             alpha=0.4)
-                fit_line, = plt.plot(mod.index, mod.loc[:,0.5], "C1-")
+                fit_line, = plt.plot((mod.index + 0.5) * x_bin_size,
+                                     mod.loc[:,0.5], "C1-")
             label_leg = plt.legend([line], [axis_label.format(
-                        round(bins, 2 - ndigits(bins)))],
-                                   loc=2, markerscale=0, frameon=False)
-            if with_fit and with_combined_fit:
-                plt.legend(
-                    [(fit_fill, fit_line), (cfit_fill, cfit_line)],
-                    [r"Best fit", r"Combined best fit"],
-                    loc=1)
+                        round((bins + 0.5) * r_bin_size,
+                              max(2, 2 - ndigits((bins + 0.5) * r_bin_size))))],
+                                   loc=0, markerscale=0, frameon=False)
             plt.gca().add_artist(label_leg)
             plt.tight_layout()
         else:
@@ -897,24 +1029,23 @@ class SingleFitter(object):
                 if logy:
                     ax.set_yscale("log")
                 ax.axhline(exp, c="k")
-                line = ax.errorbar(data.loc[r].index,
+                line = ax.errorbar((data.loc[r].index + 0.5) * x_bin_size,
                                    data.loc[r,self.col_names[0]],
                                    yerr=data.loc[r,self.col_names[1]].apply(
                         math.sqrt), fmt="C0o", alpha=0.6)[0]
                 if with_fit:
-                    fit_fill = ax.fill_between(mod.loc[r].index,
+                    fit_fill = ax.fill_between((mod.loc[r].index + 0.5) *
+                                               x_bin_size,
                                                mod.loc[r,0.16],
                                                mod.loc[r,0.84],
                                                color="C1", alpha=0.4)
-                    fit_line, = ax.plot(mod.loc[r].index, mod.loc[r,0.5], "C1-")
+                    fit_line, = ax.plot((mod.loc[r].index + 0.5) * x_bin_size,
+                                        mod.loc[r,0.5], "C1-")
                 label_leg = ax.legend([line], [axis_label.format(
-                            round(r, 2 - ndigits(r)))], loc=2,
-                                      markerscale=0, frameon=False)
-                if with_fit and with_combined_fit:
-                    ax.legend(
-                        [(fit_fill, fit_line), (cfit_fill, cfit_line)],
-                        [r"Best fit", r"Combined best fit"],
-                        loc=1)
+                            round((r + 0.5) * r_bin_size,
+                                  max(2,
+                                      2 - ndigits((r + 0.5) * r_bin_size))))],
+                                      loc=0, markerscale=0, frameon=False)
                 ax.add_artist(label_leg)
                 if ax.is_last_row():
                     ax.tick_params(axis="x", which="both", direction="inout",
@@ -930,6 +1061,194 @@ class SingleFitter(object):
             plt.show()
         return fig
 
+    def lnlike(self, theta):
+        if self.f is None:
+            raise AttributeError("No fitting function set for likelihood")
+        if not isinstance(theta, dict):
+            theta = dict((p, t) for p, t in
+                         zip(_delatexify(self.params), theta))
+        fev = self.f(((self.data.index.get_level_values(self.index_names[0]) +
+                       0.5) * self.rpo_size),
+                     ((self.data.index.get_level_values(self.index_names[1]) +
+                       0.5) * self.rlo_size), theta, index=self.data.index)
+        diff2 = self.data.loc[:,self.col_names[0]].sub(fev).pow(2)
+        diffdiv = diff2.div(self.data.loc[:,self.col_names[1]])
+        return -0.5 * diffdiv.sum()
+    
+    def lnprob(self, theta):
+        if self.pr is None:
+            raise AttributeError("No prior function set for lnprob")
+        if not isinstance(theta, dict):
+            theta = dict((p, t) for p, t in
+                         zip(_delatexify(self.params), theta))
+        lp = self.pr(theta)
+        if not np.isfinite(lp):
+            return -np.inf
+        return lp + self.lnlike(theta)
+    
+    def fit_minimize(self, init_guess):
+        """Fit the data using :function:`scipy.optimize.minimize`.
+        
+        :param init_guess: The guess for the starting point of the fit
+        :type init_guess: 1D array-like `float`
+        :return res: The result of the minimizer, with the fit parameters and
+        convergence information
+        :rtype res: :class:`scipy.optimize.OptimizeResult`
+        """
+        self.logger.debug("Defining negative lnprob")
+        nll = lambda theta: -self.lnprob(theta)
+        self.logger.debug("Running minimization")
+        res = minimize(nll, init_guess)
+        self._best_fit_params = res.x
+        return res
+
+
+    def fit_mcmc(self, nsteps, nburnin=0, init_guess=None, nwalkers=None,
+                 nthreads=1, sampler=None):
+        """Fit the data using an MCMC (as implemented via :module:`emcee`). A
+        sampler that has already been initialized may be passed, which will
+        ignore the parameters :param:`nwalkers` and :param:`nthreads` unless the
+        sampler number of dimensions is incorrect (in which case a new sampler
+        will be created to replace it). If the sampler has already been
+        previously run, and the number of parameters associated with it are
+        still correct, an additional :param:`nsteps` will be taken from the
+        current position, so that :param:`init_guess` is also not needed. The
+        :param:`init_guess` parameter may be given as a 1D array-like with shape
+        (self.ndim,), an instance of :class:`scipy.optimize.OptimizeResult`, or
+        a 2D array-like with shape (nwalkers, self.ndim). The first option will
+        be used to set the mean of the walker initial positions, and they will
+        be scattered around that mean by a Gaussian random with width determined
+        by the order of magnitude of each parameter value. The second option
+        will be used similarly, but with the best fit parameters from the
+        OptimizeResult being used as the mean. The final option is useful when
+        some other method of populating the walkers over some area in allowed
+        parameter space needs to be used, and is used as the initial positions
+        without change.
+        
+        At the end of the MCMC, the best fit parameters are added to self,
+        and the sampler is returned for analyzing walker behavior and checking
+        parameter distributions. The samples are also added to the self, as
+        well as the burn-in length, for future reference.
+        
+        :param nsteps: The number of MCMC steps to take with each walker
+        :type nsteps: `int`
+        :param nburnin: The number of steps to omit from each walker for the
+        burn-in phase. Note that while this parameter is optional, the default
+        value is not necessarily safe and a warning will be raised if this is
+        not changed and the value in self is not set. Default 0 or self.nburnin
+        :type nburnin: `int`, optional
+        :param init_guess: The initial guess for the walker starting
+        positions. As described above, this can either be used as the mean for
+        generating walker positions, or it can be the precomputed positions for
+        all walkers. Ignored if :param:`sampler` is valid for self
+        and has already been run previously, but is required for a new MCMC run
+        if there is no best fit set in self. Default `None` or
+        :attr:`self.best_fit`
+        :type init_guess: 1D array-like, 2D array-like, or
+        :class:`scipy.optimize.OptimizeResult`, optional
+        :param nwalkers: The number of walkers to utilize for the MCMC. Required
+        for new samplers. Default `None`
+        :type nwalkers: `int`, optional
+        :param nthreads: The number of threads to use for parallelized MCMC. Set
+        to 1 if no parallelization should be used. This will be overridden if
+        parallelization is not possible for this run. This parameter is also
+        ignored when a valid :param:`sampler` is given
+        :type nthreads: `int`, optional
+        :param sampler: A sampler instance to use for the MCMC, or for
+        continuing an MCMC. If it is not valid given self, a new
+        sampler will be created. The updated or newly created sampler is
+        returned at the end of the function. Default `None`
+        :type sampler: :class:`emcee.EnsembleSampler`
+        :return new_sampler: The sampler that was used for this run. This is
+        either a new sampler that was created and run, or the given sampler run
+        for :param:`nsteps`.
+        :rtype new_sampler: :class:`emcee.EnsembleSampler`
+        """
+        self.logger.debug("Check the burn-in")
+        if nburnin == 0 and self._nburnin is None:
+            warnings.warn("Using burn-in of 0 is ill-advised and will likely "\
+                              "result in improper best fit values being set")
+        elif nburnin == 0:
+            nburnin = self._nburnin
+        self._nburnin = nburnin
+        
+        self.logger.debug("Check if passed sampler is valid")
+        new_sampler = copy.deepcopy(sampler)
+        if new_sampler is not None and sampler.chain.shape[-1] != self.ndim:
+            warnings.warn("Invalid sampler given, creating new sampler instead")
+            new_sampler = None
+        if new_sampler is None:
+            self.logger.debug("Check pickleable attributes for parallelization")
+            attrs_needed = [self.data, self.index_names, self.col_names,
+                            self.f, self.pr, self.ndim, self.lnlike,
+                            self.lnprob, self]
+            attrs_needed_names = np.array(["data", "index names list",
+                                           "column names list",
+                                           "fit function", "prior funcion",
+                                           "number of dimensions",
+                                           "lnlike", "lnprob", "self"])
+            pickleable = _check_pickleable(attrs_needed)
+            if not pickleable[0]:
+                self.logger.info("Setting number of threads to 1 because not "\
+                                     "pickleable")
+                self.logger.debug("Non-pickleable attributes: {}".format(
+                        attrs_needed_names[pickleable[1]]))
+                nthreads = 1
+            self.logger.debug("Check number of walkers")
+            if nwalkers is None:
+                raise ValueError("Must give number of walkers for new sampler")
+            self.logger.debug("Create a new sampler")
+            new_sampler = emcee.EnsembleSampler(nwalkers, self.ndim,
+                                                self.lnprob, threads=nthreads)
+        
+        self.logger.debug("Set initial position")
+        if new_sampler.chain.shape[1] > 0:
+            self.logger.debug("Continue chain from current position")
+            init_guess = None
+        else:
+            if init_guess is None:
+                raise ValueError("Must give init_guess for new MCMC")
+            if isinstance(init_guess, OptimizeResult):
+                if len(init_guess.x) != self.ndim:
+                    raise ValueError("Wrong number of parameters for initial "\
+                                         "guess from OptimizeResult")
+                init_guess = init_guess.x
+                if not hasattr(init_guess[0], "__len__"):
+                    logger.debug("Set initial walker positions from mean")
+                    if len(init_guess) != self.ndim:
+                        raise ValueError("Wrong number of parameters for "\
+                                             "initial guess mean values")
+                    init_guess = [init_guess + (10**(-4 + ndigits(init_guess)) *
+                                                np.random.randn(self.ndim))
+                                  for i in range(nwalkers)]
+                else:
+                    if len(init_guess) != nwalkers:
+                        raise ValueError("Wrong number of walker positions "\
+                                             "for initial guess positions")
+                    if len(init_guess[0]) != self.ndim:
+                        raise ValueError("Wrong number of parameters for "\
+                                             "initial guess positions")
+                    pass
+        self.logger.debug("Running MCMC")
+        new_sampler.run_mcmc(init_guess, nsteps)
+        self.logger.debug("Add chain to fitter")
+        self._samples = new_sampler.chain
+        self.logger.debug("Calculate best fit parameters and add to fitter")
+        samples = new_sampler.chain[:,nburnin:,:].reshape((-1, self.ndim))
+        self._best_fit_params = np.median(samples, axis=0)
+        self.logger.debug("Set up Chain Consumer objects")
+        c_walks = ChainConsumer()
+        c_walks.add_chain(new_sampler.flatchain, parameters=self.params,
+                          posterior=new_sampler.flatlnprobability,
+                          walkers=new_sampler.k)
+        self.c_walkers = c_walks.divide_chain()
+        lnprobs = new_sampler.lnprobability[:, nburnin:].flatten()
+        self.c = ChainConsumer()
+        self.c.add_chain(samples, parameters=self.params,
+                         posterior=lnprobs)
+        self.logger.debug("Done")
+        return new_sampler
+
 
 class AnalyticSingleFitter(object):
     """
@@ -938,7 +1257,8 @@ class AnalyticSingleFitter(object):
     function with uncorrelated errors (i.e. diagonal covariance matrix)
     """
 
-    def __init__(self, data, index_names, col_names, fitter_name=None):
+    def __init__(self, data, index_names, col_names, fitter_name=None,
+                 **kwargs):
         """
         Initialize the analytic fitter. Please note that all array-likes should
         have the same size
@@ -957,6 +1277,12 @@ class AnalyticSingleFitter(object):
         :param fitter_name: The name for this instance of the fitter. If
         `None`, the name will be set to 'AnalyticSingleFitter'. Default `None`
         :type fitter_name: `str` or `None`, optional
+        :key rpo_size: The size of the observed perpendicular separation bins
+        to assume is used in the data. Default 1.0
+        :type rpo_size: `float`
+        :key rlo_size: The size of the observed parallel separation bins to
+        assume is used in the data. Default 1.0
+        :type rlo_size: `float`
         """
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
@@ -965,9 +1291,11 @@ class AnalyticSingleFitter(object):
         self.data = data
         self.index_names = index_names
         self.col_names = col_names
-        self.logger.debug("__init__ complete")
+        self.rpo_size = kwargs.pop("rpo_size", 1.0)
+        self.rlo_size = kwargs.pop("rlo_size", 1.0)
         self._c = None
         self._c_err = None
+        self.logger.debug("__init__ complete")
 
     def __repr__(self):
         return "%s(c=%r, c_err=%r)" % (self.name, self._c, self._c_err)
@@ -1067,12 +1395,12 @@ class AnalyticSingleFitter(object):
                              index=index)
         return m
 
-    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_size,
-             par_bin_size, exp, is_rpo=False, logx=False, logy=False, 
+    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_scale,
+             par_bin_scale, exp, is_rpo=False, logx=False, logy=False, 
              filename=None, figsize=None, display=False, text_size=22, 
              with_fit=False):
-        """Plot the data (and optionally the best fit to the data) at a
-        number of individual perpendicular or parallel separations.
+        """Plot the data (and optionally the best fit to the data) at a number
+        of individual perpendicular or parallel separations.
 
         :param rpo_label: The label to use for the x-axis (if :param:`is_rpo`
         is `False`) or the axes (if :param:`is_rpo` is `True`)
@@ -1084,12 +1412,12 @@ class AnalyticSingleFitter(object):
         :type ylabel: `str`
         :param bins: The values of the fixed separation to use
         :type bins: scalar or array-like `float`
-        :param perp_bin_size: The size of the bins in the perpendicular
+        :param perp_bin_scale: The scale of the bins in the perpendicular
         direction, in the same units as the perpendicular separations
-        :type perp_bin_size: `float`
-        :param par_bin_size: The size of the bins in the parallel direction, in
-        the same units as the parallel separations
-        :type par_bin_size: `float`
+        :type perp_bin_scale: `float`
+        :param par_bin_scale: The scale of the bins in the parallel direction,
+        in the same units as the parallel separations
+        :type par_bin_scale: `float`
         :param exp: The expected constant for the limiting behavior. This is
         likely to be 0 for means and 1 for variances
         :type exp: scalar `float`
@@ -1120,20 +1448,17 @@ class AnalyticSingleFitter(object):
             figsize = plt.rcParams["figure.figsize"]
         plt.rcParams["font.size"] = text_size
 
-        rpo = self.data.index.get_level_values(self.index_names[0])
-        rlo = self.data.index.get_level_values(self.index_names[1])
-
         if is_rpo:
             # x-axis will be RLO_BIN, bins are drawn from RPO_BIN
-            r_bin_size = perp_bin_size
-            x_bin_size = par_bin_size
+            r_bin_size = self.rpo_size / perp_bin_scale
+            x_bin_size = self.rlo_size / par_bin_scale
             rlabel = rpo_label
             xlabel = rlo_label
             data = self.data.copy().loc[bins]
         else:
             # x-axis will be RPO_BIN, bins are drawn from RLO_BIN
-            r_bin_size = par_bin_size
-            x_bin_size = perp_bin_size
+            r_bin_size = self.rlo_size / par_bin_size
+            x_bin_size = self.rpo_size / perp_bin_size
             rlabel = rlo_label
             xlabel = rpo_label
             data = self.data.swaplevel(0, 1, axis=0).loc[bins]
@@ -1146,10 +1471,26 @@ class AnalyticSingleFitter(object):
             if (self._c is None or self._c_err is None):
                 warnings.warn("Ignoring with_fit because no fit has been done")
                 with_fit = False
-            mod = self.model_with_errors(
-                data.index.get_level_values(self.index_names[0]),
-                data.index.get_level_values(self.index_names[1]),
-                index=data.index)
+            else:
+                if isinstance(data.index, pd.MultiIndex):
+                    all_r = data.index.get_level_values(0).unique(
+                        ).sort_values()
+                    all_x = data.index.get_level_values(1).unique(
+                        ).sort_values()
+                    mod_index = pd.MultiIndex.from_product(
+                        [all_r, all_x], names=data.index.names)
+                    all_r = mod_index.get_level_values(0)
+                    all_x = mod_index.get_level_values(1)
+                else:
+                    all_x = data.index
+                    all_r = np.repeat(bins, all_x.size)
+                    mod_index = all_x
+                mod = self.model_with_errors(
+                    (mod_index.get_level_values(self.index_names[0]) + 0.5) *
+                    self.rpo_size,
+                    (mod_index.get_level_values(self.index_names[1]) + 0.5) *
+                    self.rlo_size,
+                    index=mod_index)
 
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -1161,22 +1502,23 @@ class AnalyticSingleFitter(object):
             if logy:
                 plt.yscale("log")
             plt.axhline(exp, c="k")
-            line = plt.errorbar(data.index, data.loc[:,self.col_names[0]],
+            line = plt.errorbar((data.index + 0.5) * x_bin_size,
+                                data.loc[:,self.col_names[0]],
                                 yerr=data.loc[:,self.col_names[1]].apply(
                     math.sqrt), fmt="C0o", alpha=0.6)[0]
             if with_fit:
-                fit_fill = plt.fill_between(mod.index, mod.loc[:,0.16],
-                                            mod.loc[:,0.84], color="C1",
+                fit_fill = plt.fill_between((mod.index + 0.5) * x_bin_size,
+                                            mod.loc[:,0.16],
+                                            mod.loc[:,0.84],
+                                            color="C1",
                                             alpha=0.4)
-                fit_line, = plt.plot(mod.index, mod.loc[:,0.5], "C1-")
+                fit_line, = plt.plot((mod.index + 0.5) * x_bin_size,
+                                     mod.loc[:,0.5], "C1-")
             label_leg = plt.legend([line], [axis_label.format(
-                        round(bins, 2 - ndigits(bins)))], loc=2,
-                                   markerscale=0, frameon=False)
-            if with_fit and with_combined_fit:
-                plt.legend(
-                    [(fit_fill, fit_line), (cfit_fill, cfit_line)],
-                    [r"Best fit", r"Combined best fit"],
-                    loc=1)
+                        round((bins + 0.5) * r_bin_size,
+                              max(2,
+                                  2 - ndigits((bins + 0.5) * r_bin_size))))],
+                                   loc=0, markerscale=0, frameon=False)
             plt.gca().add_artist(label_leg)
             plt.tight_layout()
         else:
@@ -1196,24 +1538,21 @@ class AnalyticSingleFitter(object):
                 if logy:
                     ax.set_yscale("log")
                 ax.axhline(exp, c="k")
-                line = ax.errorbar(data.loc[r].index,
+                line = ax.errorbar((data.loc[r].index + 0.5) * x_bin_size,
                                    data.loc[r,self.col_names[0]],
                                    yerr=data.loc[r,self.col_names[1]].apply(
                         math.sqrt), fmt="C0o", alpha=0.6)[0]
                 if with_fit:
-                    fit_fill = ax.fill_between(mod.loc[r].index,
-                                               mod.loc[r,0.16],
-                                               mod.loc[r,0.84], color="C1",
-                                               alpha=0.4)
-                    fit_line, = ax.plot(mod.loc[r].index, mod.loc[r,0.5], "C1-")
+                    fit_fill = ax.fill_between(
+                        (mod.loc[r].index + 0.5) * x_bin_size,
+                        mod.loc[r,0.16], mod.loc[r,0.84], color="C1", alpha=0.4)
+                    fit_line, = ax.plot((mod.loc[r].index + 0.5) * x_bin_size,
+                                        mod.loc[r,0.5], "C1-")
                 label_leg = ax.legend([line], [axis_label.format(
-                            round(r, 2 - ndigits(r)))], loc=2,
-                                      markerscale=0, frameon=False)
-                if with_fit and with_combined_fit:
-                    ax.legend(
-                        [(fit_fill, fit_line), (cfit_fill, cfit_line)],
-                        [r"Best fit", r"Combined best fit"],
-                        loc=1)
+                            round((r + 0.5) * r_bin_size,
+                                  max(2,
+                                      2 - ndigits((r + 0.5) * r_bin_size))))],
+                                      loc=0, markerscale=0, frameon=False)
                 ax.add_artist(label_leg)
                 if ax.is_last_row():
                     ax.tick_params(axis="x", which="both", direction="inout",
@@ -1237,10 +1576,12 @@ class ProbFitter(object):
     generalized fitter, it assumes the means and variances follow specific
     functions that are not set by the user but hardcoded within.
     """
+    __version__ = "0.0.2"
     _fitter_types = ["mean_x", "var_x", "mean_y", "var_y", "mean_r"]
-    def __init__(self, statistics=None, fitter_name=None):
+    def __init__(self, statistics=None, fitter_name=None, **kwargs):
         """
         Initialize the fitter with calculated statistics
+        
         :param statistics: A DataFrame containing pre-computed sample means
         and variances for at least one of the fitters. The DataFrame columns
         must be multi-level, with the 0th level giving the quantity being
@@ -1252,6 +1593,22 @@ class ProbFitter(object):
         :param fitter_name: A name to use for this instance of the fitter. If
         `None`, the name will be set to 'ProbFitter'. Default `None`
         :type fitter_name: `str` or `None`, optional
+        :key rpo_scale: Optional scaling to use on the observed perpendicular
+        separations in the fitting functions. Default 1.0 (in units of the
+        perpendicular separation)
+        :type rpo_scale: `float`
+        :key rlo_scale: Optional scaling to use on the observed parallel
+        separations in the fitting functions. Default 1.0 (in units of the
+        parallel separation)
+        :type rlo_scale: `float`
+        :key rpo_size: The size of the observed perpendicular separation bins
+        to assume is used in the statistics. Default 1.0 (in units of the
+        perpendicular separation)
+        :type rpo_size: `float`
+        :key rlo_size: The size of the observed parallel separation bins to
+        assume is used in the statistics. Default 1.0 (in units of the
+        parallel separation)
+        :type rlo_size: `float`
         """
         self._init_switcher = dict(mean_x=self.initialize_mean_x,
                                    var_x=self.initialize_var_x,
@@ -1262,6 +1619,11 @@ class ProbFitter(object):
         self._get_name(fitter_name)
         self.logger = init_logger(self.name)
         self._fitters = dict.fromkeys(self._fitter_types, None)
+        self.logger.debug("Set bin sizes and separation scaling")
+        self.rpo_size = kwargs.pop("rpo_size", 1.0)
+        self.rlo_size = kwargs.pop("rlo_size", 1.0)
+        self.rpo_scale = kwargs.pop("rpo_scale", 1.0)
+        self.rlo_scale = kwargs.pop("rlo_scale", 1.0)
         self.logger.debug("Add statistics")
         self.add_stats(statistics)
         self.logger.debug("__init__ complete")
@@ -1353,7 +1715,9 @@ class ProbFitter(object):
             stats["mean_y"].copy(), ["RPO_BIN", "RLO_BIN"],
             ["mean", "variance"], mean_y, prior_mean_y,
             [r"$a$", r"$\alpha$", r"$\beta$", r"$s$"],
-            self._fitter_names["mean_y"]
+            self._fitter_names["mean_y"], rpo_size=self.rpo_size,
+            rlo_size=self.rlo_size,
+            func_kwargs=dict(rpo_scale=self.rpo_scale, rlo_scale=self.rlo_scale)
             )
         self.logger.debug("init_mean_y: {}".format(self._fitters["mean_y"]))
 
@@ -1363,7 +1727,9 @@ class ProbFitter(object):
             stats["var_y"].copy(), ["RPO_BIN", "RLO_BIN"],
             ["mean", "variance"], var_y, prior_var_y,
             [r"$b$", r"$s_1$", r"$s_2$", r"$\rho$"],
-            self._fitter_names["var_y"]
+            self._fitter_names["var_y"], rpo_size=self.rpo_size,
+            rlo_size=self.rlo_size,
+            func_kwargs=dict(rpo_scale=self.rpo_scale, rlo_scale=self.rlo_scale)
             )
         self.logger.debug("init_var_y: {}".format(self._fitters["var_y"]))
 
@@ -1407,8 +1773,8 @@ class ProbFitter(object):
     def mean_rpt(self, rpo, rlo, zbar, sigma_z):
         """
         Get the mean of the true perpendicular separation. All inputs must be
-        scalar or 1D array-like with the same size, except
-        :param:`sigma_z`, which can only be scalar
+        scalar or 1D array-like with the same size, except :param:`sigma_z`,
+        which can only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1433,9 +1799,9 @@ class ProbFitter(object):
 
     def var_rpt(self, rpo, rlo, zbar, sigma_z):
         """
-        Get the variance of the true perpendicular separation. All inputs
-        must be scalar or 1D array-like with the same size, except
-        :param:`sigma_z`, which can only be scalar
+        Get the variance of the true perpendicular separation. All inputs must
+        be scalar or 1D array-like with the same size, except :param:`sigma_z`,
+        which can only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1460,9 +1826,9 @@ class ProbFitter(object):
 
     def mean_rlt(self, rpo, rlo, zbar, sigma_z):
         """
-        Get the mean of the true parallel separation. All inputs must be
-        scalar or 1D array-like with the same size, except
-        :param:`sigma_z`, which can only be scalar
+        Get the mean of the true parallel separation. All inputs must be scalar
+        or 1D array-like with the same size, except :param:`sigma_z`, which can
+        only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1487,9 +1853,9 @@ class ProbFitter(object):
 
     def var_rlt(self, rpo, rlo, zbar, sigma_z):
         """
-        Get the variance of the true parallel separation. All inputs
-        must be scalar or 1D array-like with the same size, except
-        :param:`sigma_z`, which can only be scalar
+        Get the variance of the true parallel separation. All inputs must be
+        scalar or 1D array-like with the same size, except :param:`sigma_z`,
+        which can only be scalar
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1581,11 +1947,11 @@ class ProbFitter(object):
 
     def inverse_cov_matrix(self, rpo, rlo, zbar, sigma_z):
         """
-        Get the inverse covariance matrix of the true perpendicular and
-        parallel separations. All inputs must be scalar or 1D array-like with
-        the same size, except :param:`sigma_z`, which can only be scalar. The
-        output will be a nx2x2 matrix where n is the length of the inputs, and
-        is 1 for scalars.
+        Get the inverse covariance matrix of the true perpendicular and parallel
+        separations. All inputs must be scalar or 1D array-like with the same
+        size, except :param:`sigma_z`, which can only be scalar. The output will
+        be a nx2x2 matrix where n is the length of the inputs, and is 1 for
+        scalars.
 
         :param rpo: The observed perpendicular separation at which to calculate
         :type rpo: scalar or 1D array-like `float`
@@ -1622,9 +1988,9 @@ class ProbFitter(object):
 
     def data_vector(self, rpt, rlt, rpo, rlo, zbar, sigma_z):
         """
-        Get the "data vector" :math:`\vec{x} - \vec{\mu_x}` for the 2D data
-        of the true parallel and perpendicular separations. The inputs must all
-        be scalar or 1D array-like with the same size, except :param:`sigma_z`,
+        Get the "data vector" :math:`\vec{x} - \vec{\mu_x}` for the 2D data of
+        the true parallel and perpendicular separations. The inputs must all be
+        scalar or 1D array-like with the same size, except :param:`sigma_z`,
         which can only be scalar. The output will be an array of shape nx2,
         where n is the length of the inputs, and is 1 for scalars.
 
@@ -1705,9 +2071,8 @@ class ProbFitter(object):
 
 def double_einsum(a, b):
     """
-    This is a helper function for doing
-    :math:`\vec{a_i} \cdot \mathbf{b_i} \cdot \vec{a_i}` over all
-    elements i in a and b.
+    This is a helper function for doing :math:`\vec{a_i} \cdot \mathbf{b_i}
+    \cdot \vec{a_i}` over all elements i in a and b.
 
     :param a: An array of vectors with shape (N,M)
     :type a: :class:`numpy.ndarray`
