@@ -44,6 +44,21 @@ class MyConfigObj(ConfigObj):
                                    comment))
 
 
+def iterable_len(iterable):
+    """Get the length of any iterable
+
+    Parameters
+    ----------
+    :param iterable: Any type of iterable for which to get the sum
+    :type iterable: array-like or iterable
+
+    Returns
+    -------
+    :return: The length of the iterable
+    :rtype: `int`
+    """
+    return math.fsum(1 for _ in iterable)
+
 def ndigits(x):
     """Determine how many digits are in x. Not the same as significant digits: 
     if x < 1, the number of digits will only reflect the first non-zero 
@@ -56,25 +71,17 @@ def ndigits(x):
     
     Returns
     -------
-    :return digits: The number of digits in x, or in each element of x for 
-    array-like
-    :rtype digits: `int`, scalar or ndarray
+    :return: The number of digits in x, or in each element of x for array-like
+    :rtype: scalar or ndarray of `int`
     """
     if not hasattr(x, "__len__"):
         x = math.fabs(x)
         if math.isclose(x / 10.0, x):
-            digits = 1
+            return 1
         else:
-            digits = int(math.floor(math.log10(x)))
+            return int(math.floor(math.log10(x)))
     else:
-        x = np.absolute(x)
-        digits = np.ones(x.shape, dtype=int).flatten()
-        zeros = np.isclose(x.flatten() / 10.0, x.flatten())
-        digits[~zeros] = np.floor(
-            np.log10(
-                x.flatten()[~zeros])).astype(int)
-        digits.reshape(x.shape)
-    return digits
+        return np.array([ndigits(thisx) for thisx in x])
 
 
 def init_logger(name=None):
