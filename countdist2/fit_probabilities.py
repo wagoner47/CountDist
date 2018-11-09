@@ -1589,7 +1589,7 @@ class AnalyticSingleFitter(object):
                                      mod.loc[:,0.5], "C1-")
             plt.legend([line], [axis_label.format(
                     smh.strip_dollar_signs(smh.pretty_print_number(r_val, 2)))],
-                       loc=0, markersize=0, frameon=False)
+                       loc=0, markerscale=0, frameon=False)
             plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
@@ -1622,7 +1622,7 @@ class AnalyticSingleFitter(object):
                 ax.legend([line], [axis_label.format(
                         smh.strip_dollar_signs(
                                 smh.pretty_print_number(r_val, 2)))],
-              loc=0, markersize=0, frameon=False)
+                          loc=0, markerscale=0, frameon=False)
                 if ax.is_last_row():
                     ax.tick_params(axis="x", which="both", direction="inout",
                                    top=True, bottom=True)
