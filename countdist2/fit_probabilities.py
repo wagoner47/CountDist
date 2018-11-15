@@ -1967,7 +1967,8 @@ class ProbFitter(object):
         if self._mean_r_const:
             self._fitters["mean_r"] = AnalyticSingleFitter(
                 stats["mean_r"].copy(), ["RPO_BIN", "RLO_BIN"],
-                ["mean", "variance"], self._fitter_names["mean_r"])
+                ["mean", "variance"], self._fitter_names["mean_r"], 
+                rpo_size=self.rpo_size, rlo_size=self.rlo_size)
         else:
             self._fitters["mean_r"] = SingleFitter(
                 stats["mean_r"].copy(), ["RPO_BIN", "RLO_BIN"],
