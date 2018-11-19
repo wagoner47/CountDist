@@ -2031,6 +2031,12 @@ class ProbFitter(object):
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
+        if isinstance(rpo, pd.Index):
+            rpo = rpo.values
+        if isinstance(rlo, pd.Index):
+            rlo = rlo.values
+        if isinstance(zbar, pd.Index):
+            zbar = zbar.values
         return (_perp_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_x.model(
                 rpo, rlo, index=index) + rpo)
 
@@ -2054,6 +2060,12 @@ class ProbFitter(object):
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
+        if isinstance(rpo, pd.Index):
+            rpo = rpo.values
+        if isinstance(rlo, pd.Index):
+            rlo = rlo.values
+        if isinstance(zbar, pd.Index):
+            zbar = zbar.values
         return (_perp_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_x.model(
                 rpo, rlo, index=index))
 
@@ -2077,6 +2089,12 @@ class ProbFitter(object):
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
+        if isinstance(rpo, pd.Index):
+            rpo = rpo.values
+        if isinstance(rlo, pd.Index):
+            rlo = rlo.values
+        if isinstance(zbar, pd.Index):
+            zbar = zbar.values
         return (_par_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_y.model(
                 rpo, rlo, index=index) + rlo)
 
@@ -2100,6 +2118,12 @@ class ProbFitter(object):
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
+        if isinstance(rpo, pd.Index):
+            rpo = rpo.values
+        if isinstance(rlo, pd.Index):
+            rlo = rlo.values
+        if isinstance(zbar, pd.Index):
+            zbar = zbar.values
         return (_par_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_y.model(
                 rpo, rlo, index=index))
 
