@@ -2011,7 +2011,7 @@ class ProbFitter(object):
                             pass
         self.logger.debug(self.__repr__())
 
-    def mean_rpt(self, rpo, rlo, zbar, sigma_z):
+    def mean_rpt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the mean of the true perpendicular separation. All inputs must be
         scalar or 1D array-like with the same size, except :param:`sigma_z`,
@@ -2025,20 +2025,16 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if hasattr(rpo, "__len__"):
-            if not hasattr(rpo, "index"):
-                index = pd.Index(len(rpo))
-            else:
-                index = rpo.index
-        else:
-            index = None
         return (_perp_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_x.model(
                 rpo, rlo, index=index) + rpo)
 
-    def var_rpt(self, rpo, rlo, zbar, sigma_z):
+    def var_rpt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the variance of the true perpendicular separation. All inputs must
         be scalar or 1D array-like with the same size, except :param:`sigma_z`,
@@ -2052,20 +2048,16 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if hasattr(rpo, "__len__"):
-            if not hasattr(rpo, "index"):
-                index = pd.Index(len(rpo))
-            else:
-                index = rpo.index
-        else:
-            index = None
         return (_perp_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_x.model(
                 rpo, rlo, index=index))
 
-    def mean_rlt(self, rpo, rlo, zbar, sigma_z):
+    def mean_rlt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the mean of the true parallel separation. All inputs must be scalar
         or 1D array-like with the same size, except :param:`sigma_z`, which can
@@ -2079,20 +2071,16 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return: The mean with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if hasattr(rpo, "__len__"):
-            if not hasattr(rpo, "index"):
-                index = pd.Index(len(rpo))
-            else:
-                index = rpo.index
-        else:
-            index = None
         return (_par_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_y.model(
                 rpo, rlo, index=index) + rlo)
 
-    def var_rlt(self, rpo, rlo, zbar, sigma_z):
+    def var_rlt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the variance of the true parallel separation. All inputs must be
         scalar or 1D array-like with the same size, except :param:`sigma_z`,
@@ -2106,20 +2094,16 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return: The variance with the scaling undone
         :rtype: scalar or 1D :class:`numpy.ndarray` `float`
         """
-        if hasattr(rpo, "__len__"):
-            if not hasattr(rpo, "index"):
-                index = pd.Index(len(rpo))
-            else:
-                index = rpo.index
-        else:
-            index = None
         return (_par_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_y.model(
                 rpo, rlo, index=index))
 
-    def cov_rpt_rlt(self, rpo, rlo, zbar, sigma_z):
+    def cov_rpt_rlt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the covariance of the true perpendicular and parallel separations.
         All inputs must be scalar or 1D array-like with the same size, except
@@ -2133,23 +2117,19 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return: The covariance between the perpendicular and parallel
         directions
         :rtype: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
         `float`
         """
-        if hasattr(rpo, "__len__"):
-            if not hasattr(rpo, "index"):
-                index = pd.Index(len(rpo))
-            else:
-                index = rpo.index
-        else:
-            index = None
         return (np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z) *
                         self.var_rlt(rpo, rlo, zbar, sigma_z)) *
                 self.mean_r.model(rpo, rlo, index=index))
 
-    def det_cov_matrix(self, rpo, rlo, zbar, sigma_z):
+    def det_cov_matrix(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the determinant of the covariance matrix of the true perpendicular
         and parallel separations. All inputs must be scalar or 1D array-like
@@ -2163,30 +2143,20 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return d: The determinant of the covariance matrix between the
         perpendicular and parallel directions
         :rtype d: scalar or 1D :class:`numpy.ndarray` or :class:`pandas.Series`
         `float`
         """
-        scalar = False
-        as_series = False
-        if not hasattr(rpo, "__len__"):
-            index = None
-            scalar = True
-        else:
-            if hasattr(rpo, "index"):
-                index = rpo.index
-                as_series = True
-            else:
-                index = pd.Index(np.arange(len(rpo)))
         d = (self.var_rpt(rpo, rlo, zbar, sigma_z) *
              self.var_rlt(rpo, rlo, zbar, sigma_z) *
              (1. - self.mean_r.model(rpo, rlo, index=index)**2))
-        if not scalar and not as_series:
-            return d.values
         return d
 
-    def inverse_cov_matrix(self, rpo, rlo, zbar, sigma_z):
+    def inverse_cov_matrix(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the inverse covariance matrix of the true perpendicular and parallel
         separations. All inputs must be scalar or 1D array-like with the same
@@ -2202,32 +2172,32 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return icov: The inverse covariance matrix between the perpendicular
-        and parallel directions
-        :rtype icov: :class:`numpy.ndarray` `float` with shape nx2x2, for input
+        and parallel directions. This is not actually returned as a matrix, but 
+        rather an array for easily computing the dot product in the Gaussian
+        :rtype icov: :class:`numpy.ndarray` `float` with shape nx3, for input
         of length n (n = 1 for scalars)
         """
         if not hasattr(rpo, "__len__"):
-            icov = np.empty((1, 2, 2))
-            index = None
+            icov = np.empty((1, 3))
         else:
-            icov = np.empty((len(rpo), 2, 2))
-            if hasattr(rpo, "index"):
-                index = rpo.index
-            else:
-                index = pd.Index(np.arange(len(rpo)))
+            icov = np.empty((len(rpo), 3))
         inv_det = 1. / self.det_cov_matrix(rpo, rlo, zbar, sigma_z)
-        icov[:,0,0] = self.var_rlt(rpo, rlo, zbar, sigma_z) * inv_det
-        icov[:,0,1] = -(self.mean_r.model(rpo, rlo, index=index) *
-                        np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z) *
-                                self.var_rlt(rpo, rlo, zbar, sigma_z)) *
-                        inv_det)
-        icov[:,1,0] = icov[:,0,1]
-        icov[:,1,1] = self.var_rpt(rpo, rlo, zbar, sigma_z) * inv_det
+        icov[:,0] = self.var_rlt(rpo, rlo, zbar, sigma_z) * inv_det
+        icov[:,1] = self.var_rpt(rpo, rlo, zbar, sigma_z) * inv_det
+        icov[:,2] = -(2 * self.mean_r.model(rpo, rlo, index=index) * 
+                      np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z) *
+                              self.var_rlt(rpo, rlo, zbar, sigma_z)) * 
+                      inv_det)
+        if index is not None:
+            icov = pd.DataFrame(icov, index=index)
         return icov
 
 
-    def data_vector(self, rpt, rlt, rpo, rlo, zbar, sigma_z):
+    def data_vector(self, rpt, rlt, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the "data vector" :math:`\vec{x} - \vec{\mu_x}` for the 2D data of
         the true parallel and perpendicular separations. The inputs must all be
@@ -2247,6 +2217,9 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: Optionally provide an index for returning a 
+        :class:`pandas.Series`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return dvec: The inverse covariance matrix between the perpendicular
         and parallel directions
         :rtype dvec: :class:`numpy.ndarray` `float` with shape nx2, for input
@@ -2258,6 +2231,8 @@ class ProbFitter(object):
             dvec = np.empty((len(rpo), 2))
         dvec[:,0] = rpt - self.mean_rpt(rpo, rlo, zbar, sigma_z)
         dvec[:,1] = rlt - self.mean_rlt(rpo, rlo, zbar, sigma_z)
+        if index is not None:
+            dvec = pd.DataFrame(dvec, index=index)
         return dvec
         
 
@@ -2295,16 +2270,9 @@ class ProbFitter(object):
         icov = self.inverse_cov_matrix(rpo, rlo, zbar, sigma_z)
         det = self.det_cov_matrix(rpo, rlo, zbar, sigma_z)
         dvec = self.data_vector(rpt, rlt, rpo, rlo, zbar, sigma_z)
-        if not hasattr(rpo, "__len__"):
-            temp_exp = math.exp
-            temp_pi = math.pi
-            temp_sqrt = math.sqrt
-        else:
-            temp_exp = np.exp
-            temp_pi = np.pi
-            temp_sqrt = np.sqrt
-        p = (temp_exp(-0.5 * double_einsum(dvec, icov)) /
-             (2. * temp_pi * temp_sqrt(det)))
+        p = (np.exp(-0.5 * (dvec[:,0]**2 * icov[:,0] + dvec[:,1]**2 * icov[:,1] + 
+                            dvec[:,0] * dvec[:,1] * icov[:,2])) / 
+             (2. * np.pi * np.sqrt(det)))
         if index is not None:
             p = pd.Series(p, index=index)
         return p
