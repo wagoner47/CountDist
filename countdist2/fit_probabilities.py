@@ -2217,7 +2217,7 @@ class ProbFitter(object):
             else:
                 index = pd.Index(np.arange(len(rpo)))
         inv_det = 1. / self.det_cov_matrix(rpo, rlo, zbar, sigma_z)
-        icov[:,0,0] = self.var_rlt(rpo, rlo, zbar, sigmaz) * inv_det
+        icov[:,0,0] = self.var_rlt(rpo, rlo, zbar, sigma_z) * inv_det
         icov[:,0,1] = -(self.mean_r.model(rpo, rlo, index=index) *
                         np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z) *
                                 self.var_rlt(rpo, rlo, zbar, sigma_z)) *
