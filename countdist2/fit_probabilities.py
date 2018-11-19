@@ -2223,7 +2223,7 @@ class ProbFitter(object):
                                 self.var_rlt(rpo, rlo, zbar, sigma_z)) *
                         inv_det)
         icov[:,1,0] = icov[:,0,1]
-        icov[:,1,1] = self.var_rpt(rpo, rlo, zbar, sigmaz) * inv_det
+        icov[:,1,1] = self.var_rpt(rpo, rlo, zbar, sigma_z) * inv_det
         return icov
 
 
