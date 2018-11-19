@@ -1408,7 +1408,8 @@ class AnalyticSingleFitter(object):
         :return m: The value of the best fit model at the points. This will
         be 1D if :param:`rpo` and :param:`rlo` are both array-like, with both
         separations flattened
-        :rtype m: scalar or :class:`pandas.Series` `float`
+        :rtype m: scalar or :class:`numpy.ndarray` or :class:`pandas.Series` 
+        `float`
         """
         if self._c is None:
             raise AttributeError("Cannot get best fit model if fit has "\
@@ -1417,10 +1418,10 @@ class AnalyticSingleFitter(object):
         if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
             m = c
         else:
-            if index is None:
-                index = pd.MultiIndex.from_arrays([rpo, rlo], names=["RPO_BIN",
-                    "RLO_BIN"])
-            m = pd.Series(c, index=index)
+            if index is not None:
+                m = pd.Series(c, index=index)
+            else:
+                m = np.full(len(rpo), c)
         return m
 
     def model_with_errors(self, rpo, rlo, index=None):
