@@ -2261,7 +2261,7 @@ class ProbFitter(object):
         return dvec
         
 
-    def prob(self, rpt, rlt, rpo, rlo, zbar, sigma_z):
+    def prob(self, rpt, rlt, rpo, rlo, zbar, sigma_z, *, index=None):
         """
         Get the probability of the true separations given the input observed
         separations, the average observed redshift, and the fractional redshift
@@ -2282,6 +2282,10 @@ class ProbFitter(object):
         :type zbar: scalar or 1D array-like `float`
         :param sigma_z: The redshift uncertainty
         :type sigma_z: scalar `float`
+        :kwarg index: If desired, can pass an index for returning a 
+        :class:`pandas.Series` rather than a :class:`numpy.ndarray`. Default 
+        `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
         :return p: The probability of the true separations given the set of
         observed separations and average observed redshifts as well as the
         redshift uncertainty
@@ -2291,10 +2295,6 @@ class ProbFitter(object):
         icov = self.inverse_cov_matrix(rpo, rlo, zbar, sigma_z)
         det = self.det_cov_matrix(rpo, rlo, zbar, sigma_z)
         dvec = self.data_vector(rpt, rlt, rpo, rlo, zbar, sigma_z)
-        if hasattr(rpo, "index"):
-            index = rpo.index
-        else:
-            index = None
         if not hasattr(rpo, "__len__"):
             temp_exp = math.exp
             temp_pi = math.pi
