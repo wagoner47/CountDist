@@ -58,14 +58,10 @@ def corr_coeff(x, y, x_mean, y_mean, x_var, y_var):
     :type x_var: scalar or 1D array-like `float`
     :param y_var: The variance of :param:`y`
     :type y_var: scalar or 1D array-like `float`
-    :return r: The correlation between x and y
-    :rtype r: scalar or 1D :class:`pandas.Series` `float`
+    :return: The correlation between x and y
+    :rtype: scalar or 1D array-like `float`
     """
-    if not hasattr(x_var, "__len__"):
-        r = ((x - x_mean) * (y - y_mean)) / math.sqrt(x_var * y_var)
-    else:
-        r = ((x - x_mean) * (y - y_mean)) / (np.sqrt(x_var * y_var))
-    return r
+    return ((x - x_mean) * (y - y_mean)) / np.sqrt(x_var * y_var)
 
 
 
@@ -81,7 +77,7 @@ class MeanY(object):
         \frac{y^2}{2 d^2}\right]`, where x is the perpendicular separation and y
         is the parallel separation. If :param:`rpo` or :param:`rlo` has a
         length, they must be broadcastable.
-        
+
         :param rpo: The observed perpendicular separation
         :type rpo: scalar or array-like `float`
         :param rlo: The observed parallel separation
@@ -136,63 +132,23 @@ class MeanY(object):
         return f
 mean_y = MeanY()
 
-# def mean_y(rpo, rlo, a, alpha, beta, s, **kwargs):
-#     """
-#     The mean of :math:`\frac{\Delta R_\parallel}{R_\parallel^O}`. This function
-#     looks like :math:`a x^\alpha y^\beta \exp[-y^2 / 2 s^2]`, where x is the
-#     perpendicular separation and y is the parallel separation. If :param:`rpo`
-#     or :param:`rlo` has a length, it will be assumed that they are the indices
-#     from a Series/DataFrame, and a Series will be returned.
-# 
-#     :param rpo: The observed perpendicular separation
-#     :type rpo: scalar or array-like `float`
-#     :param rlo: The observed parallel separation
-#     :type rlo: scalar or array-like `float`
-#     :param a: The amplitude of the function
-#     :type a: scalar `float`
-#     :param alpha: The power on the observed perpendicular separation
-#     :type alpha: scalar `float`
-#     :param beta: The power law on the observed parallel separation
-#     :type beta: scalar `float`
-#     :param s: The scale of the exponential term
-#     :type s: scalar `float`
-#     :key index: Optional index to use for returning a Series rather than a
-#     scalar or an array. Default `None`
-#     :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`
-#     :key rpo_scale: Optional scaling to apply to the observed perpendicular
-#     separation. The default is 1.0 (in the same units as :param:`rpo`)
-#     :type rpo_scale: `float`
-#     :key rlo_scale: Optional scaling to apply to the observed parallel
-#     separation. The default is 1.0 (in the same units as :param:`rlo`)
-#     :type rlo_scale: `float`
-#     :return f: The function evaluated at the separation(s)
-#     :rtype f: scalar, :class:`numpy.ndarray`, or :class:`pandas.Series` `float`
-#     """
-#     mean_y.params = [r"$a$", r"$\alpha$", r"$\beta$", r"$s$"]
-#     index = kwargs.pop("index", None)
-#     scaled_rpo = copy.deepcopy(rpo) / kwargs.pop("rpo_scale", 1.0)
-#     scaled_rlo = copy.deepcopy(rlo) / kwargs.pop("rlo_scale", 1.0)
-#     if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
-#         fexp = math.exp
-#     elif hasattr(rpo, "__len__") and hasattr(rlo, "__len__"):
-#         scaled_rpo = np.atleast_1d(scaled_rpo)
-#         scaled_rlo = np.atleast_1d(scaled_rlo)
-#         if not all((m == n) or (m == 1) or (n == 1) for m, n in
-#                    zip(scaled_rpo.shape[::-1], scaled_rlo.shape[::-1])):
-#             raise ValueError("Array-like separations must be broadcastable: "\
-#                                  "shape(rpo) = {}, shape(rlo) = "\
-#                                  "{}".format(scaled_rpo.shape,
-#                                              scaled_rlo.shape))
-#         fexp = np.exp
-#     else:
-#         raise ValueError("Separations must either be both scalar or both "\
-#                              "array-like")
-#     f = (a * (scaled_rpo**alpha) * (scaled_rlo**beta) *
-#          fexp(-0.5 * scaled_rlo**2 / s**2))
-#     if index is not None:
-#         f = pd.Series(f, index=index)
-#     return f
+def prior_mean_y(theta):
+    """
+    The prior to use on the fitting function defined in :class:`MeanY`, which
+    requires checking the relation between some parameters
 
+    :param theta: The parameter values to be checked
+    :type theta: array-like or `dict`
+    :return: The value of the log prior probability, which is 0 for passing or
+    -infinity if it fails
+    :rtype: `float`
+
+    """
+    theta = __make_clean_dict__(theta, mean_y.params)
+    if (0 < theta["alpha"] < theta["beta"] and theta["b"] > 0 and
+        theta["c"] > 0 and theta["d"] > 0):
+        return 0.0
+    return -math.inf
 
 class VarY(object):
     params = [r"$a$", r"$b$", r"$s_1$", r"$s_2$", r"$\rho$"]
@@ -263,74 +219,78 @@ class VarY(object):
         return f
 var_y = VarY()
 
+class MeanR(object):
+    params = [r"$a$", r"$b$", r"$c$"]
+    __name__ = "mean_r"
+    def __call__(self, rpo, rlo, a, b, c, *, index=None, rpo_scale=1.0,
+                 rlo_scale=1.0, rpo_pivot=None, **kwargs):
+        """For convenience, the best fitting function found for the mean of the
+        correlation between :math:`R_\perp^T` and :math:`R_\parallel^T`. This
+        function is actually constant in :param:`rlo`, but asks for it for
+        consistency with the expected call signature of other potential fitting
+        functions. The dependence on :param:`rpo` looks like an exponential of a
+        quadratic of :math:`\ln R_\perp^O`. A pivot for :param:`rpo` can also
+        optionally be provided, for better fitting.
 
-# def var_y(rpo, rlo, a, b, s1, s2, rho, **kwargs):
-#     """
-#     The variance of :math:`\frac{\Delta R_\parallel}{\sqrt{2} \chi'(\bar{z})
-#     \sigma_z(\bar{z})}`. This function looks like :math:`a - b \exp[-0.5 \vec{
-#     r}^T C^{-1} \vec{r}]`, where :math:`\vec{r}` is a vector of the observed
-#     perpendicular and parallel separations, and C looks like a covariance matrix
-#     if :param:`s1` and :param:`s2` are variances and :param:`rho` is the
-#     correlation coefficient. If :param:`rpo` or :param:`rlo` has a length, both
-#     will assumed to be indices from a Series/DataFrame, and a Series will be
-#     returned.
-# 
-#     :param rpo: The observed perpendicular separations
-#     :type rpo: scalar or array-like `float`
-#     :param rlo: The observed parallel separations
-#     :type rlo: scalar or array-like `float`
-#     :param a: The constant approached at large :param:`rpo` and :param:`rlo`
-#     :type a: scalar `float`
-#     :param b: The amplitude on the exponential term
-#     :type b: scalar `float`
-#     :param s1: The width of the exponential associated with the observed
-#     perpendicular separation
-#     :type s1: scalar `float`
-#     :param s2: The width of the exponential associated with the observed
-#     parallel separation
-#     :type s2: scalar `float`
-#     :param rho: The mixing of the perpendicular and parallel contriubtions to
-#     the exponential
-#     :type rho: scalar `float`
-#     :key index: Optional index to use for returning a Series rather than an
-#     array for array-like :param:`rpo` and/or :param:`rlo`. Default `None`
-#     :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`, optional
-#     :key rpo_scale: Optional scaling to apply to the observed perpendicular
-#     separation. The default is 1.0 (in the same units as :param:`rpo`)
-#     :type rpo_scale: `float`
-#     :key rlo_scale: Optional scaling to apply to the observed parallel
-#     separation. The default is 1.0 (in the same units as :param:`rlo`)
-#     :type rlo_scale: `float`
-#     :return f: The function evaluated at the separation(s)
-#     :rtype f: scalar, :class:`numpy.ndarray`, or :class:`pandas.Series` `float`
-#     """
-#     var_y.params = [r"$a$", r"$b$", r"$s_1$", r"$s_2$", r"$\rho$"]
-#     index = kwargs.pop("index", None)
-#     scaled_rpo = copy.deepcopy(rpo) / kwargs.pop("rpo_scale", 1.0)
-#     scaled_rlo = copy.deepcopy(rlo) / kwargs.pop("rlo_scale", 1.0)
-#     inv_weight = 1. / (s1**2 * s2**2 * (1 - rho**2))
-#     cinv = [x * inv_weight for x in [s2**2, s1**2, -2 * rho * s1 * s2]]
-#     if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
-#         fexp = math.exp
-#     elif hasattr(rpo, "__len__") and hasattr(rlo, "__len__"):
-#         scaled_rpo = np.atleast_1d(scaled_rpo)
-#         scaled_rlo = np.atleast_1d(scaled_rlo)
-#         if not all((m == n) or (m == 1) or (n == 1) for m, n in
-#                    zip(scaled_rpo.shape[::-1], scaled_rlo.shape[::-1])):
-#             raise ValueError("Array-like separations must be broadcastable: "\
-#                                  "shape(rpo) = {}, shape(rlo) = "\
-#                                  "{}".format(scaled_rpo.shape,
-#                                              scaled_rlo.shape))
-#         fexp = np.exp
-#     else:
-#         raise ValueError("Separations must either be both scalar or both "\
-#                              "array-like")
-#     f = a - b * fexp(-0.5 * (scaled_rpo**2 * cinv[0] +
-#                              scaled_rlo**2 * cinv[1] +
-#                              scaled_rpo * scaled_rlo * cinv[2]))
-#     if index is not None:
-#         f = pd.Series(f, index=index)
-#     return f
+        :param rpo: The observed perpendicular separations
+        :type rpo: scalar or array-like `float`
+        :param rlo: The observed parallel separations. This parameter is
+        technically ignored in the function, but is included for call signature
+        consistency.
+        :type rlo: scalar or array-like `float`
+        :param a: The constant on the squared term of the quadratic
+        :type a: scalar `float`
+        :param b: The constant on the linear term of the quadratic
+        :type b: scalar `float`
+        :param c: The constant term of the quadratic
+        :type c: scalar `float`
+        :key index: Optional index to use for returning a Series rather than an
+        array for array-like :param:`rpo` and/or :param:`rlo`. Default `None`
+        :type index: :class:`pandas.Index` or :class:`pandas.MultiIndex`,
+        optional
+        :key rpo_scale: Optional scaling to apply to the observed perpendicular
+        separation. The passed perpendicular separations are divided by this
+        value. The default is 1.0 (in the same units as :param:`rpo`)
+        :type rpo_scale: `float`
+        :key rlo_scale: Optional scaling to apply to the observed parallel
+        separation. The passed parallel separations are divided by this value.
+        The default is 1.0 (in the same units as :param:`rlo`)
+        :type rlo_scale: `float`
+        :key rpo_pivot: Optional pivot location for the observed perpendicular
+        separation, used for stability in fitting. The value will be rescaled by
+        :key:`rpo_scale`. If `None`, the scaled value will be set to 1,
+        i.e. :key:`rpo_scale` will be used as the pivot. Default `None`
+        :type rpo_pivot: `float` or `NoneType`
+        :return f: The function evaluated at the separation(s)
+        :rtype f: scalar, :class:`numpy.ndarray`, or :class:`pandas.Series`
+        `float`
+        """
+        if rpo_pivot is None:
+            log_x = np.log(rpo) - np.log(rpo_scale)
+        else:
+            log_x = np.log(rpo) - np.log(rpo_pivot)
+        if isinstance(log_x, pd.Index):
+            log_x = log_x.values
+        f = np.exp(a * log_x**2 + b * log_x + c)
+        if index is not None:
+            f = pd.Series(f, index=index)
+        return f
+mean_r = MeanR()
+
+def prior_mean_r(theta):
+    """
+    The non-flat prior to use for the fitting function defined in :class:`MeanR`
+
+    :param theta: The values of the parameters being checked
+    :type theta: array-like or `dict`
+    :return: The value of the log prior probability, which is 0 for passing or
+    -infinity if it fails
+    :rtype: `float`
+    """
+    theta = __make_clean_dict__(theta, mean_r.params)
+    if -1.0 < theat["c"] < 1.0:
+        return 0.0
+    return -math.inf
 
 def stats_table_to_stats_df(table):
     df = table.to_pandas()
@@ -619,7 +579,7 @@ class _FitFunctionWrapper(object):
 def flat_prior(theta, extents):
     """A generic flat prior with a set of extents that also must be given.
     This will be wrapped within :class:`_FlatPriorFunctionWrapper`
-    
+
     :param theta: The parameter values to check, as a dictionary
     :type theta: `dict`
     :param extents: The allowed ranges of the parameters, as a dictionary
@@ -741,8 +701,8 @@ class SingleFitter(object):
         self.logger.debug("__init__ complete")
 
     def __repr__(self):
-        return "%s(ndim=%r, best_fit=%r)" % (self.name, self.ndim,
-                                             self._best_fit_params)
+        return ("{self.name!s}(ndim={self.ndim!r},"
+                " best_fit={self._best_fit_params!r})".format(self))
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -816,8 +776,9 @@ class SingleFitter(object):
         self.name = ("{}.{}".format(self.__class__.__name__, fitter_name) if
                      fitter_name is not None else self.__class__.__name__)
 
-    def set_fit_func(self, func, param_names, args=None, kwargs=None):
-        """Set a (new) fitting function with parameter names
+    def set_fit_func(self, func, param_names=None, args=None, kwargs=None):
+        """
+        Set a (new) fitting function with parameter names
 
         :param func: The fitting function to use
         :type func: `function` or `None`
@@ -849,7 +810,8 @@ class SingleFitter(object):
         self.logger.debug("done")
 
     def set_prior_func(self, prior):
-        """Set a (new) prior likelihood function
+        """
+        Set a (new) prior likelihood function
 
         :param prior: The prior probability function
         :type prior: `function` or `None`
@@ -869,7 +831,8 @@ class SingleFitter(object):
         self.logger.debug("done")
 
     def model(self, rpo, rlo, index=None):
-        """Get the best fit model at the given separations
+        """
+        Get the best fit model at the given separations
 
         :param rpo: The observed perpendicular separation
         :type rpo: scalar or array-like `float`
@@ -892,8 +855,8 @@ class SingleFitter(object):
         return m
 
     def model_with_errors(self, rpo, rlo, index=None):
-        """Get the median and 68 percent contours of the model at the
-        separations
+        """
+        Get the median and 68 percent contours of the model at the separations
 
         :param rpo: The observed perpendicular separation
         :type rpo: scalar or array-like `float`
@@ -923,9 +886,9 @@ class SingleFitter(object):
             m = meval.quantile(q=[0.16, 0.5, 0.84], axis="columns").T
         return m
 
-    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_scale, 
-             par_bin_scale, exp, is_rpo=False, logx=False, logy=False, 
-             filename=None, figsize=None, display=False, text_size=22, 
+    def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_scale,
+             par_bin_scale, exp, is_rpo=False, logx=False, logy=False,
+             filename=None, figsize=None, display=False, text_size=22,
              with_fit=False, point_alpha=1.0):
         """Plot the data (and optionally the best fit to the data) at a number
         of individual perpendicular or parallel separations.
@@ -999,7 +962,7 @@ class SingleFitter(object):
             smh.strip_dollars_and_double_braces(rlabel),
             smh.strip_dollar_signs(
                 smh.pretty_print_number(0.5 * r_bin_size, 2)))
-        
+
         if with_fit:
             if self._best_fit_params is None:
                 warnings.warn("Ignoring with_fit option when no fit is done")
@@ -1030,7 +993,7 @@ class SingleFitter(object):
                 except AttributeError:
                     with_fill = False
                     mod = self.model(*model_args, index=mod_index)
-        
+
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
             # Case: single bin, don't need any subplots
@@ -1054,9 +1017,10 @@ class SingleFitter(object):
                                                 alpha=0.4)
                 fit_line, = plt.plot((mod.index + 0.5) * x_bin_size,
                                      mod.loc[:,0.5], "C1-")
-            plt.legend([line], [axis_label.format(
+            plt.legend(
+                [line], [axis_label.format(
                     smh.strip_dollar_signs(smh.pretty_print_number(r_val, 2)))],
-                       loc=0, markerscale=0, frameon=False)
+                loc=0, markerscale=0, frameon=False)
             plt.tight_layout()
         else:
             bins = np.reshape(bins, -1)
@@ -1064,8 +1028,9 @@ class SingleFitter(object):
             full_ax = fig.add_subplot(grid[:])
             for loc in ["top", "bottom", "left", "right"]:
                 full_ax.spines[loc].set_color("none")
-            full_ax.tick_params(labelcolor="w", top="off", bottom="off", 
-                    left="off", right="off", which="both")
+            full_ax.tick_params(
+                labelcolor="w", top="off", bottom="off", left="off",
+                right="off", which="both")
             full_ax.set_ylabel(ylabel, labelpad=(2 * plt.rcParams["font.size"]))
             full_ax.set_xlabel(xlabel)
             for i, (r, r_val) in enumerate(zip(bins,
@@ -1115,7 +1080,7 @@ class SingleFitter(object):
         diff2 = self.data.loc[:,self.col_names[0]].sub(fev).pow(2)
         diffdiv = diff2.div(self.data.loc[:,self.col_names[1]])
         return -0.5 * diffdiv.sum()
-    
+
     def lnprob(self, theta):
         if self.pr is None:
             raise AttributeError("No prior function set for lnprob")
@@ -1125,10 +1090,10 @@ class SingleFitter(object):
         if not math.isfinite(lp):
             return -math.inf
         return lp + self.lnlike(theta)
-    
+
     def fit_minimize(self, init_guess):
         """Fit the data using :function:`scipy.optimize.minimize`.
-        
+
         :param init_guess: The guess for the starting point of the fit
         :type init_guess: 1D array-like `float`
         :return res: The result of the minimizer, with the fit parameters and
@@ -1164,12 +1129,12 @@ class SingleFitter(object):
         some other method of populating the walkers over some area in allowed
         parameter space needs to be used, and is used as the initial positions
         without change.
-        
+
         At the end of the MCMC, the best fit parameters are added to self,
         and the sampler is returned for analyzing walker behavior and checking
         parameter distributions. The samples are also added to the self, as
         well as the burn-in length, for future reference.
-        
+
         :param nsteps: The number of MCMC steps to take with each walker
         :type nsteps: `int`
         :param nburnin: The number of steps to omit from each walker for the
@@ -1212,7 +1177,7 @@ class SingleFitter(object):
         elif nburnin == 0:
             nburnin = self._nburnin
         self._nburnin = nburnin
-        
+
         self.logger.debug("Check if passed sampler is valid")
         new_sampler = copy.deepcopy(sampler)
         if new_sampler is not None and sampler.chain.shape[-1] != self.ndim:
@@ -1241,7 +1206,7 @@ class SingleFitter(object):
             self.logger.debug("Create a new sampler")
             new_sampler = emcee.EnsembleSampler(nwalkers, self.ndim,
                                                 self.lnprob, pool=pool)
-        
+
         self.logger.debug("Set initial position")
         if new_sampler.chain.shape[1] > 0:
             self.logger.debug("Continue chain from current position")
@@ -1311,8 +1276,8 @@ class AnalyticSingleFitter(object):
         corresponding to the name for the observed perpendicular separation and
         the second to the observed parallel separation.
         :type index_names: `list` `str`
-        :param col_names: A list of the needed column names from the DataFrame, 
-        with the first element corresponding to the data and the second to the 
+        :param col_names: A list of the needed column names from the DataFrame,
+        with the first element corresponding to the data and the second to the
         variance.
         :type col_names: `list` `str`
         :param fitter_name: The name for this instance of the fitter. If
@@ -1339,7 +1304,8 @@ class AnalyticSingleFitter(object):
         self.logger.debug("__init__ complete")
 
     def __repr__(self):
-        return "%s(c=%r, c_err=%r)" % (self.name, self._c, self._c_err)
+        return "{self.name!s}(c={self._c!r}, c_err={self._c_err!r})".format(
+            self)
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -1408,8 +1374,7 @@ class AnalyticSingleFitter(object):
         :return m: The value of the best fit model at the points. This will
         be 1D if :param:`rpo` and :param:`rlo` are both array-like, with both
         separations flattened
-        :rtype m: scalar or :class:`numpy.ndarray` or :class:`pandas.Series` 
-        `float`
+        :rtype m: scalar or array-like `float`
         """
         if self._c is None:
             raise AttributeError("Cannot get best fit model if fit has "\
@@ -1425,7 +1390,8 @@ class AnalyticSingleFitter(object):
         return m
 
     def model_with_errors(self, rpo, rlo, index=None):
-        """Get the median and 1 sigma error region of the model at the
+        """
+        Get the median and 1 sigma error region of the model at the
         separations
 
         :param rpo: The observed perpendicular separation
@@ -1443,8 +1409,8 @@ class AnalyticSingleFitter(object):
         :rtype m: :class:`pandas.Series` or :class:`pandas.DataFrame` `float`
         """
         if self._c is None or self._c_err is None:
-            raise AttributeError("Cannot get best fit model with errors "\
-                                     "if fit has not been done")
+            raise AttributeError("Cannot get best fit model with errors"
+                                 " if fit has not been done")
         c = self._c
         c_err = self._c_err
         if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
@@ -1456,15 +1422,15 @@ class AnalyticSingleFitter(object):
                 elif not hasattr(rlo, "__len__"):
                     index = pd.Index(rpo)
                 else:
-                    index = pd.MultiIndex.from_arrays([rpo, rlo], 
-                            names=["RPO_BIN", "RLO_BIN"])
+                    index = pd.MultiIndex.from_arrays(
+                        [rpo, rlo], names=["RPO_BIN", "RLO_BIN"])
             m = pd.DataFrame({0.16: c - c_err, 0.5: c, 0.84: c + c_err},
                              index=index)
         return m
 
     def plot(self, rpo_label, rlo_label, ylabel, bins, perp_bin_scale,
-             par_bin_scale, exp, is_rpo=False, logx=False, logy=False, 
-             filename=None, figsize=None, display=False, text_size=22, 
+             par_bin_scale, exp, is_rpo=False, logx=False, logy=False,
+             filename=None, figsize=None, display=False, text_size=22,
              with_fit=False, point_alpha=1.0):
         """Plot the data (and optionally the best fit to the data) at a number
         of individual perpendicular or parallel separations.
@@ -1655,7 +1621,7 @@ class ProbFitter(object):
                  **kwargs):
         """
         Initialize the fitter with calculated statistics
-        
+
         :param statistics: A DataFrame containing pre-computed sample means
         and variances for at least one of the fitters. The DataFrame columns
         must be multi-level, with the 0th level giving the quantity being
@@ -1761,8 +1727,13 @@ class ProbFitter(object):
         self.add_stats(statistics)
         self.logger.debug("__init__ complete")
 
-    def __repr__(self):
-        return "{name}(mean_x={f[0]}, var_x={f[1]}, mean_y={f[2]}, var_y={f[3]}, mean_r={f[4]})".format(name=self.name, f=list(self._fitters.values()))
+    def __repr__(self)
+        return ("{self.name!s}(\n"
+                "mean={self._fitters['mean_x']!r},\n"
+                "var_x={self._fitters['var_x']!r},\n"
+                "mean_y={self._fitters['mean_y']!r},\n"
+                "var_y={self._fitters['var_y']!r}\n"
+                ")".format(self))
 
     def __getstate__(self):
         d = self.__dict__.copy()
