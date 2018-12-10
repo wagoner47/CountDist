@@ -43,8 +43,8 @@ def empty_multi_index_nonames(nlevels):
 
 def corr_coeff(x, y, x_mean, y_mean, x_var, y_var):
     """
-    Calculate the correlation coefficient between x and y. All inputs must be
-    scalar or 1D array-like with the same shape
+    Calculate the correlation coefficient between x and y. All inputs other than
+    :param:`n` must be scalar or 1D array-like with the same shape
 
     :param x: The first value to correlate
     :type x: scalar or 1D array-like `float`
@@ -522,10 +522,9 @@ def get_corr_stats(seps, min_counts=200, min_bins=2):
                 "the minimum number of pairs, increasing the bin size, "\
                 "or using a larger catalog".format(len(grouped), min_counts))
     logger.debug("Get sample mean of Corr(R_PERP_T, R_PAR_T)")
-    stats = pd.concat([grouped["r"].agg(kstat, 2),
-                       grouped["r"].agg(kstatvar, 2)],
-                      keys=[("mean_r", "mean"), ("mean_r", "variance")],
-                      axis=1)
+    stats = pd.concat([
+        grouped["r"].agg(["mean", "var"]).rename(columns={"var": "variance"})],
+                      keys=["mean_r"], axis=1)
     return stats
 
 
@@ -702,7 +701,7 @@ class SingleFitter(object):
 
     def __repr__(self):
         return ("{self.name!s}(ndim={self.ndim!r},"
-                " best_fit={self._best_fit_params!r})".format(self))
+                " best_fit={self._best_fit_params!r})".format(self=self))
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -1029,8 +1028,8 @@ class SingleFitter(object):
             for loc in ["top", "bottom", "left", "right"]:
                 full_ax.spines[loc].set_color("none")
             full_ax.tick_params(
-                labelcolor="w", top="off", bottom="off", left="off",
-                right="off", which="both")
+                labelcolor="w", top=False, bottom=False, left=False,
+                right=False, which="both")
             full_ax.set_ylabel(ylabel, labelpad=(2 * plt.rcParams["font.size"]))
             full_ax.set_xlabel(xlabel)
             for i, (r, r_val) in enumerate(zip(bins,
@@ -1305,7 +1304,7 @@ class AnalyticSingleFitter(object):
 
     def __repr__(self):
         return "{self.name!s}(c={self._c!r}, c_err={self._c_err!r})".format(
-            self)
+            self=self)
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -1564,8 +1563,8 @@ class AnalyticSingleFitter(object):
             full_ax = fig.add_subplot(grid[:])
             for loc in ["top", "bottom", "left", "right"]:
                 full_ax.spines[loc].set_color("none")
-            full_ax.tick_params(labelcolor="w", top="off", bottom="off",
-                    left="off", right="off", which="both")
+            full_ax.tick_params(labelcolor="w", top=False, bottom=False,
+                    left=False, right=False, which="both")
             full_ax.set_ylabel(ylabel, labelpad=(2 * plt.rcParams["font.size"]))
             full_ax.set_xlabel(xlabel)
             for i, (r, r_val) in enumerate(zip(bins,
@@ -1727,13 +1726,13 @@ class ProbFitter(object):
         self.add_stats(statistics)
         self.logger.debug("__init__ complete")
 
-    def __repr__(self)
+    def __repr__(self):
         return ("{self.name!s}(\n"
-                "mean={self._fitters['mean_x']!r},\n"
-                "var_x={self._fitters['var_x']!r},\n"
-                "mean_y={self._fitters['mean_y']!r},\n"
-                "var_y={self._fitters['var_y']!r}\n"
-                ")".format(self))
+                "mean_x={mean_x!r},\n"
+                "var_x={var_x!r},\n"
+                "mean_y={mean_y!r},\n"
+                "var_y={var_y!r}\n"
+                ")".format(self=self, **self._fitters))
 
     def __getstate__(self):
         d = self.__dict__.copy()
