@@ -522,9 +522,9 @@ def get_corr_stats(seps, min_counts=200, min_bins=2):
                 "the minimum number of pairs, increasing the bin size, "\
                 "or using a larger catalog".format(len(grouped), min_counts))
     logger.debug("Get sample mean of Corr(R_PERP_T, R_PAR_T)")
-    stats = pd.concat([
-        grouped["r"].agg(["mean", "var"]).rename(columns={"var": "variance"})],
-                      keys=["mean_r"], axis=1)
+    stats = pd.concat([grouped["r"].agg(kstat, 1),
+                       grouped["r"].agg(kstatvar, 1)],
+                      keys=[("mean_r", "mean"), ("mean_r", "variance")], axis=1)
     return stats
 
 
