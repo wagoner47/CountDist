@@ -13,6 +13,9 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <typeindex>
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+namespace py = pybind11;
 
 #if defined(_OPENMP) && defined(omp_num_threads)
 constexpr int OMP_NUM_THREADS = omp_num_threads;
@@ -255,5 +258,146 @@ bool check_2lims(Pos pos1, Pos pos2, double rp_min, double rp_max, double rl_min
 
 VectorSeparation get_separations(std::vector<Pos> pos1, std::vector<Pos> pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true, bool use_obs, bool is_auto);
 
+struct BinSpecifier {
+    double bin_min, bin_max, bin_size;
+    std::size_t nbins;
+    bool log_binning;
+
+    BinSpecifier(double min, double max, double width, bool log_bins) {
+	bin_min = min;
+	bin_max = max;
+	log_binning = log_bins;
+	if (log_bins) {
+	    nbins = (std::size_t) ceil((log(max) - log(min)) / width);
+	    bin_size = (log(max) - log(min)) / (double) nbins;
+	}
+	else {
+	    nbins = (std::size_t) ceil((max - min) / width);
+	    bin_size = (max - min) / (double) nbins;
+	}
+    }
+
+    BinSpecifier(double min, double max, std::size_t num_bins, bool log_bins) {
+	bin_min = min;
+	bin_max = max;
+	log_binning = log_bins;
+	nbins = num_bins;
+	if (log_bins) {
+	    bin_size = (log(max) - log(min)) / (double) num_bins;
+	}
+	else {
+	    bin_size = (max - min) / (double) num_bins;
+	}
+    }
+};
+
+class NNCounts3D {
+    BinSpecifier rpo_bins, rlo_bins, zo_bins;
+    py::array_t<int> counts_;
+    std::size_t n_tot_;
+
+    int assign_1d_bin(double value, BinSpecifier binning) {
+	if ((value < binning.bin_min) || (value > binning.bin_max)) {
+	    return -1;
+	}
+	else {
+	    double diff;
+	    if (binning.log_binning) {
+		diff = (log(value) - log(binning.bin_min));
+	    }
+	    else {
+		diff = value - binning.bin_min;
+	    }
+	    return (int) floor(diff / binning.bin_size);
+	}
+    }
+
+ public:
+ NNCounts3D(BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning) : rpo_bins(rpo_binning), rlo_bins(rlo_binning) zo_bins(zo_binning) {
+	n_tot_ = 0;
+	std::size_t size = rpo_binning.nbins * rlo_binning.nbins * zo_binning.nbins;
+	int *array_ptr = new int[size];
+	for (std::size_t i = 0; i < size; i++) {
+	    array_ptr[i] = 0;
+	}
+	py::capsule free_when_done(array_ptr, [](void *f) {
+		int *array_ptr = reinterpret_cast<int *>(f);
+		delete[] array_ptr;
+	    });
+	counts_ = py::array_t<int>(
+	    {rpo_binning.nbins, rlo_binning.nbins, zo_binning.nbins},
+	    {rlo_binning.nbins * zo_binning.nbins * 8, zo_binning.nbins * 8, 8},
+	    array_ptr,
+	    free_when_done);
+    }
+
+    void assign_bin(double r_perp, double r_par, double zbar) {
+	n_tot_++;
+	int rpo_bin = assign_1d_bin(r_perp, rpo_bins);
+	if (rpo_bin > -1) {
+	    int rlo_bin = assign_1d_bin(r_par, rlo_bins);
+	    if (rlo_bin > -1) {
+		int zo_bin = assign_1d_bin(zbar, zo_bins);
+		if (zo_bin > -1) {
+		    counts_[rpo_bin, rlo_bin, zo_bin]++;
+		}
+	    }
+	}
+    }
+
+    std::size_t n_tot() const { return n_tot_; }
+
+    py::array_t<int> counts() const { return counts_; }
+
+    BinSpecifier rpo_bin_info() const { return rpo_bins; }
+
+    BinSpecifier rlo_bin_info() const { return rlo_bins; }
+
+    BinSpecifier zo_bin_info() const { return zo_bins; }
+};
+
+class NNCounts1D {
+    BinSpecifier binner;
+    std::size_t n_tot_;
+    py::array_t<int> counts_;
+
+ public:
+ NNCounts1D(BinSpecifier binning) : binner(binning) {
+	n_tot_ = 0;
+	int *array_ptr = new int[binning.nbins];
+	for (std::size_t i = 0; i < binning.nbins; i++) {
+	    array_ptr[i] = 0;
+	}
+	py::capsule free_when_done(array_ptr, [](void *f) {
+		int *array_ptr = reinterpret_cast<int *>(f);
+		delete[] array_ptr;
+	    });
+	counts_ = py::array_t<int>(
+	    {binning.nbins,},
+	    {8,},
+	    array_ptr,
+	    free_when_done);
+    }
+
+    void assign_bin(double value) {
+	n_tot_++;
+	if (value >= binner.bin_min && value <= binner.bin_max) {
+	    double diff;
+	    if (binner.log_binning) {
+		diff = (log(value) - log(binner.bin_min));
+	    }
+	    else {
+		diff = value - binner.bin_min;
+	    }
+	    counts_[(std::size_t) floor(diff / binner.bin_size)]++;
+	}
+    }
+
+    std::size_t n_tot() const { return n_tot_; }
+
+    py::array_t<int> counts() const { return counts_; }
+
+    BinSpecifer bin_info() const { return binner; }
+};
 
 #endif

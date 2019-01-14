@@ -69,4 +69,26 @@ PYBIND11_MODULE(calculate_distances, m) {
     m.def("r_perp", &r_perp, "Get the perpendicular separation between two positions, with order (true, observed)", "pos1"_a, "pos2"_a);
     m.def("ave_lost_distance", &ave_los_distance, "Get the average LOS distance between two positions, using observed positions unless either is missing the observed distance", "pos1"_a, "pos2"_a);
     m.def("get_separations", &get_separations, py::return_value_policy::take_ownership, "Get the separations between two sets of positions", "pos1"_a, "pos2"_a, "rp_min"_a, "rp_max"_a, "rl_min"_a, "rl_max"_a, "use_true"_a, "use_obs"_a, "is_auto"_a);
+    py::class_<BinSpecifier>(m, "BinSpecifier", "Structure for the needed attributes for binning in a variable")
+	.def(py::init<double, double, double, bool>())
+	.def(py::init<double, double, std::size_t, bool>())
+	.def_readwrite("bin_min", &BinSpecifier::bin_min)
+	.def_readwrite("bin_max", &BinSpecifier::bin_max)
+	.def_readwrite("bin_size", &BinSpecifier::bin_size)
+	.def_readwrite("nbins", &BinSpecifier::nbins)
+	.def_readwrite("log_binning", &BinSpecifier::log_binning);
+    py::class_<NNCounts3D>(m, "NNCounts3D", "Container for getting pair counts in terms of observed perpendicular and parallel separations and average observed redshift")
+	.def(py::init<BinSpecifier, BinSpecifier, BinSpecifier>())
+	.def("assign_bin", &NNCounts3D::assign_bin, "Assign a bin number to the given perpendicular and parallel separation and average redshift", "r_perp"_a, "r_par"_a, "zbar"_a)
+	.def_readonly("n_tot", &NNCounts3D::n_tot)
+	.def_readonly("counts", &NNCounts3D::counts)
+	.def_readonly("rpo_bin_info", &NNCounts3D::rpo_bin_info)
+	.def_readonly("rlo_bin_info", &NNCounts3D::rlo_bin_info)
+	.def_readonly("zo_bin_info", &NNCounts3D::zo_bin_info);
+    py::class_<NNCounts1D>(m, "NNCounts1D", "Container for the pair counts in terms of the magnitude of the separation")
+	.def(py::init<BinSpecifier>())
+	.def("assign_bin", &NNCounts1D::assign_bin, "Assign a bin number to the given separation", "value"_a)
+	.def_readonly("n_tot", &NNCounts1D::n_tot)
+	.def_readonly("counts", &NNCounts1D::counts)
+	.def_readonly("bin_info", &NNCounts1D::bin_info);
 }
