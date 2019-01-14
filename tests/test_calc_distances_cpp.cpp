@@ -35,70 +35,70 @@ TEST_CASE("Position vectors", "[pos][vectors]"){
     SECTION("Fail cases (bad angles or unit vectors") {
 	SECTION("Angle related exceptions") {
 	    SECTION("Only bad RA") {
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(-1.0, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(-0.00000005, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(360.00000005, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(361.0, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(-1.0, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(-0.00000005, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(360.00000005, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(361.0, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
 	    }
 	    SECTION("Only bad DEC") {
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, -91.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, -90.00000005, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, 90.00000005, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, 91.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, -91.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, -90.00000005, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, 90.00000005, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, 91.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(5.0, NAN, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("DEC"));
 	    }
 	    SECTION("Bad RA and DEC") {
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(-1.0, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, -91.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
-		REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(-1.0, NAN, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, -91.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
+		REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, NAN, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("RA"));
 	    }
 	}
 	SECTION("Unit vector error") {
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(0.0, 0.0, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(1.0, 1.0, 1.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, 0.0, 1.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, 1.0, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(0.0, NAN, 1.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(1.0, NAN, 0.0, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(0.0, 1.0, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(1.0, 0.0, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third - 5.0e-7, one_third, one_third, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third + 5.0e-7, one_third, one_third, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third - 5.0e-7, one_third, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third + 5.0e-7, one_third, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third, one_third - 5.0e-7, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
-	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third, one_third + 5.0e-7, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(0.0, 0.0, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(1.0, 1.0, 1.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, 0.0, 1.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(NAN, 1.0, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(0.0, NAN, 1.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(1.0, NAN, 0.0, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(0.0, 1.0, NAN, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(1.0, 0.0, NAN, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third - 5.0e-7, one_third, one_third, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third + 5.0e-7, one_third, one_third, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third - 5.0e-7, one_third, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third + 5.0e-7, one_third, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third, one_third - 5.0e-7, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
+	    REQUIRE_THROWS_MATCHES([&](){ Pos pos(one_third, one_third, one_third + 5.0e-7, NAN, NAN, NAN, NAN); }(), std::invalid_argument, ExMsgContains("unit vector"));
 	    }
     }
     SECTION("Setting or not setting distances") {
 	SECTION("Neither given") {
-	    Pos pos_radec(0.0, 0.0, NAN, NAN);
-	    Pos pos_nhat(0.0, 0.0, 1.0, NAN, NAN);
+	    Pos pos_radec(0.0, 0.0, NAN, NAN, NAN, NAN);
+	    Pos pos_nhat(0.0, 0.0, 1.0, NAN, NAN, NAN, NAN);
 	    REQUIRE_FALSE(pos_radec.has_true());
 	    REQUIRE_FALSE(pos_radec.has_obs());
 	    REQUIRE_FALSE(pos_nhat.has_true());
 	    REQUIRE_FALSE(pos_nhat.has_obs());
 	}
 	SECTION("True distance given") {
-	    Pos pos_radec(0.0, 0.0, 1.0, NAN);
-	    Pos pos_nhat(0.0, 0.0, 1.0, 1.0, NAN);
+	    Pos pos_radec(0.0, 0.0, 1.0, NAN, 1.0, NAN);
+	    Pos pos_nhat(0.0, 0.0, 1.0, 1.0, NAN, 1.0, NAN);
 	    REQUIRE(pos_radec.has_true());
 	    REQUIRE_FALSE(pos_radec.has_obs());
 	    REQUIRE(pos_nhat.has_true());
 	    REQUIRE_FALSE(pos_nhat.has_obs());
 	}
 	SECTION("Observed distance given") {
-	    Pos pos_radec(0.0, 0.0, NAN, 1.0);
-	    Pos pos_nhat(0.0, 0.0, 1.0, NAN, 1.0);
+	    Pos pos_radec(0.0, 0.0, NAN, 1.0, NAN, 1.0);
+	    Pos pos_nhat(0.0, 0.0, 1.0, NAN, 1.0, NAN, 1.0);
 	    REQUIRE_FALSE(pos_radec.has_true());
 	    REQUIRE(pos_radec.has_obs());
 	    REQUIRE_FALSE(pos_nhat.has_true());
 	    REQUIRE(pos_nhat.has_obs());
 	}
 	SECTION("Both given") {
-	    Pos pos_radec(0.0, 0.0, 1.0, 1.0);
-	    Pos pos_nhat(0.0, 0.0, 1.0, 1.0, 1.0);
+	    Pos pos_radec(0.0, 0.0, 1.0, 1.0, 1.0, 1.0);
+	    Pos pos_nhat(0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0);
 	    REQUIRE(pos_radec.has_true());
 	    REQUIRE(pos_radec.has_obs());
 	    REQUIRE(pos_nhat.has_true());
@@ -113,27 +113,27 @@ TEST_CASE("Position vectors", "[pos][vectors]"){
 	double dec3 = 90.0;
 	double ra3 = 0.0;
 	SECTION("Angles given") {
-	    Pos pos1(ra1, dec1, NAN, NAN);
+	    Pos pos1(ra1, dec1, NAN, NAN, NAN, NAN);
 	    REQUIRE(pos1.nx() == Approx(1.0));
 	    REQUIRE(pos1.ny() == Approx(0.0).margin(1.e-7));
 	    REQUIRE(pos1.nz() == Approx(0.0).margin(1.e-7));
-	    Pos pos2(ra2, dec2, NAN, NAN);
+	    Pos pos2(ra2, dec2, NAN, NAN, NAN, NAN);
 	    REQUIRE(pos2.nx() == Approx(0.0).margin(1.e-7));
 	    REQUIRE(pos2.ny() == Approx(1.0));
 	    REQUIRE(pos2.nz() == Approx(0.0).margin(1.e-7));
-	    Pos pos3(ra3, dec3, NAN, NAN);
+	    Pos pos3(ra3, dec3, NAN, NAN, NAN, NAN);
 	    REQUIRE(pos3.nx() == Approx(0.0).margin(1.e-7));
 	    REQUIRE(pos3.ny() == Approx(0.0).margin(1.e-7));
 	    REQUIRE(pos3.nz() == Approx(1.0));
 	}
 	SECTION("Unit vector given") {
-	    Pos pos1(1.0, 0.0, 0.0, NAN, NAN);
+	    Pos pos1(1.0, 0.0, 0.0, NAN, NAN, NAN, NAN);
 	    REQUIRE(pos1.ra() == Approx(ra1));
 	    REQUIRE(pos1.dec() == Approx(dec1));
-	    Pos pos2(0.0, 1.0, 0.0, NAN, NAN);
+	    Pos pos2(0.0, 1.0, 0.0, NAN, NAN, NAN, NAN);
 	    REQUIRE(pos2.ra() == Approx(ra2));
 	    REQUIRE(pos2.dec() == Approx(dec2));
-	    Pos pos3(0.0, 0.0, 1.0, NAN, NAN);
+	    Pos pos3(0.0, 0.0, 1.0, NAN, NAN, NAN, NAN);
 	    REQUIRE(pos3.ra() == Approx(ra3));
 	    REQUIRE(pos3.dec() == Approx(dec3));
 	}
@@ -142,10 +142,10 @@ TEST_CASE("Position vectors", "[pos][vectors]"){
 
 TEST_CASE("Dot products of vectors", "[dot][vectors]") {
     // Set up vectors to test
-    Pos pos1(32.5, -10.0, 3297.0, NAN);
-    Pos pos2(108.2, 2.5, 5360.0, NAN);
-    Pos upos1(32.5, -10.0, 1.0, NAN);
-    Pos upos2(108.2, 2.5, 1.0, NAN);
+    Pos pos1(32.5, -10.0, 3297.0, NAN, 1.0, NAN);
+    Pos pos2(108.2, 2.5, 5360.0, NAN, 1.0, NAN);
+    Pos upos1(32.5, -10.0, 1.0, NAN, 1.0, NAN);
+    Pos upos2(108.2, 2.5, 1.0, NAN, 1.0, NAN);
     // Get the expected unit dot product
     double unit_dot_exp = (pos1.nx() * pos2.nx()) + (pos1.ny() * pos2.ny()) + (pos1.nz() * pos2.nz());
     // Check that has_obs is always false
@@ -217,10 +217,10 @@ TEST_CASE("Dot products of vectors", "[dot][vectors]") {
 
 TEST_CASE("Parallel separation", "[rparallel][seps][vectors]") {
     // Set up vectors to test
-    Pos pos1(32.5, -10.0, 3297.0, NAN);
-    Pos pos2(108.2, 2.5, 5360.0, NAN);
-    Pos upos1(32.5, -10.0, 1.0, NAN);
-    Pos upos2(108.2, 2.5, 1.0, NAN);
+    Pos pos1(32.5, -10.0, 3297.0, NAN, 1.0, NAN);
+    Pos pos2(108.2, 2.5, 5360.0, NAN, 1.0, NAN);
+    Pos upos1(32.5, -10.0, 1.0, NAN, 1.0, NAN);
+    Pos upos2(108.2, 2.5, 1.0, NAN, 1.0, NAN);
     std::vector<double> r1 = pos1.rtvec();
     std::vector<double> r2 = pos2.rtvec();
     std::vector<double> ur1 = upos1.rtvec();
@@ -260,10 +260,10 @@ TEST_CASE("Parallel separation", "[rparallel][seps][vectors]") {
 
 TEST_CASE("Perpendicular separation", "[rperpendicular][seps][vectors]") {
     // Set up vectors to test
-    Pos pos1(32.5, -10.0, 3297.0, NAN);
-    Pos pos2(108.2, 2.5, 5360.0, NAN);
-    Pos upos1(32.5, -10.0, 1.0, NAN);
-    Pos upos2(108.2, 2.5, 1.0, NAN);
+    Pos pos1(32.5, -10.0, 3297.0, NAN, 1.0, NAN);
+    Pos pos2(108.2, 2.5, 5360.0, NAN, 1.0, NAN);
+    Pos upos1(32.5, -10.0, 1.0, NAN, 1.0, NAN);
+    Pos upos2(108.2, 2.5, 1.0, NAN, 1.0, NAN);
     std::vector<double> r1 = pos1.rtvec();
     std::vector<double> r2 = pos2.rtvec();
     std::vector<double> ur1 = upos1.rtvec();
@@ -308,27 +308,30 @@ TEST_CASE("Perpendicular separation", "[rperpendicular][seps][vectors]") {
 TEST_CASE("Catalog of positions", "[VecPos][catalog]") {
     // Read in a test catalog, and then make sure our std::vector<Pos> matches what we would expect
     // Note that this test catalog has NAN for observed distances
-    double rai, deci, rti, roi;
-    std::vector<double> ra_vec, dec_vec, rt_vec, ro_vec;
-    std::string line, nani;
+    double rai, deci, rti, roi, tzi, ozi;
+    std::vector<double> ra_vec, dec_vec, rt_vec, ro_vec, tz_vec, oz_vec;
+    std::string line, nani, nani2;
     char *end;
-    std::ifstream fin("test_data/catalog_three_objects.txt");
+    std::ifstream fin("test_data/catalog_three_objects_v2.txt");
     if (fin.is_open()) {
 	while(std::getline(fin, line)) {
 	    if (line[0] == '#') continue;
 	    CAPTURE(line);
 	    std::istringstream iss(line);
-	    if (!(iss >> rai >> deci >> rti >> nani)) FAIL("Unable to read test catalog file 'test_data/catalog_three_objects.txt'");
+	    if (!(iss >> rai >> deci >> rti >> nani >> tzi >> nani2)) FAIL("Unable to read test catalog file 'test_data/catalog_three_objects_v2.txt'");
 	    roi = std::strtod(nani.c_str(), &end);
+	    ozi = std::strtod(nani2.c_str(), &end);
 	    ra_vec.push_back(rai);
 	    dec_vec.push_back(deci);
 	    rt_vec.push_back(rti);
 	    ro_vec.push_back(roi);
+	    tz_vec.push_back(tzi);
+	    oz_vec.push_back(ozi);
 	}
 	fin.close();
     }
-    else FAIL("Unable to open test catalog file 'test_data/catalog_three_objects.txt'");
-    std::vector<Pos> catalog = fill_catalog_vector(ra_vec, dec_vec, rt_vec, ro_vec);
+    else FAIL("Unable to open test catalog file 'test_data/catalog_three_objects_v2.txt'");
+    std::vector<Pos> catalog = fill_catalog_vector(ra_vec, dec_vec, rt_vec, ro_vec, tz_vec, oz_vec);
     // First require that the size of the catalog is correct
     REQUIRE(catalog.size() == ra_vec.size());
     SECTION("Check RA is correct for each entry") {
@@ -343,7 +346,7 @@ TEST_CASE("Catalog of positions", "[VecPos][catalog]") {
 	    REQUIRE(catalog[i].dec() == Approx(dec_vec[i]).margin(1.e-7));
 	}
     }
-    SECTION("Check true separation is correct for each entry") {
+    SECTION("Check true distance is correct for each entry") {
 	for (std::size_t i = 0; i < rt_vec.size(); i++) {
 	    CAPTURE(i);
 	    // Here I also require that it has true
@@ -351,7 +354,7 @@ TEST_CASE("Catalog of positions", "[VecPos][catalog]") {
 	    REQUIRE(catalog[i].rt() == Approx(rt_vec[i]).margin(1.e-7));
 	}
     }
-    SECTION("Check observed separation is NAN for each entry") {
+    SECTION("Check observed distance is NAN for each entry") {
 	for (std::size_t i = 0; i < ro_vec.size(); i++) {
 	    CAPTURE(i);
 	    // Here I also require that it doesn't have obs
@@ -359,34 +362,51 @@ TEST_CASE("Catalog of positions", "[VecPos][catalog]") {
 	    REQUIRE(std::isnan(catalog[i].ro()));
 	}
     }
+    SECTION("Check true redshift is correct for each entry") {
+	for (std::size_t i = 0; i < tz_vec.size(); i++) {
+	    CAPTURE(i);
+	    REQUIRE(catalog[i].true_redshift() == Approx(tz_vec[i]).margin(1.e-7));
+	}
+    }
+    SECTION("Check observed redshift is NAN for each entry") {
+	for (std::size_t i = 0; i < oz_vec.size(); i++) {
+	    CAPTURE(i);
+	    REQUIRE(std::isnan(catalog[i].obs_redshift()));
+	}
+    }
 }
 
 TEST_CASE("Catalog auto-separations", "[seps][catalog][auto]") {
     // Read in a test catalog with three points
     // Note that this catalog has NAN for observed distances
-    double rai, deci, rti, roi;
-    std::vector<double> ra_vec, dec_vec, rt_vec, ro_vec;
-    std::string line, nani;
+    double rai, deci, rti, roi, tzi, ozi;
+    std::vector<double> ra_vec, dec_vec, rt_vec, ro_vec, tz_vec, oz_vec;
+    std::string line, nani, nani2;
     char* end;
-    std::ifstream fin("test_data/catalog_three_objects.txt");
+    std::ifstream fin("test_data/catalog_three_objects_v2.txt");
     if (fin.is_open()) {
 	while (std::getline(fin, line)) {
 	    if (line[0] == '#') continue;
 	    std::istringstream iss(line);
-	    if (!(iss >> rai >> deci >> rti >> nani)) FAIL("Unable to read test catalog file 'test_data/catalog_three_objects.txt'");
+	    if (!(iss >> rai >> deci >> rti >> nani >> tzi >> nani2)) FAIL("Unable to read test catalog file 'test_data/catalog_three_objects_v2.txt'");
 	    roi = std::strtod(nani.c_str(), &end);
+	    ozi = std::strtod(nani2.c_str(), &end);
 	    ra_vec.push_back(rai);
 	    dec_vec.push_back(deci);
 	    rt_vec.push_back(rti);
 	    ro_vec.push_back(roi);
+	    tz_vec.push_back(tzi);
+	    oz_vec.push_back(ozi);
 	}
 	fin.close();
     }
-    else FAIL("Unable to open test catalog file 'test_data/catalog_three_objects.txt'");
+    else FAIL("Unable to open test catalog file 'test_data/catalog_three_objects_v2.txt'");
     CAPTURE(ra_vec);
     CAPTURE(dec_vec);
     CAPTURE(rt_vec);
     CAPTURE(ro_vec);
+    CAPTURE(tz_vec);
+    CAPTURE(oz_vec);
     // Get the expected separations and IDs (individual calculations already tested)
     // Use a wide range of allowed separations here to keep all of them (only 3)
     std::tuple<double, double> r_perp_i, r_par_i;
@@ -399,10 +419,12 @@ TEST_CASE("Catalog auto-separations", "[seps][catalog][auto]") {
 	CAPTURE(dec_vec[i]);
 	CAPTURE(rt_vec[i]);
 	CAPTURE(ro_vec[i]);
-	Pos posi(ra_vec[i], dec_vec[i], rt_vec[i], ro_vec[i]);
+	CAPTURE(tz_vec[i]);
+	CAPTURE(oz_vec[i]);
+	Pos posi(ra_vec[i], dec_vec[i], rt_vec[i], ro_vec[i], tz_vec[i], oz_vec[i]);
 	for (std::size_t j = i + 1; j < ra_vec.size(); j++) {
 	    CAPTURE(j);
-	    Pos posj(ra_vec[j], dec_vec[j], rt_vec[j], ro_vec[j]);
+	    Pos posj(ra_vec[j], dec_vec[j], rt_vec[j], ro_vec[j], tz_vec[j], oz_vec[j]);
 	    r_perp_i = r_perp(posi, posj);
 	    if ((std::get<0>(r_perp_i) >= 0.0) && 
 		(std::get<0>(r_perp_i) <= 1.e7)) {
@@ -419,20 +441,31 @@ TEST_CASE("Catalog auto-separations", "[seps][catalog][auto]") {
     }
     // Fill the catalog (already tested in another test case)
     INFO("Filling std::vector<Pos>");
-    std::vector<Pos> catalog = fill_catalog_vector(ra_vec, dec_vec, rt_vec, ro_vec);
+    std::vector<Pos> catalog = fill_catalog_vector(ra_vec, dec_vec, rt_vec, ro_vec, tz_vec, oz_vec);
     // Get the separations for the catalog
     INFO("Getting catalog separations");
     VectorSeparation seps_result = get_separations(catalog, catalog, 0.0, 1.e7, 0.0, 1.e7, true, false, true);
     REQUIRE(seps_result.size() == seps_expected.size());
+    bool match_found;
     for (std::size_t i = 0; i < seps_expected.size(); i++) {
 	CAPTURE(i);
-	REQUIRE(seps_result[i].id1 == ids_expected[i][0]);
-	REQUIRE(seps_result[i].id2 == ids_expected[i][1]);
-	REQUIRE(seps_result[i].r_perp_t == Approx(std::get<0>(seps_expected[i][0])));
-	REQUIRE(seps_result[i].r_par_t == Approx(std::get<0>(seps_expected[i][1])));
-	REQUIRE(std::isnan(seps_result[i].r_perp_o));
-	REQUIRE(std::isnan(seps_result[i].r_par_o));
-	REQUIRE(std::isnan(seps_result[i].ave_ro));
+	CAPTURE("Finding matching pair in output");
+	match_found = false;
+	for (std::size_t j = 0; j < seps_result.size(); j++) {
+	    if (seps_result[j].id1 == ids_expected[i][0] && seps_result[j].id2 == ids_expected[i][1]) {
+		match_found = true;
+		REQUIRE(seps_result[j].r_perp_t == Approx(std::get<0>(seps_expected[i][0])));
+		REQUIRE(seps_result[j].r_par_t == Approx(std::get<0>(seps_expected[i][1])));
+		REQUIRE(std::isnan(seps_result[j].r_perp_o));
+		REQUIRE(std::isnan(seps_result[j].r_par_o));
+		REQUIRE(std::isnan(seps_result[j].ave_zo));
+	    }
+	    else continue;
+	}
+	if (!match_found) {
+	    CAPTURE(ids_expected[i]);
+	    FAIL("No match found in output");
+	}
     }
     // Write to file for future python test
     std::ofstream fout("test_data/cpp_seps_catalog_three_objects.txt");
