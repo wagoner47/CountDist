@@ -42,7 +42,7 @@ inline std::tuple<double,double> get_radec(double nx, double ny, double nz) {
 }
 
 struct Pos{
-    Pos(double ra, double dec, double rt, double ro)  {
+    Pos(double ra, double dec, double rt, double ro, double tz, double oz)  {
 	if ((ra < 0.0) || (ra > 360.0) || std::isnan(ra)) {
 	    throw std::invalid_argument("RA outside of valid range [0.0, 360.0]");
 	}
@@ -53,6 +53,8 @@ struct Pos{
 	dec_ = dec;
 	rt_ = rt;
 	ro_ = ro;
+	zrt_ = tz;
+	zro_ = oz;
 	auto nxyz = get_nxyz(ra, dec);
 	nx_ = std::get<0>(nxyz);
 	ny_ = std::get<1>(nxyz);
@@ -66,7 +68,7 @@ struct Pos{
 	yo_ = ro * ny_;
 	zo_ = ro * nz_;
     }
-    Pos(double nx, double ny, double nz, double rt, double ro) {
+    Pos(double nx, double ny, double nz, double rt, double ro, double tz, double oz) {
 	if (((nx * nx) + (ny * ny) + (nz * nz)) != 1.0) {
 	    throw std::invalid_argument("Magnitude of unit vector is not 1");
 	}
@@ -75,6 +77,8 @@ struct Pos{
 	nz_ = nz;
 	rt_ = rt;
 	ro_ = ro;
+	zrt_ = tz;
+	zro_ = oz;
 	auto radec = get_radec(nx, ny, nz);
 	ra_ = std::get<0>(radec);
 	dec_ = std::get<1>(radec);
@@ -103,6 +107,8 @@ struct Pos{
     double dec() const { return dec_; }
     double rt() const { return rt_; }
     double ro() const { return ro_; }
+    double true_redshift() const { return zrt_; }
+    double obs_redshift() const { return zro_; }
     double nx() const { return nx_; }
     double ny() const { return ny_; }
     double nz() const { return nz_; }
@@ -117,26 +123,27 @@ struct Pos{
 private:
     double ra_, dec_, rt_, ro_, nx_, ny_, nz_;
     double xt_, yt_, zt_, xo_, yo_, zo_;
+    double zrt_, zro_;
     bool has_true_, has_obs_;
 };
 
-std::vector<Pos> fill_catalog_vector(std::vector<double> ra_vec, std::vector<double> dec_vec, std::vector<double> rt_vec, std::vector<double> ro_vec);
+std::vector<Pos> fill_catalog_vector(std::vector<double> ra_vec, std::vector<double> dec_vec, std::vector<double> rt_vec, std::vector<double> ro_vec, std::vector<double> tz_vec, std::vector<double> oz_vec);
 
-std::vector<Pos> fill_catalog_vector(std::vector<double> nx_vec, std::vector<double> ny_vec, std::vector<double> nz_vec, std::vector<double> rt_vec, std::vector<double> ro_vec);
+std::vector<Pos> fill_catalog_vector(std::vector<double> nx_vec, std::vector<double> ny_vec, std::vector<double> nz_vec, std::vector<double> rt_vec, std::vector<double> ro_vec, std::vector<double> tz_vec, std::vector<double> oz_vec);
 
 struct Separation {
-    double r_perp_t, r_par_t, r_perp_o, r_par_o, ave_ro;
+    double r_perp_t, r_par_t, r_perp_o, r_par_o, ave_zo;
     std::size_t id1, id2;
     Separation() 
-        : r_perp_t(), r_par_t(), r_perp_o(), r_par_o(), ave_ro(), id1(), 
+        : r_perp_t(), r_par_t(), r_perp_o(), r_par_o(), ave_zo(), id1(), 
 	  id2() {}
-    Separation(double rpt, double rlt, double rpo, double rlo, double ave_r, std::size_t i1, std::size_t i2) 
+    Separation(double rpt, double rlt, double rpo, double rlo, double ave_z, std::size_t i1, std::size_t i2) 
         : r_perp_t(rpt), r_par_t(rlt), r_perp_o(rpo), r_par_o(rlo), 
-          ave_ro(ave_r), id1(i1), id2(i2) {}
-    Separation(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double rbar, std::size_t i1, std::size_t i2) 
+          ave_zo(ave_z), id1(i1), id2(i2) {}
+    Separation(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double zbar, std::size_t i1, std::size_t i2) 
       : r_perp_t(std::get<0>(r_perp)), r_par_t(std::get<0>(r_par)), 
 	r_perp_o(std::get<1>(r_perp)), r_par_o(std::get<1>(r_par)), 
-	ave_ro(rbar), id1(i1), id2(i2) {}
+	ave_zo(zbar), id1(i1), id2(i2) {}
 };
 
 std::ostream& operator<<(std::ostream &os, const Separation &s);
@@ -145,8 +152,8 @@ struct VectorSeparation {
     std::vector<Separation> seps_vec;
 VectorSeparation() : seps_vec(), size_(0) {}
 VectorSeparation(std::vector<Separation> s_vec) : seps_vec(s_vec), size_(s_vec.size()) {}
-    void push_back(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double rbar, std::size_t i1, std::size_t i2) {
-	seps_vec.push_back(Separation(r_perp, r_par, rbar, i1, i2));
+    void push_back(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double zbar, std::size_t i1, std::size_t i2) {
+	seps_vec.push_back(Separation(r_perp, r_par, zbar, i1, i2));
 	size_++;
     }
     void push_back(Separation s) {
@@ -190,10 +197,10 @@ VectorSeparation(std::vector<Separation> s_vec) : seps_vec(s_vec), size_(s_vec.s
 	}
 	return out;
     }
-    std::vector<double> ave_ro() {
+    std::vector<double> ave_zo() {
 	std::vector<double> out(size_);
 	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].ave_ro;
+	    out[i] = seps_vec[i].ave_zo;
 	}
 	return out;
     }
@@ -248,9 +255,5 @@ bool check_2lims(Pos pos1, Pos pos2, double rp_min, double rp_max, double rl_min
 
 VectorSeparation get_separations(std::vector<Pos> pos1, std::vector<Pos> pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true, bool use_obs, bool is_auto);
 
-/*
-void write_separations(std::vector<std::vector<double> > separations, std::string db_file, std::string table_name);
 
-void get_dist(std::vector<Pos> pos1, std::vector<Pos> pos2, double rp_min, double rp_max, double rl_min, double rl_max, std::string db_file, std::string table_name, bool use_true, bool use_obs, bool is_auto);
-*/
 #endif

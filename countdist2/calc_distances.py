@@ -12,7 +12,7 @@ import astropy.cosmology
 import CatalogUtils
 
 
-def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None):
+def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None, ztcol=None, zocol=None):
     if has_obs:
         print("Using column {} for true distances".format(dtcol))
     if "fit" in os.path.splitext(file_name)[1]:
@@ -20,19 +20,37 @@ def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None):
     else:
         names = ["RA", "DEC"]
         if has_true:
+            if dtcol is None:
+                raise ValueError("True distance column name must be given if"
+                                 " 'has_true' is True")
             names.append(dtcol)
+            if ztcol is None:
+                ztcol = dtcol.replace("D", "Z")
+            names.append(ztcol)
         if has_obs:
+            if docol is None:
+                raise ValueError("Observed distance column name must be given"
+                                 " if 'has_obs' is True")
             names.append(docol)
+            if zocol is None:
+                zocol = docol.replace("D", "Z")
+            names.append(zocol)
         data = Table.read(file_name, format="ascii", names=names)
     if not has_true:
         if dtcol is None:
             dtcol = "D_TRUE"
+        if ztcol is None:
+            ztcol = dtcol.replace("D", "Z")
         data[dtcol] = np.nan
+        data[ztcol] = np.nan
     if not has_obs:
         if docol is None:
             docol = "D_OBS"
+        if zocol is None:
+            zocol = docol.replace("D", "Z")
         data[docol] = np.nan
-    cat = _calculate_distances.fill_catalog_vector(data["RA"], data["DEC"], data[dtcol], data[docol])
+        data[zocol] = np.nan
+    cat = _calculate_distances.fill_catalog_vector(data["RA"], data["DEC"], data[dtcol], data[docol], data[ztcol], data[zocol])
     return cat
 
 
@@ -124,23 +142,73 @@ def run_calc(params_file):
         params_in = params_in["run_params"]
     except KeyError:
         pass
-    cat1 = _read_catalog(params_in["ifname1"], params_in.as_bool("has_true1"), params_in.as_bool("has_obs1"), params_in["dtcol1"] if params_in.as_bool("has_true1") else None, params_in["docol1"] if params_in.as_bool("has_obs1") else None)
+    if "ztcol1" in params_in:
+        ztcol1 = params_in["ztcol1"]
+    else:
+        if params_in.as_bool("has_true1"):
+            ztcol1 = params_in["dtcol1"].replace("D", "Z")
+        else:
+            ztcol1 = None
+    if "zocol1" in params_in:
+        zocol1 = params_in["zocol1"]
+    else:
+        if params_in.as_bool("has_obs1"):
+            zocol1 = params_in["docol1"].replace("D", "Z")
+        else:
+            zocol1 = None
+    cat1 = _read_catalog(
+        params_in["ifname1"], params_in.as_bool("has_true1"),
+        params_in.as_bool("has_obs1"),
+        params_in["dtcol1"] if params_in.as_bool("has_true1") else None,
+        params_in["docol1"] if params_in.as_bool("has_obs1") else None,
+        ztcol1, zocol1)
     if params_in["ifname2"] != params_in["ifname1"]:
-        cat2 = _read_catalog(params_in["ifname2"], params_in.as_bool("has_true2"), params_in.as_bool("has_obs2"), params_in["dtcol2"] if params_in.as_bool("has_true2") else None, params_in["docol2"] if params_in.as_bool("has_obs2") else None)
+        if "ztcol2" in params_in:
+            ztcol2 = params_in["ztcol2"]
+        else:
+            if params_in.as_bool("has_true2"):
+                ztcol2 = params_in["dtcol2"].replace("D", "Z")
+            else:
+                ztcol2 = None
+        if "zocol2" in params_in:
+            zocol2 = params_in["zocol2"]
+        else:
+            if params_in.as_bool("has_obs2"):
+                zocol2 = params_in["docol2"].replace("D", "Z")
+            else:
+                zocol2 = None
+        cat2 = _read_catalog(
+            params_in["ifname2"], params_in.as_bool("has_true2"),
+            params_in.as_bool("has_obs2"),
+            params_in["dtcol2"] if params_in.as_bool("has_true2") else None,
+            params_in["docol2"] if params_in.as_bool("has_obs2") else None,
+            ztcol2, zocol2)
         is_auto = False
     else:
         cat2 = cat1
         is_auto = True
     logger.info("Running calculation")
-    seps_out = _calculate_distances.get_separations(cat1, cat2, params_in.as_float("rp_min"), params_in.as_float("rp_max"), params_in.as_float("rl_min"), params_in.as_float("rl_max"), params_in.as_bool("use_true"), params_in.as_bool("use_obs"), is_auto)
+    seps_out = _calculate_distances.get_separations(
+        cat1, cat2, params_in.as_float("rp_min"),
+        params_in.as_float("rp_max"), params_in.as_float("rl_min"),
+        params_in.as_float("rl_max"), params_in.as_bool("use_true"),
+        params_in.as_bool("use_obs"), is_auto)
     logger.info("Converting result to DataFrame")
-    seps_result = pd.DataFrame.from_dict({"ID1": seps_out.id1, "ID2": seps_out.id2})
+    seps_result = pd.DataFrame.from_dict(
+        {"ID1": seps_out.id1, "ID2": seps_out.id2})
     if params_in.as_bool("use_true") and params_in.as_bool("use_obs"):
-        seps_result = pd.DataFrame.from_dict({"R_PERP_T": seps_out.r_perp_t, "R_PAR_T": seps_out.r_par_t, "R_PERP_O": seps_out.r_perp_o, "R_PAR_O": seps_out.r_par_o, "AVE_D_OBS": seps_out.ave_r_obs}).join(seps_result)
+        seps_result = pd.DataFrame.from_dict(
+            {"R_PERP_T": seps_out.r_perp_t, "R_PAR_T": seps_out.r_par_t,
+             "R_PERP_O": seps_out.r_perp_o, "R_PAR_O": seps_out.r_par_o,
+             "AVE_Z_OBS": seps_out.ave_z_obs}).join(seps_result)
     elif params_in.as_bool("use_true"):
-        seps_result = pd.DataFrame.from_dict({"R_PERP": seps_out.r_perp_t, "R_PAR": seps_out.r_par_t}).join(seps_result)
+        seps_result = pd.DataFrame.from_dict(
+            {"R_PERP": seps_out.r_perp_t, "R_PAR": seps_out.r_par_t}).join(
+                seps_result)
     elif params_in.as_bool("use_obs"):
-        seps_result = pd.DataFrame.from_dict({"R_PERP": seps_out.r_perp_o, "R_PAR": seps_out.r_par_o, "AVE_D_OBS": seps_out.ave_ro}).join(seps_result)
+        seps_result = pd.DataFrame.from_dict(
+            {"R_PERP": seps_out.r_perp_o, "R_PAR": seps_out.r_par_o,
+             "AVE_Z_OBS": seps_out.ave_ro}).join(seps_result)
     else:
         # Should never get here, but check just in case
         raise ValueError("Must use at least true or observed distances, or both")
