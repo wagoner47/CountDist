@@ -1983,8 +1983,10 @@ class ProbFitter(object):
         """
         if isinstance(stats_in, Table):
             stats = stats_table_to_stats_df(stats_in)
-        else:
+        elif isinstance(stats_in, (pd.Series, pd.DataFrame)):
             stats = stats_in.copy(deep=True)
+        else:
+            stats = copy.deepcopy(stats_in)
         if stats is not None:
             self.logger.debug("Drop NAN columns")
             stats_filt = stats.dropna(axis=1)
