@@ -173,3 +173,61 @@ VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_m
   }
   return separations;
 }
+
+NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
+    NNCounts3D nn(rpo_binning, rlo_binning, zo_binning);
+    double r_max = (isinf(rpo_binning.bin_max) || isinf(rlo_binning.bin_max)) ? INFINITY : sqrt((rpo_binning.bin_max * rpo_binning.bin_max) + (rlo_binning.bin_max * rlo_binning.bin_max));
+
+    omp_set_num_threads(OMP_NUM_THREADS);
+    double rp, rl;
+    double zbar;
+    size_t n1 = pos1.size();
+    size_t n2 = pos2.size();
+#if _OPENMP
+#pragma omp declare reduction (add : NNCounts3D : omp_out+=omp_in)
+#pragma omp parallel for collapse(2) reduction(add: nn) private(rp, rl, zbar)
+#endif
+    for (size_t i = 0; i < n1; i++) {
+	for (size_t j = 0; j < n2; j++) {
+	    if (is_auto && i >= j) {
+		continue;
+	    }
+	    if (check_box(pos1[i], pos2[j], r_max)) {
+		rp = get<1>(r_perp(pos1[i], pos2[j]));
+		rl = get<1>(r_par(pos1[i], pos2[j]));
+		zbar = ave_los_distance(pos1[i], pos2[j]);
+		nn.assign_bin(rp, rl, zbar);
+	    }
+	    else {
+		continue;
+	    }
+	}
+    }
+    return nn;
+}
+
+NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier r_binning, bool is_auto) {
+    NNCounts1D nn(r_binning);
+    double r_max = r_binning.bin_max;
+    size_t n1 = pos1.size();
+    size_t n2 = pos2.size();
+
+    omp_set_num_threads(OMP_NUM_THREADS);
+    double rp, rl;
+
+#if _OPENMP
+#pragma omp declare reduction (add : NNCounts1D : omp_out+=omp_in)
+#pragma omp parallel for collapse(2) reduction(add: nn) private(rp, rl)
+#endif
+    for (size_t i = 0; i < n1; i++) {
+	for (size_t j = 0; j < n2; j++) {
+	    if (is_auto && i >= j) {
+		continue;
+	    }
+	    rp = get<0>(r_perp(pos1[i], pos2[j]));
+	    rl = get<0>(r_par(pos1[i], pos2[j]));
+	    nn.assign_bin(sqrt((rp * rp) + (rl * rl)));
+	}
+    }
+    return nn;
+}
