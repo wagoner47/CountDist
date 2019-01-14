@@ -93,4 +93,6 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def_readonly("counts", &NNCounts1D::counts)
 	.def_readonly("bin_info", &NNCounts1D::bin_info)
 	.def(py::self += py::self);
+    m.def("get_obs_pair_counts", &get_obs_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
+    m.def("get_true_pair_counts", &get_true_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for true separations in terms of the magnitude of the separation", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a);
 }
