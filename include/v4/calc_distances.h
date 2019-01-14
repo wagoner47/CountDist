@@ -355,7 +355,7 @@ class NNCounts3D {
 
     BinSpecifier zo_bin_info() const { return zo_bins; }
 
-    NNCounts3D operator+ (const NNCounts3D& other) const {
+    NNCounts3D& operator+=(const NNCounts3D& other) const {
 	for (std::size_t i = 0; i < rpo_bins.nbins; i++) {
 	    for (std::size_t j = 0; j < rlo_bins.nbins; j++) {
 		for (std::size_t k = 0; k < zo_bins.nbins; k++) {
@@ -411,11 +411,12 @@ class NNCounts1D {
 
     BinSpecifer bin_info() const { return binner; }
 
-    NNCounts1D operator+ (const NNCounts1D& other) const {
+    NNCounts1D& operator+=(const NNCounts1D& other) const {
 	for (std::size_t i = 0; i < binner.nbins; i++) {
 	    counts_[i] += other.counts_[i];
 	}
 	n_tot_ += other.n_tot_;
+	return *this;
     }
 };
 
