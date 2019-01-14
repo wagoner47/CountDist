@@ -13,6 +13,8 @@ run
 *.pyc
 *.o
 tests/test_results/
+tests/test_data/cpp_seps_catalog_three_objects.txt
+tests/test_data/python_seps_catalog_three_objects.txt
 *_backup.*
 src/v1/
 src/v2/
