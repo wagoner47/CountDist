@@ -84,11 +84,13 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def_readonly("counts", &NNCounts3D::counts)
 	.def_readonly("rpo_bin_info", &NNCounts3D::rpo_bin_info)
 	.def_readonly("rlo_bin_info", &NNCounts3D::rlo_bin_info)
-	.def_readonly("zo_bin_info", &NNCounts3D::zo_bin_info);
+	.def_readonly("zo_bin_info", &NNCounts3D::zo_bin_info)
+	.def(py::self + py::self);
     py::class_<NNCounts1D>(m, "NNCounts1D", "Container for the pair counts in terms of the magnitude of the separation")
 	.def(py::init<BinSpecifier>())
 	.def("assign_bin", &NNCounts1D::assign_bin, "Assign a bin number to the given separation", "value"_a)
 	.def_readonly("n_tot", &NNCounts1D::n_tot)
 	.def_readonly("counts", &NNCounts1D::counts)
-	.def_readonly("bin_info", &NNCounts1D::bin_info);
+	.def_readonly("bin_info", &NNCounts1D::bin_info)
+	.def(py::self + py::self);
 }
