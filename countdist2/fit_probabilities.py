@@ -831,28 +831,18 @@ class SingleFitter(object):
         self.logger.debug("done")
 
     @contextlib.contextmanager
-    def use_params(self, params):
+    def use(self, params, samples=None):
         _saved_best_fit_params = self._best_fit_params
         _saved_samples = self._samples
         self._samples = None
         if isinstance(params, dict):
-            self._best_fit_params = np.array([params[key] for key in
-                                              self.params])
+            self._best_fit_params = np.array([
+                params[key] for key in self.params])
         else:
             self._best_fit_params = np.asarray(params)
         yield
         self._best_fit_params = _saved_best_fit_params
         self._samples = _saved_samples
-
-    @contextlib.contextmanager
-    def use_samples(self, samples):
-        _saved_best_fit_params = self._best_fit_params
-        _saved_samples = self._samples
-        self._samples = samples
-        self._best_fit_params = np.median(samples, axis=0)
-        yield
-        self._samples = _saved_samples
-        self._best_fit_params = _saved_best_fit_params
 
     def model(self, rpo, rlo, index=None):
         """
