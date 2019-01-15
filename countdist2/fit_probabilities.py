@@ -17,6 +17,7 @@ import pickle
 import os, itertools, warnings
 import copy, logging
 import seaborn as sns
+import contextlib
 
 plt.rcParams["figure.facecolor"] = "white"
 plt.style.use("seaborn-colorblind")
@@ -829,6 +830,30 @@ class SingleFitter(object):
                 self.pr = prior
         self.logger.debug("done")
 
+    @contextlib.contextmanager
+    def use_params(self, params):
+        _saved_best_fit_params = self._best_fit_params
+        _saved_samples = self._samples
+        self._samples = None
+        if isinstance(params, dict):
+            self._best_fit_params = np.array([params[key] for key in
+                                              self.params])
+        else:
+            self._best_fit_params = np.asarray(params)
+        yield
+        self._best_fit_params = _saved_best_fit_params
+        self._samples = _saved_samples
+
+    @contextlib.contextmanager
+    def use_samples(self, samples):
+        _saved_best_fit_params = self._best_fit_params
+        _saved_samples = self._samples
+        self._samples = samples
+        self._best_fit_params = np.median(samples, axis=0)
+        yield
+        self._samples = _saved_samples
+        self._best_fit_params = _saved_best_fit_params
+
     def model(self, rpo, rlo, index=None):
         """
         Get the best fit model at the given separations
@@ -986,12 +1011,12 @@ class SingleFitter(object):
                 else:
                     model_args = ((all_x + 0.5) * self.rpo_size,
                                   (all_r + 0.5) * self.rlo_size)
-                with_fill = True
-                try:
+                with_fill = (self._samples is not None)
+                if with_fill:
                     mod = self.model_with_errors(*model_args, index=mod_index)
-                except AttributeError:
-                    with_fill = False
-                    mod = self.model(*model_args, index=mod_index)
+                else:
+                    mod = self.model(*model_args, index=mod_index).to_frame(
+                        name=0.5)
 
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -1354,6 +1379,16 @@ class AnalyticSingleFitter(object):
                                 self.data.loc[:,self.col_names[1]].apply(
                 lambda x: 1. / x).sum())
 
+    @contextlib.contextmanager
+    def use(self, c, c_err=None):
+        _saved_c = self._c
+        _saved_c_err = self._c_err
+        self._c = c
+        self._c_err = c_err
+        yield
+        self._c = _saved_c
+        self._c_err = _saved_c_err
+
     def fit(self):
         self._get_const()
         self._get_err()
@@ -1415,14 +1450,6 @@ class AnalyticSingleFitter(object):
         if not hasattr(rpo, "__len__") and not hasattr(rlo, "__len__"):
             m = pd.Series([c - c_err, c, c + c_err], index=[0.16, 0.5, 0.84])
         else:
-            if index is None:
-                if not hasattr(rpo, "__len__"):
-                    index = pd.Index(rlo)
-                elif not hasattr(rlo, "__len__"):
-                    index = pd.Index(rpo)
-                else:
-                    index = pd.MultiIndex.from_arrays(
-                        [rpo, rlo], names=["RPO_BIN", "RLO_BIN"])
             m = pd.DataFrame({0.16: c - c_err, 0.5: c, 0.84: c + c_err},
                              index=index)
         return m
@@ -1505,7 +1532,7 @@ class AnalyticSingleFitter(object):
                 smh.pretty_print_number(0.5 * r_bin_size, 2)))
 
         if with_fit:
-            if (self._c is None or self._c_err is None):
+            if self._c is None:
                 warnings.warn("Ignoring with_fit because no fit has been done")
                 with_fit = False
             else:
@@ -1528,7 +1555,12 @@ class AnalyticSingleFitter(object):
                 else:
                     model_args = ((all_x + 0.5) * self.rpo_size,
                                   (all_r + 0.5) * self.rlo_size)
-                mod = self.model_with_errors(*model_args, index=mod_index)
+                with_fill = (self._c_err is not None)
+                if with_fill:
+                    mod = self.model_with_errors(*model_args, index=mod_index)
+                else:
+                    mod = self.model(*model_args, index=mod_index).to_frame(
+                        name=0.5)
 
         fig = plt.figure(figsize=figsize)
         if not hasattr(bins, "__len__"):
@@ -1546,11 +1578,12 @@ class AnalyticSingleFitter(object):
                                 yerr=data.loc[:,self.col_names[1]].apply(
                     math.sqrt), fmt="C0o", alpha=point_alpha)[0]
             if with_fit:
-                fit_fill = plt.fill_between((mod.index + 0.5) * x_bin_size,
-                                            mod.loc[:,0.16],
-                                            mod.loc[:,0.84],
-                                            color="C1",
-                                            alpha=0.4)
+                if with_fill:
+                    fit_fill = plt.fill_between((mod.index + 0.5) * x_bin_size,
+                                                mod.loc[:,0.16],
+                                                mod.loc[:,0.84],
+                                                color="C1",
+                                                alpha=0.4)
                 fit_line, = plt.plot((mod.index + 0.5) * x_bin_size,
                                      mod.loc[:,0.5], "C1-")
             plt.legend([line], [axis_label.format(
@@ -1580,9 +1613,11 @@ class AnalyticSingleFitter(object):
                                    yerr=data.loc[r,self.col_names[1]].apply(
                         math.sqrt), fmt="C0o", alpha=point_alpha)[0]
                 if with_fit:
-                    fit_fill = ax.fill_between(
-                        (mod.loc[r].index + 0.5) * x_bin_size,
-                        mod.loc[r,0.16], mod.loc[r,0.84], color="C1", alpha=0.4)
+                    if with_fill:
+                        fit_fill = ax.fill_between(
+                            (mod.loc[r].index + 0.5) * x_bin_size,
+                            mod.loc[r,0.16], mod.loc[r,0.84], color="C1",
+                            alpha=0.4)
                     fit_line, = ax.plot((mod.loc[r].index + 0.5) * x_bin_size,
                                         mod.loc[r,0.5], "C1-")
                 ax.legend([line], [axis_label.format(
