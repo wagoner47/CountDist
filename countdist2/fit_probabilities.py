@@ -831,28 +831,18 @@ class SingleFitter(object):
         self.logger.debug("done")
 
     @contextlib.contextmanager
-    def use_params(self, params):
+    def use(self, params, samples=None):
         _saved_best_fit_params = self._best_fit_params
         _saved_samples = self._samples
         self._samples = None
         if isinstance(params, dict):
-            self._best_fit_params = np.array([params[key] for key in
-                                              self.params])
+            self._best_fit_params = np.array([
+                params[key] for key in self.params])
         else:
             self._best_fit_params = np.asarray(params)
         yield
         self._best_fit_params = _saved_best_fit_params
         self._samples = _saved_samples
-
-    @contextlib.contextmanager
-    def use_samples(self, samples):
-        _saved_best_fit_params = self._best_fit_params
-        _saved_samples = self._samples
-        self._samples = samples
-        self._best_fit_params = np.median(samples, axis=0)
-        yield
-        self._samples = _saved_samples
-        self._best_fit_params = _saved_best_fit_params
 
     def model(self, rpo, rlo, index=None):
         """
@@ -2016,6 +2006,100 @@ class ProbFitter(object):
                         else:
                             pass
         self.logger.debug(self.__repr__())
+
+    @contextlib.contextmanager
+    def use(self, *, mean_x_params=None, mean_x_err_samples=None,
+            var_x_params=None, var_x_err_samples=None, mean_y_params=None,
+            mean_y_err_samples=None, var_y_params=None,
+            var_y_err_samples=None, mean_r_params=None,
+            mean_y_err_samples=None):
+        """
+        A context manager for using set parameters rather than requiring a
+        fit for the values. Note that for all instances, '*_err_samples' is
+        either an optional assumed error for an :class:`AnalyticSingleFitter`
+        instance or assumed MCMC chain from which to find quantiles for a
+        :class:`SingleFitter` instance. The '*_err_samples' are not required,
+        but '*_params' are required for any fitter the context manager should
+        handle, and the corresponding '*_params' MUST be given for any
+        '*_err_samples' that are provided. This function is likely a major
+        slow-down unless multiple fitters are being managed, so it should be
+        avoided if nothing is passed or if only one or two fitters are managed.
+
+        :kwarg mean_x_params: Either the set of parameters (for
+        :class:`SingleFitter`) or the constant (for
+        :class:`AnalyticSingleFitter`) to be used by assumption for the mean_x
+        fitter. Default `None`
+        :type mean_x_params: `float`, or array-like or `dict` of `float`
+        :kwarg mean_x_err_samples: Either a 2D array of values to assume for
+        the MCMC samples (for :class:`SingleFitter`) or the error on the
+        constant (for :class:`AnalyticSingleFitter`) to use by assumption
+        for the mean_x fitter. Default `None`
+        :type mean_x_err_samples: `float` or 2D ndarray of `float`
+        :kwarg var_x_params: As :kwarg:`mean_x_params`, but for the var_x
+        fitter. Default `None`
+        :type var_x_params: `float`, or array-like or `dict` of `float`
+        :kwarg var_x_err_samples: As :kwarg:`mean_x_err_samples`, but for the
+        var_x fitter. Default `None`
+        :type var_x_err_samples: `float` or 2D ndarray of `float`
+        :kwarg mean_y_params: As :kwarg:`mean_x_params`, but for the mean_y
+        fitter. Default `None`
+        :type mean_y_params: `float`, or array-like or `dict` of `float`
+        :kwarg mean_y_err_samples: As :kwarg:`mean_x_err_samples`, but for the
+        mean_y fitter. Default `None`
+        :type mean_y_err_samples: `float` or 2D ndarray of `float`
+        :kwarg var_y_params: As :kwarg:`mean_x_params`, but for the var_y
+        fitter. Default `None`
+        :type var_y_params: `float`, or array-like or `dict` of `float`
+        :kwarg var_y_err_samples: As :kwarg:`mean_x_err_samples`, but for the
+        var_y fitter. Default `None`
+        :type var_y_err_samples: `float` or 2D ndarray of `float`
+        :kwarg mean_r_params: As :kwarg:`mean_x_params`, but for the mean_r
+        fitter. Default `None`
+        :type mean_r_params: `float`, or array-like or `dict` of `float`
+        :kwarg mean_r_err_samples: As :kwarg:`mean_x_err_samples`, but for the
+        mean_r fitter. Default `None`
+        :type mean_r_err_samples: `float` or 2D ndarray of `float`
+        """
+        param_kwarg_switcher = dict(
+            [(mean_x, mean_x_params), (var_x, var_x_params),
+             (mean_y, mean_y_params), (var_y, var_y_params),
+             (mean_r, mean_r_params)])
+        err_kwarg_switcher = dict(
+            [(mean_x, mean_x_err_samples), (var_x, var_x_err_samples),
+             (mean_y, mean_y_err_samples), (var_y, var_y_err_samples),
+             (mean_r, mean_r_err_samples)])
+        saved_params = dict.from_keys(self.__class__._fitter_types)
+        saved_errs = dict.from_keys(self.__class__._fitter_types)
+        for fit_type in self.__class__._fitter_types:
+            params = param_kwarg_switcher[fit_type]
+            if params is not None:
+                err = err_kwarg_switcher[fit_type]
+                fitter = self._fitters[fit_type]
+                if isinstance(fitter, SingleFitter):
+                    saved_params[fit_type] = fitter._best_fit_params
+                    saved_errs[fit_type] = fitter._samples
+                    fitter._best_fit_params = params
+                    fitter._samples = err
+                else:
+                    saved_params[fit_type] = fitter._c
+                    saved_errs[fit_type] = fitter._c_err
+                    fitter._c = params
+                    fitter._c_err = err
+                self._fitters[fit_type] = fitter
+        yield
+        for fit_type in self.__class__._fitter_types:
+            params = param_kwarg_switcher[fit_type]
+            if params is not None:
+                sparams = saved_params[fit_type]
+                serrs = saved_errs[fit_type]
+                fitter = self._fitters[fit_type]
+                if isinstance(fitter, SingleFitter):
+                    fitter._best_fit_params = sparams
+                    fitter._samples = serrs
+                else:
+                    fitter._c = sparams
+                    fitter._c_err = serrs
+                self._fitters[fit_type] = fitter
 
     def mean_rpt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
