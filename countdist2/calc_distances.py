@@ -12,7 +12,8 @@ import astropy.cosmology
 import CatalogUtils
 
 
-def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None, ztcol=None, zocol=None):
+def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None,
+                  ztcol=None, zocol=None):
     if has_obs:
         print("Using column {} for true distances".format(dtcol))
     if "fit" in os.path.splitext(file_name)[1]:
@@ -50,7 +51,9 @@ def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None, ztcol=No
             zocol = docol.replace("D", "Z")
         data[docol] = np.nan
         data[zocol] = np.nan
-    cat = _calculate_distances.fill_catalog_vector(data["RA"], data["DEC"], data[dtcol], data[docol], data[ztcol], data[zocol])
+    cat = _calculate_distances.fill_catalog_vector(
+        data["RA"], data["DEC"], data[dtcol], data[docol], data[ztcol],
+        data[zocol])
     return cat
 
 
@@ -211,7 +214,8 @@ def run_calc(params_file):
              "AVE_Z_OBS": seps_out.ave_ro}).join(seps_result)
     else:
         # Should never get here, but check just in case
-        raise ValueError("Must use at least true or observed distances, or both")
+        raise ValueError("Must use at least true or observed distances, or"
+                         " both")
     return seps_result
 
 # def pair_counts_perp(rp_min, rp_max, nbins, log_bins=False, load_dir=None):
