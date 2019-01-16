@@ -13,9 +13,6 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <typeindex>
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-namespace py = pybind11;
 
 #if defined(_OPENMP) && defined(omp_num_threads)
 constexpr int OMP_NUM_THREADS = omp_num_threads;
@@ -289,11 +286,23 @@ struct BinSpecifier {
 	    bin_size = (max - min) / (double) num_bins;
 	}
     }
+
+    // copy constructor
+    BinSpecifier(const BinSpecifier& other) {
+	bin_min = other.bin_min;
+	bin_max = other.bin_max;
+	log_binning = other.log_binning;
+	nbins = other.nbins;
+	bin_size = other.bin_size;
+    }
+
+    // default constructor
+    BinSpecifier() {}
 };
 
 class NNCounts3D {
     BinSpecifier rpo_bins, rlo_bins, zo_bins;
-    py::array_t<int> counts_;
+    std::vector<std::size_t> counts_;
     std::size_t n_tot_;
 
     int assign_1d_bin(double value, BinSpecifier binning) {
@@ -312,23 +321,26 @@ class NNCounts3D {
 	}
     }
 
+    std::size_t get_1d_indexer(std::size_t x_idx, std::size_t y_idx, std::size_t z_idx) {
+	std::size_t y_max = rlo_bins.bin_max;
+	std::size_t z_max = zo_bins.bin_max;
+	return z_max * (y_max * x_idx + y_idx) + z_idx;
+    }
+
  public:
- NNCounts3D(BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning) : rpo_bins(rpo_binning), rlo_bins(rlo_binning) zo_bins(zo_binning) {
+    // copy constructor
+    NNCounts3D(const NNCounts3D& other) {
+	rpo_bins = other.rpo_bins;
+	rlo_bins = other.rlo_bins;
+	zo_bins = other.zo_bins;
+	counts_ = other.counts_;
+	n_tot_ = other.n_tot_;
+    }
+
+ NNCounts3D(BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning) : rpo_bins(rpo_binning), rlo_bins(rlo_binning), zo_bins(zo_binning) {
 	n_tot_ = 0;
 	std::size_t size = rpo_binning.nbins * rlo_binning.nbins * zo_binning.nbins;
-	int *array_ptr = new int[size];
-	for (std::size_t i = 0; i < size; i++) {
-	    array_ptr[i] = 0;
-	}
-	py::capsule free_when_done(array_ptr, [](void *f) {
-		int *array_ptr = reinterpret_cast<int *>(f);
-		delete[] array_ptr;
-	    });
-	counts_ = py::array_t<int>(
-	    {rpo_binning.nbins, rlo_binning.nbins, zo_binning.nbins},
-	    {rlo_binning.nbins * zo_binning.nbins * 8, zo_binning.nbins * 8, 8},
-	    array_ptr,
-	    free_when_done);
+	std::vector<std::size_t> counts_(size, 0);
     }
 
     void assign_bin(double r_perp, double r_par, double zbar) {
@@ -339,7 +351,7 @@ class NNCounts3D {
 	    if (rlo_bin > -1) {
 		int zo_bin = assign_1d_bin(zbar, zo_bins);
 		if (zo_bin > -1) {
-		    counts_[rpo_bin, rlo_bin, zo_bin]++;
+		    counts_[get_1d_indexer(rpo_bin, rlo_bin, zo_bin)]++;
 		}
 	    }
 	}
@@ -347,7 +359,7 @@ class NNCounts3D {
 
     std::size_t n_tot() const { return n_tot_; }
 
-    py::array_t<int> counts() const { return counts_; }
+    std::vector<std::size_t> counts() const { return counts_; }
 
     BinSpecifier rpo_bin_info() const { return rpo_bins; }
 
@@ -355,14 +367,8 @@ class NNCounts3D {
 
     BinSpecifier zo_bin_info() const { return zo_bins; }
 
-    NNCounts3D& operator+=(const NNCounts3D& other) const {
-	for (std::size_t i = 0; i < rpo_bins.nbins; i++) {
-	    for (std::size_t j = 0; j < rlo_bins.nbins; j++) {
-		for (std::size_t k = 0; k < zo_bins.nbins; k++) {
-		    counts_[i,j,k] += other.counts_[i,j,k];
-		}
-	    }
-	}
+    NNCounts3D& operator+=(const NNCounts3D& other) {
+	std::transform(counts_.begin(), counts_.end(), other.counts_.begin(), counts_.begin(), std::plus<std::size_t>());
 	n_tot_ += other.n_tot_;
 	return *this;
     }
@@ -371,24 +377,19 @@ class NNCounts3D {
 class NNCounts1D {
     BinSpecifier binner;
     std::size_t n_tot_;
-    py::array_t<int> counts_;
+    std::vector<std::size_t> counts_;
 
  public:
+    // copy constructor
+    NNCounts1D(const NNCounts1D& other) {
+	binner = other.binner;
+	n_tot_ = other.n_tot_;
+	counts_ = other.counts_;
+    }
+
  NNCounts1D(BinSpecifier binning) : binner(binning) {
 	n_tot_ = 0;
-	int *array_ptr = new int[binning.nbins];
-	for (std::size_t i = 0; i < binning.nbins; i++) {
-	    array_ptr[i] = 0;
-	}
-	py::capsule free_when_done(array_ptr, [](void *f) {
-		int *array_ptr = reinterpret_cast<int *>(f);
-		delete[] array_ptr;
-	    });
-	counts_ = py::array_t<int>(
-	    {binning.nbins,},
-	    {8,},
-	    array_ptr,
-	    free_when_done);
+	std::vector<std::size_t> counts_(binning.nbins, 0);
     }
 
     void assign_bin(double value) {
@@ -407,14 +408,12 @@ class NNCounts1D {
 
     std::size_t n_tot() const { return n_tot_; }
 
-    py::array_t<int> counts() const { return counts_; }
+    std::vector<std::size_t> counts() const { return counts_; }
 
-    BinSpecifer bin_info() const { return binner; }
+    BinSpecifier bin_info() const { return binner; }
 
-    NNCounts1D& operator+=(const NNCounts1D& other) const {
-	for (std::size_t i = 0; i < binner.nbins; i++) {
-	    counts_[i] += other.counts_[i];
-	}
+    NNCounts1D& operator+=(const NNCounts1D& other) {
+	std::transform(counts_.begin(), counts_.end(), other.counts_.begin(), counts_.begin(), std::plus<std::size_t>());
 	n_tot_ += other.n_tot_;
 	return *this;
     }

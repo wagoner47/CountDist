@@ -3,11 +3,25 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/numpy.h>
 #include <stdexcept>
+#include <cstddef>
 #include "calc_distances.h"
 PYBIND11_MAKE_OPAQUE(std::vector<Pos>);
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+py::array_t<std::size_t> convert_3d_vector(std::vector<std::size_t> vec, std::size_t size_x, std::size_t size_y, std::size_t size_z) {
+    return py::array_t<std::size_t>(
+	{size_x, size_y, size_z},
+	{size_y * size_z * sizeof(std::size_t), size_z * sizeof(std::size_t), sizeof(std::size_t)},
+	vec.data());
+}
+
+py::array_t<std::size_t> convert_1d_vector(std::vector<std::size_t> vec) {
+    return py::array_t<std::size_t>(
+	{vec.size()},
+	{sizeof(std::size_t)},
+	vec.data());
+}
 
 PYBIND11_MODULE(calculate_distances, m) {
     //PYBIND11_NUMPY_DTYPE(Separation, r_perp_t, r_par_t, r_perp_o, r_par_o, ave_r_obs, id1, id2);
@@ -80,18 +94,24 @@ PYBIND11_MODULE(calculate_distances, m) {
     py::class_<NNCounts3D>(m, "NNCounts3D", "Container for getting pair counts in terms of observed perpendicular and parallel separations and average observed redshift")
 	.def(py::init<BinSpecifier, BinSpecifier, BinSpecifier>())
 	.def("assign_bin", &NNCounts3D::assign_bin, "Assign a bin number to the given perpendicular and parallel separation and average redshift", "r_perp"_a, "r_par"_a, "zbar"_a)
-	.def_readonly("n_tot", &NNCounts3D::n_tot)
-	.def_readonly("counts", &NNCounts3D::counts)
-	.def_readonly("rpo_bin_info", &NNCounts3D::rpo_bin_info)
-	.def_readonly("rlo_bin_info", &NNCounts3D::rlo_bin_info)
-	.def_readonly("zo_bin_info", &NNCounts3D::zo_bin_info)
+	.def_property_readonly("n_tot", &NNCounts3D::n_tot)
+	.def_property_readonly("counts",
+		      [](const NNCounts3D &nn) {
+			  return convert_3d_vector(nn.counts(), nn.rpo_bin_info().nbins, nn.rlo_bin_info().nbins, nn.zo_bin_info().nbins);
+		      })
+	.def_property_readonly("rpo_bin_info", &NNCounts3D::rpo_bin_info)
+	.def_property_readonly("rlo_bin_info", &NNCounts3D::rlo_bin_info)
+	.def_property_readonly("zo_bin_info", &NNCounts3D::zo_bin_info)
 	.def(py::self += py::self);
     py::class_<NNCounts1D>(m, "NNCounts1D", "Container for the pair counts in terms of the magnitude of the separation")
 	.def(py::init<BinSpecifier>())
 	.def("assign_bin", &NNCounts1D::assign_bin, "Assign a bin number to the given separation", "value"_a)
-	.def_readonly("n_tot", &NNCounts1D::n_tot)
-	.def_readonly("counts", &NNCounts1D::counts)
-	.def_readonly("bin_info", &NNCounts1D::bin_info)
+	.def_property_readonly("n_tot", &NNCounts1D::n_tot)
+	.def_property_readonly("counts",
+		      [](const NNCounts3D &nn) {
+			  return convert_1d_vector(nn.counts());
+		      })
+	.def_property_readonly("bin_info", &NNCounts1D::bin_info)
 	.def(py::self += py::self);
     m.def("get_obs_pair_counts", &get_obs_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
     m.def("get_true_pair_counts", &get_true_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for true separations in terms of the magnitude of the separation", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a);

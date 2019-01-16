@@ -184,7 +184,7 @@ NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier 
     size_t n1 = pos1.size();
     size_t n2 = pos2.size();
 #if _OPENMP
-#pragma omp declare reduction (add : NNCounts3D : omp_out+=omp_in)
+#pragma omp declare reduction (add : NNCounts3D : omp_out+=omp_in) initializer(omp_priv=omp_orig)
 #pragma omp parallel for collapse(2) reduction(add: nn) private(rp, rl, zbar)
 #endif
     for (size_t i = 0; i < n1; i++) {
@@ -208,7 +208,6 @@ NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier 
 
 NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier r_binning, bool is_auto) {
     NNCounts1D nn(r_binning);
-    double r_max = r_binning.bin_max;
     size_t n1 = pos1.size();
     size_t n2 = pos2.size();
 
@@ -216,7 +215,7 @@ NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier
     double rp, rl;
 
 #if _OPENMP
-#pragma omp declare reduction (add : NNCounts1D : omp_out+=omp_in)
+#pragma omp declare reduction (add : NNCounts1D : omp_out+=omp_in) initializer(omp_priv=omp_orig)
 #pragma omp parallel for collapse(2) reduction(add: nn) private(rp, rl)
 #endif
     for (size_t i = 0; i < n1; i++) {
