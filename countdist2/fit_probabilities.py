@@ -336,13 +336,19 @@ def _add_bin_column(seps, orig_col_name, bin_col_name, bin_size):
         int)
 
 def _add_zbar(seps):
-    seps["ZBAR"] = CatalogUtils.z_at_chi(seps["AVE_D_OBS"])
+    if "AVE_Z_OBS" in seps.columns:
+        pass
+    else:
+        if "ZBAR" in seps.columns:
+            seps.rename(columns={"ZBAR": "AVE_Z_OBS"})
+        else:
+            seps["AVE_Z_OBS"] = CatalogUtils.z_at_chi(seps["AVE_D_OBS"])
 
 def _add_delta_column(seps, direction, scale_func, dcol_name, sigma_z):
     tcol_name = "R_{}_T".format(direction)
     ocol_name = "R_{}_O".format(direction)
     scale = 1. / scale_func(seps.loc[:,"R_PERP_O"], seps.loc[:,"R_PAR_O"],
-                            seps.loc[:,"ZBAR"], sigma_z)
+                            seps.loc[:,"AVE_Z_OBS"], sigma_z)
     seps[dcol_name] = seps[tcol_name].sub(seps[ocol_name]).mul(scale)
 
 def add_extra_columns(seps, perp_bin_size, par_bin_size, sigma_z):
@@ -351,8 +357,9 @@ def add_extra_columns(seps, perp_bin_size, par_bin_size, sigma_z):
     the column for the correlation, that is handled by a separate function.
 
     :param seps: The DataFrame of the separations which should already contain,
-    at a minimum, columns 'R_PERP_O', 'R_PAR_O', 'R_PERP_T', 'R_PAR_T', and
-    'AVE_D_OBS'. Additional columns are ignored
+    at a minimum, columns 'R_PERP_O', 'R_PAR_O', 'R_PERP_T', and 'R_PAR_T'.
+    The final needed column can be either 'AVE_D_OBS' or 'ZBAR'/'AVE_Z_OBS' for
+    forward and backward compatability. Additional columns are ignored
     :type seps: :class:`pandas.DataFrame`
     :param perp_bin_size: The bin size to use for binning 'R_PERP_O', in the
     same units as 'R_PERP_O'
@@ -368,7 +375,7 @@ def add_extra_columns(seps, perp_bin_size, par_bin_size, sigma_z):
     _add_bin_column(seps, "R_PERP_O", "RPO_BIN", perp_bin_size)
     logger.debug("Add column RLO_BIN")
     _add_bin_column(seps, "R_PAR_O", "RLO_BIN", par_bin_size)
-    logger.debug("Add column ZBAR")
+    logger.debug("Add column AVE_Z_OBS (if needed)")
     _add_zbar(seps)
     logger.debug("Add column DELTA_R_PERP")
     _add_delta_column(seps, "PERP", _perp_mean_scale, "DELTA_R_PERP", sigma_z)
