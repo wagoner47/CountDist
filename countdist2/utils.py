@@ -21,27 +21,31 @@ class MyConfigObj(ConfigObj):
                  list_values=True, create_empty=False, file_error=False,
                  stringify=True, indent_type=None, default_encoding=None,
                  unrepr=False, write_empty_values=False, _inspec=False):
-        super(MyConfigObj, self).__init__(infile, options, configspec, encoding,
-                                          interpolation, raise_errors,
-                                          list_values, create_empty, file_error,
-                                          stringify, indent_type,
-                                          default_encoding, unrepr,
-                                          write_empty_values, _inspec)
-    
+        if isinstance(infile, os.PathLike):
+            super(MyConfigObj, self).__init__(
+                os.fspath(infile), options, configspec, encoding, interpolation,
+                raise_errors, list_values, create_empty, file_error,
+                stringify, indent_type, default_encoding, unrepr,
+                write_empty_values, _inspec)
+        else:
+            super(MyConfigObj, self).__init__(
+                infile, options, configspec, encoding, interpolation,
+                raise_errors, list_values, create_empty, file_error,
+                stringify, indent_type, default_encoding, unrepr,
+                write_empty_values, _inspec)
+
     def _write_line(self, indent_string, entry, this_entry, comment):
         if not self.unrepr:
             val = super(MyConfigObj, self)._decode_element(
                 super(MyConfigObj, self)._quote(this_entry))
         else:
             val = repr(this_entry)
-        
-        return "%s%s%s%s%s" % (indent_string,
-                               super(MyConfigObj, self)._decode_element(
-                                   super(MyConfigObj, self)._quote(entry,
-                                                                   multiline=False)),
-                               super(MyConfigObj, self)._a_to_u("= "), val,
-                               super(MyConfigObj, self)._decode_element(
-                                   comment))
+
+        return "%s%s%s%s%s" % (
+            indent_string, super(MyConfigObj, self)._decode_element(
+                super(MyConfigObj, self)._quote(entry, multiline=False)),
+            super(MyConfigObj, self)._a_to_u("= "), val,
+            super(MyConfigObj, self)._decode_element(comment))
 
 
 def iterable_len(iterable):
