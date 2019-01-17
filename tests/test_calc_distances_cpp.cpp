@@ -468,10 +468,10 @@ TEST_CASE("Catalog auto-separations", "[seps][catalog][auto]") {
 	}
     }
     // Write to file for future python test
-    std::ofstream fout("test_data/cpp_seps_catalog_three_objects.txt");
+    std::ofstream fout("test_data/cpp_seps_catalog_three_objects_v2.txt");
     if (fout.is_open()) {
 	fout << "#R_PERP R_PAR ID1 ID2" << std::endl;
 	fout << seps_result;
     }
-    else FAIL("Unable to open output file 'test_data/cpp_seps_catalog_three_objects.txt'");
+    else FAIL("Unable to open output file 'test_data/cpp_seps_catalog_three_objects_v2.txt'");
 }
