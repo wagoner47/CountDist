@@ -10,6 +10,8 @@ import pandas as pd
 import numpy as np
 import astropy.cosmology
 import CatalogUtils
+import time
+from datetime import timedelta
 
 
 def _read_catalog(file_name, has_true, has_obs, dtcol=None, docol=None,
@@ -134,7 +136,7 @@ def run_calc(params_file):
     Parameters
     ----------
     :param params_file: The parameter file to be used. Note that a temporary
-    copy will be made with the appropriate input file readable by the 
+    copy will be made with the appropriate input file readable by the
     executable, but the temporary file will be removed after the code has run.
     :type params_file: string
     """
@@ -218,162 +220,124 @@ def run_calc(params_file):
                          " both")
     return seps_result
 
-# def pair_counts_perp(rp_min, rp_max, nbins, log_bins=False, load_dir=None):
-#     """Get the perpendicular pair counts (i.e. histogram of perpendicular
-# separations) for
-#     comparing to other pair counting codes. This should allow for checking the
-#     performance of the separations (rather than just that saving doesn't
-# change
-#     them) and could potentially be used for verification of the convolution
-#
-#     Parameters
-#     ----------
-#     :param rp_min: The minimum separation to include in the histogram
-#     :type rp_min: float
-#     :param rp_max: The maximum separation to include in the histogram
-#     :type rp_max: float
-#     :param nbins: The number of separation bins to histogram in
-#     :type nbins: int
-#     :param log_bins: This flag says to use logarithmic binning (for TreeCorr
-#     comparison). Default False
-#     :type log_bins: bool, optional
-#     :param load_dir: The directory from which to read the data. If None, will
-#     attempt to read from the current directory. Default None
-#     :type load_dir: str
-#
-#     Returns
-#     -------
-#     :return pc_table: The pair counts as an astropy QTable. The columns are
-#     'r_perp' (the bin centers), 'DD_TRUE', and 'DD_OBS'
-#     :rtype pc_table: `astropy.table.QTable`
-#     """
-#     pc_table = QTable()
-#     if log_bins:
-#         rp_edges, delta = np.linspace(np.log(rp_min), np.log(rp_max),
-#                 num=(nbins+1), retstep=True)
-#         rp_center = np.exp(rp_edges[:-1] + (0.5 * delta))
-#         rp_edges = np.exp(rp_edges)
-#     else:
-#         rp_edges, delta = np.linspace(rp_min, rp_max, num=(nbins+1),
-#                 retstep=True)
-#         rp_center = rp_edges[:-1] + (0.5 * delta)
-#     pc_table["r_perp"] = rp_center
-#
-#     # Note: use very large max value for max's to get all true pairs
-#     fac = 10
-#     data = read_files(0.0, fac*rp_max, 0.0, 1.0e6, load_dir)
-#     if data["r_perp_o"].max() < rp_max:
-#         raise ValueError("Can not reach desired max observed separation")
-#     while data["r_perp_t"].max() < rp_max and data["r_perp_o"].max() < (
-# fac*rp_max):
-#         fac *= 10
-#         data = read_files(0.0, fac*rp_max, 0.0, 1.0e6, load_dir)
-#     if data["r_perp_t"].max() < rp_max:
-#         raise ValueError("Can not reach desired max true separation")
-#     pc_table["DD_TRUE"] = np.histogram(data["r_perp_t"], bins=rp_edges)[0]
-#
-#     pc_table["DD_OBS"] = np.histogram(data["r_perp_o"], bins=rp_edges)[0]
-#
-#     return pc_table
-#
-#
-# def pair_counts_perp_par(rp_min, rp_max, rl_min, rl_max, np_bins, nl_bins,
-#         log_bins=False, load_dir=None):
-#     """Get the perpendicular and parallel pair counts (i.e. histogram of
-#     perpendicular separations) for comparing to other pair counting codes.
-# This
-#     should allow for checking the performance of the separations (rather than
-#     just that saving doesn't change them) and could potentially be used for
-#     verification of the convolution
-#
-#     Parameters
-#     ----------
-#     :param rp_min: The minimum perpendicular separation to include in the
-#     histogram
-#     :type rp_min: float
-#     :param rp_max: The maximum perpendicular separation to include in the
-#     histogram
-#     :type rp_max: float
-#     :param rl_min: The minimum parallel separation to include in the histogram
-#     :type rl_min: float
-#     :param rl_max: The maximum parallel separation to include in the histogram
-#     :type rl_max: float
-#     :param np_bins: The number of separation bins to histogram in the
-#     perpendicular direction
-#     :type np_bins: int
-#     :param nl_bins: The number of separation bins to histogram in the
-#     parallel direction
-#     :type nl_bins: int
-#     :param log_bins: This flag says to use logarithmic binning (for TreeCorr
-#     comparison). Default False
-#     :type log_bins: bool, optional
-#     :param load_dir: The directory from which to read the data. If None, will
-#     attempt to read from the current directory. Default None
-#     :type load_dir: str
-#
-#     Returns
-#     -------
-#     :return pc_table: The pair counts as an astropy QTable. The columns are
-#     'r_perp' (the perpendicular bin centers), 'r_par' (the parallel bin
-#     centers), 'DD_TRUE', and 'DD_OBS'. Note that the pair counts are flattened
-#     to 1D columns
-#     :rtype pc_table: `astropy.table.QTable`
-#     """
-#     pc_table = QTable()
-#     if log_bins:
-#         rp_edges, delta = np.linspace(np.log(rp_min), np.log(rp_max),
-#                 num=(np_bins+1), retstep=True)
-#         rp_center = np.exp(rp_edges[:-1] + (0.5 * delta))
-#         rp_edges = np.exp(rp_edges)
-#         rl_edges, delta = np.linspace(np.log(rl_min), np.log(rl_max),
-#                 num=(nl_bins+1), retstep=True)
-#         rl_center = np.exp(rl_edges[:-1] + (0.5 * delta))
-#         rl_edges = np.exp(rl_edges)
-#     else:
-#         rp_edges, delta = np.linspace(rp_min, rp_max, num=(np_bins+1),
-#                 retstep=True)
-#         rp_center = rp_edges[:-1] + (0.5 * delta)
-#         rl_edges, delta = np.linspace(rl_min, rl_max, num=(nl_bins+1),
-#                 retstep=True)
-#         rl_center = rl_edges[:-1] + (0.5 * delta)
-#     pc_table["r_perp"] = np.tile(rp_center, nl_bins)
-#     pc_table["r_par"] = np.repeat(rl_center, np_bins)
-#
-#     # Note: use very large max value for max's to get all true pairs
-#     pfac = 10
-#     lfac = 10
-#     data = read_files(0.0, pfac*rp_max, 0.0, lfac*rl_max, load_dir)
-#     if data["r_perp_o"].max() < rp_max:
-#         raise ValueError("Can not reach desired max observed perpendicular "\
-#                 "separation")
-#     if data["r_par_o"].max() < rl_max:
-#         raise ValueError("Can not reach desired max observed parallel "\
-#                 "separation")
-#     perp_cond = ((data["r_perp_t"].max() < rp_max) and (data[
-# "r_perp_o"].max() \
-#             < (pfac * rp_max)))
-#     par_cond = ((data["r_par_t"].max() < rl_max) and (data["r_par_o"].max()
-#  < \
-#             (lfac * rl_max)))
-#     while perp_cond or par_cond:
-#         if perp_cond:
-#             pfac *= 10
-#         if par_cond:
-#             lfac *= 10
-#         data = read_files(0.0, pfac*rp_max, 0.0, lfac*rl_max, load_dir)
-#         perp_cond = ((data["r_perp_t"].max() < rp_max) and
-#                 (data["r_perp_o"].max() < (pfac * rp_max)))
-#         par_cond = ((data["r_par_t"].max() < rl_max) and
-#                 (data["r_par_o"].max() < (lfac * rl_max)))
-#     if data["r_perp_t"].max() < rp_max:
-#         raise ValueError("Can not reach desired max true perpendicular "\
-#                 "separation")
-#     if data["r_par_t"].max() < rl_max:
-#         raise ValueError("Can not reach desired max true parallel "\
-#                 "separation")
-#     pc_table["DD_TRUE"] = np.ravel(np.histogram2d(data["r_par_t"], \
-#             data["r_perp_t"], bins=[rl_edges, rp_edges])[0])
-#     pc_table["DD_OBS"] = np.ravel(np.histogram2d(data["r_par_o"], \
-#             data["r_perp_o"], bins=[rl_edges, rp_edges])[0])
-#
-#     return pc_table
+def get_observed_pair_counts(rpo_binner, rlo_binner, zbar_binner, params_file):
+    """This function gets the observed pair counts for the files specified in
+    :param:`params_file`. Please note that the parameters '*_binner' should be
+    instances of :class:`BinSpecifier` with values set.
+
+    Parameters
+    ----------
+    :param rpo_binner: The bin specifier for observed perpendicular separations
+    :type rpo_binner: :class:`BinSpecifier`
+    :param rlo_binner: The bin specifier for observed parallel separations
+    :type rlo_binner: :class`BinSpecifier`
+    :param zbar_binner: The bin specifier for average observed redshifts
+    :type zbar_binner: :class:`BinSpecifier`
+    :param params_file: The parameter file from which to get the other details
+    for the pair counting
+    :type params_file: `str` or :class:`os.PathLike`
+
+    Returns
+    -------
+    :return nn: The counter object for this set of pair counts. The binning
+    information can be recalled using calls to 'nn.*_bin_info' (r_perp, r_par,
+    or zbar), the 3D array of counts can be obtained with 'nn.counts', and
+    the total number of pairs processed is available via 'nn.n_tot'
+    :rtype nn: :class:`NNCounts3D`
+    """
+    logger = init_logger(__name__)
+    if not isinstance(rpo_binner, _calculate_distances.BinSpecifier):
+        err_msg = ("Incorrect type for rpo_binner: {}; rpo_binner must be of"
+                   " type BinSpecifier".format(type(rpo_binner)))
+        logger.error(err_msg)
+        raise TypeError(err_msg)
+    if rpo_binner.nbins == 0:
+        err_msg = ("Values not set for rpo_binner; please make sure bin"
+                   " specifications are provided for all bin specifiers")
+        logger.error(err_msg)
+        raise ValueError(err_msg)
+    if not isinstance(rlo_binner, _calculate_distances.BinSpecifier):
+        err_msg = ("Incorrect type for rlo_binner: {}; rlo_binner must be of"
+                   " type BinSpecifier".format(type(rlo_binner)))
+        logger.error(err_msg)
+        raise TypeError(err_msg)
+    if rlo_binner.nbins == 0:
+        err_msg = ("Values not set for rlo_binner; please make sure bin"
+                   " specifications are provided for all bin specifiers")
+        logger.error(err_msg)
+        raise ValueError(err_msg)
+    if not isinstance(zbar_binner, _calculate_distances.BinSpecifier):
+        err_msg = ("Incorrect type for zbar_binner: {}; zbar_binner must be of"
+                   " type BinSpecifier".format(type(zbar_binner)))
+        logger.error(err_msg)
+        raise TypeError(err_msg)
+    if zbar_binner.nbins == 0:
+        err_msg = ("Values not set for zbar_binner; please make sure bin"
+                   " specifications are provided for all bin specifiers")
+        logger.error(err_msg)
+        raise ValueError(err_msg)
+    logger.info("Reading parameter file")
+    params_in = MyConfigObj(params_file, file_error=True)
+    try:
+        params_in = params_in["run_params"]
+    except KeyError:
+        pass
+    if params_in.as_bool("has_true1"):
+        dtcol1 = params_in["dtcol1"]
+        if "ztcol1" in params_in:
+            ztcol1 = params_in["ztcol1"]
+        else:
+            ztcol1 = dtcol1.replace("D", "Z")
+    else:
+        dtcol1 = None
+        ztcol1 = None
+    if params_in.as_bool("has_obs1"):
+        docol1 = params_in["docol1"]
+        if "zocol1" in params_in:
+            zocol1 = params_in["zocol1"]
+        else:
+            zocol1 = docol1.replace("D", "Z")
+    else:
+        docol1 = None
+        zocol1 = None
+    logger.info("Reading first catalog")
+    cat1 = _read_catalog(
+        params_in["ifname1"], params_in.as_bool("has_true"),
+        params_in.as_bool("has_obs"), dtcol1, docol1, ztcol1, zocol1)
+    if params_in["ifname2"] != params_in["ifname1"]:
+        if params_in.as_bool("has_true2"):
+            dtcol2 = params_in["dtcol2"]
+            if "ztcol2" in params_in:
+                ztcol2 = params_in["ztcol2"]
+            else:
+                ztcol2 = dtcol2.replace("D", "Z")
+        else:
+            dtcol2 = None
+            ztcol2 = None
+        if params_in.as_bool("has_obs2"):
+            docol2 = params_in["docol2"]
+            if "zocol2" in params_in:
+                zocol2 = params_in["zocol2"]
+            else:
+                zocol2 = docol2.replace("D", "Z")
+        else:
+            docol2 = None
+            zocol2 = None
+        logger.info("Reading second catalog")
+        cat2 = _read_catalog(
+            params_in["ifname2"], params_in.as_bool("has_true2"),
+            params_in.as_bool("has_obs2"), dtcol2, docol2, ztcol2, zocol2)
+        is_auto = False
+    else:
+        logger.info("Performing auto pair count")
+        cat2 = cat1
+        is_auto = True
+
+    logger.info("Getting pair counts")
+    start = time.monotonic()
+    nn = _calculate_distances.get_obs_pair_counts(
+        cat1, cat2, rpo_binner, rlo_binner, zbar_binner, is_auto)
+    stop = time.monotonic()
+    logger.info("Finished; elapsed time = {} sec".format(
+        timedelta(seconds=(stop - start)).total_seconds()))
+    return nn
