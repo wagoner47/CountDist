@@ -9,6 +9,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <string>
+#include <sstream>
 #include <tuple>
 #include <stdexcept>
 #include <unordered_map>
@@ -134,16 +135,9 @@ std::vector<Pos> fill_catalog_vector(std::vector<double> nx_vec, std::vector<dou
 struct Separation {
     double r_perp_t, r_par_t, r_perp_o, r_par_o, ave_zo;
     std::size_t id1, id2;
-    Separation() 
-        : r_perp_t(), r_par_t(), r_perp_o(), r_par_o(), ave_zo(), id1(), 
-	  id2() {}
-    Separation(double rpt, double rlt, double rpo, double rlo, double ave_z, std::size_t i1, std::size_t i2) 
-        : r_perp_t(rpt), r_par_t(rlt), r_perp_o(rpo), r_par_o(rlo), 
-          ave_zo(ave_z), id1(i1), id2(i2) {}
-    Separation(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double zbar, std::size_t i1, std::size_t i2) 
-      : r_perp_t(std::get<0>(r_perp)), r_par_t(std::get<0>(r_par)), 
-	r_perp_o(std::get<1>(r_perp)), r_par_o(std::get<1>(r_par)), 
-	ave_zo(zbar), id1(i1), id2(i2) {}
+    Separation() : r_perp_t(), r_par_t(), r_perp_o(), r_par_o(), ave_zo(), id1(), id2() {}
+    Separation(double rpt, double rlt, double rpo, double rlo, double ave_z, std::size_t i1, std::size_t i2) : r_perp_t(rpt), r_par_t(rlt), r_perp_o(rpo), r_par_o(rlo), ave_zo(ave_z), id1(i1), id2(i2) {}
+    Separation(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double zbar, std::size_t i1, std::size_t i2) : r_perp_t(std::get<0>(r_perp)), r_par_t(std::get<0>(r_par)), r_perp_o(std::get<1>(r_perp)), r_par_o(std::get<1>(r_par)), ave_zo(zbar), id1(i1), id2(i2) {}
 };
 
 std::ostream& operator<<(std::ostream &os, const Separation &s);
@@ -298,6 +292,12 @@ struct BinSpecifier {
 
     // default constructor
     BinSpecifier() {}
+
+    std::string toString() const {
+	std::ostringstream oss;
+	oss << std::boolalpha << "BinSpecifier(bin_min=" << bin_min << ", bin_max=" << bin_max << ", bin_size=" << bin_size << ", nbins="  << nbins << ", log_binning=" << log_binning << ")" << std::noboolalpha;
+	return oss.str();
+    }
 };
 
 class NNCounts3D {
@@ -372,6 +372,16 @@ class NNCounts3D {
 	n_tot_ += other.n_tot_;
 	return *this;
     }
+
+    std::string toString() {
+	std::ostringstream oss("NNCounts3D(");
+	std::string pad_string;
+	for (std::size_t i = 0; i < oss.str().size(); i++) {
+	    pad_string += " ";
+	}
+	oss << std::endl << pad_string << "rpo_bins=" << rpo_bins.toString() << "," << std::endl << pad_string << "rlo_bins=" << rlo_bins.toString() << "," << std::endl << pad_string << "zo_bins=" << zo_bins.toString() << std::endl << pad_string << ")";
+	return oss.str();
+    }
 };
 
 class NNCounts1D {
@@ -416,6 +426,10 @@ class NNCounts1D {
 	std::transform(counts_.begin(), counts_.end(), other.counts_.begin(), counts_.begin(), std::plus<std::size_t>());
 	n_tot_ += other.n_tot_;
 	return *this;
+    }
+
+    std::string toString() {
+	return "NNCounts1D(bins=" + binner.toString() + ")";
     }
 };
 

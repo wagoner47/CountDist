@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/numpy.h>
+#include <pybind11/operators.h>
 #include <stdexcept>
 #include <cstddef>
 #include "calc_distances.h"
@@ -68,6 +69,7 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def("push_back", py::overload_cast<std::tuple<double, double>, std::tuple<double, double>, double, std::size_t, std::size_t>(&VectorSeparation::push_back), "Push back a new row from individual items", "r_perpendicular"_a, "r_parallel"_a, "zo_ave"_a, "index1"_a, "index2"_a)
 	.def("reserve", &VectorSeparation::reserve, "Reserve space for the internal vectors", "new_size"_a)
 	.def("push_back", py::overload_cast<Separation>(&VectorSeparation::push_back), "Push back a new row from a Separation inststance", "new_separation"_a)
+	.def("insert", &VectorSeparation::insert, "Insert the contents of another VectorSeparation at the end of this one", "other"_a)
 	.def("__getitem__", [](const VectorSeparation &vs, int i) { try { return vs[i]; } catch (std::out_of_range& e) { throw py::index_error(e.what()); } })
 	.def_property_readonly("size", &VectorSeparation::size, "Size of internal vectors")
 	.def_property_readonly("r_perp_t", &VectorSeparation::r_perp_t, "True perpendicular separations")
@@ -84,25 +86,30 @@ PYBIND11_MODULE(calculate_distances, m) {
     m.def("ave_lost_distance", &ave_los_distance, "Get the average LOS distance between two positions, using observed positions unless either is missing the observed distance", "pos1"_a, "pos2"_a);
     m.def("get_separations", &get_separations, py::return_value_policy::take_ownership, "Get the separations between two sets of positions", "pos1"_a, "pos2"_a, "rp_min"_a, "rp_max"_a, "rl_min"_a, "rl_max"_a, "use_true"_a, "use_obs"_a, "is_auto"_a);
     py::class_<BinSpecifier>(m, "BinSpecifier", "Structure for the needed attributes for binning in a variable")
-	.def(py::init<double, double, double, bool>())
-	.def(py::init<double, double, std::size_t, bool>())
-	.def_readwrite("bin_min", &BinSpecifier::bin_min)
-	.def_readwrite("bin_max", &BinSpecifier::bin_max)
-	.def_readwrite("bin_size", &BinSpecifier::bin_size)
-	.def_readwrite("nbins", &BinSpecifier::nbins)
-	.def_readwrite("log_binning", &BinSpecifier::log_binning);
+	.def(py::init<double, double, double, bool>(), "Construct from min, max, and bin size. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "bin_width"_a, "use_log_bins"_a)
+	.def(py::init<double, double, std::size_t, bool>(), "Construct from min, max, and number of bins. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "num_bins"_a, "use_log_bins"_a)
+	.def(py::init<const BinSpecifier&>(), "Copy constructor: make a copy of 'other'", "other"_a)
+	.def(py::init<>(), "Default empty initialization")
+	.def_readwrite("bin_min", &BinSpecifier::bin_min, "Minimum bin edge")
+	.def_readwrite("bin_max", &BinSpecifier::bin_max, "Maximum bin edge")
+	.def_readwrite("bin_size", &BinSpecifier::bin_size, "Size of bins. Note that this may be different than input to make 'nbins' an integer")
+	.def_readwrite("nbins", &BinSpecifier::nbins, "Number of bins")
+	.def_readwrite("log_binning", &BinSpecifier::log_binning, "Whether to use logarithmic binning (True) or not (False)")
+	.def("__repr__", &BinSpecifier::toString);
     py::class_<NNCounts3D>(m, "NNCounts3D", "Container for getting pair counts in terms of observed perpendicular and parallel separations and average observed redshift")
-	.def(py::init<BinSpecifier, BinSpecifier, BinSpecifier>())
+	.def(py::init<const NNCounts3D&>(), "Copy constructor: make a copy of 'other'", "other"_a)
+	.def(py::init<BinSpecifier, BinSpecifier, BinSpecifier>(), "Initialize a new pair counter with the specified binning", "rperp_bin_specifier"_a, "rpar_bin_specifier"_a, "zbar_bin_specifier"_a)
 	.def("assign_bin", &NNCounts3D::assign_bin, "Assign a bin number to the given perpendicular and parallel separation and average redshift", "r_perp"_a, "r_par"_a, "zbar"_a)
-	.def_property_readonly("n_tot", &NNCounts3D::n_tot)
+	.def_property_readonly("n_tot", &NNCounts3D::n_tot, "The total number of pairs considered, for normalization")
 	.def_property_readonly("counts",
 		      [](const NNCounts3D &nn) {
 			  return convert_3d_vector(nn.counts(), nn.rpo_bin_info().nbins, nn.rlo_bin_info().nbins, nn.zo_bin_info().nbins);
-		      })
-	.def_property_readonly("rpo_bin_info", &NNCounts3D::rpo_bin_info)
-	.def_property_readonly("rlo_bin_info", &NNCounts3D::rlo_bin_info)
-	.def_property_readonly("zo_bin_info", &NNCounts3D::zo_bin_info)
-	.def(py::self += py::self);
+			       }, "The pair counts in 3D bins, as a 3D ndarray")
+	.def_property_readonly("r_perp_bin_info", &NNCounts3D::rpo_bin_info, "Get the bin specification for perpendicular bins")
+	.def_property_readonly("r_par_bin_info", &NNCounts3D::rlo_bin_info, "Get the bin specification for parallel bins")
+	.def_property_readonly("zbar_bin_info", &NNCounts3D::zo_bin_info, "Get the bin specification for average redshift bins")
+	.def(py::self += py::self)
+	.def("__repr__", &NNCounts3D::toString);
     py::class_<NNCounts1D>(m, "NNCounts1D", "Container for the pair counts in terms of the magnitude of the separation")
 	.def(py::init<BinSpecifier>())
 	.def("assign_bin", &NNCounts1D::assign_bin, "Assign a bin number to the given separation", "value"_a)
@@ -112,7 +119,8 @@ PYBIND11_MODULE(calculate_distances, m) {
 			  return convert_1d_vector(nn.counts());
 		      })
 	.def_property_readonly("bin_info", &NNCounts1D::bin_info)
-	.def(py::self += py::self);
+	.def(py::self += py::self)
+	.def("__repr__", &NNCounts1D::toString);
     m.def("get_obs_pair_counts", &get_obs_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
     m.def("get_true_pair_counts", &get_true_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for true separations in terms of the magnitude of the separation", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a);
 }
