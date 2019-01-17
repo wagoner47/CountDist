@@ -7,6 +7,7 @@ cd_dir = os.path.dirname(__file__)
 
 #from .calc_distances import run_calc
 import calculate_distances as _calculate_distances
+from calculate_distances import BinSpecifier
 from .options import set_logging_level
 from .fit_probabilities import (SingleFitter, AnalyticSingleFitter,
                                 ProbFitter, TooFewGroupsError,
