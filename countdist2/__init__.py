@@ -18,7 +18,7 @@ from .fit_probabilities import (SingleFitter, AnalyticSingleFitter,
 from . import fit_probabilities
 from .utils import MyConfigObj, ndigits
 from . import calc_distances
-from .calc_distances import run_calc
+from .calc_distances import run_calc, get_observed_pair_counts
 from .string_manip_helpers import (delatexify, strip_dollar_signs, numeric,
                                    stringify, double_curly_braces,
                                    strip_dollars_and_double_braces,

@@ -301,9 +301,10 @@ def get_observed_pair_counts(rpo_binner, rlo_binner, zbar_binner, params_file):
         docol1 = None
         zocol1 = None
     logger.info("Reading first catalog")
-    cat1 = _read_catalog(
-        params_in["ifname1"], params_in.as_bool("has_true"),
-        params_in.as_bool("has_obs"), dtcol1, docol1, ztcol1, zocol1)
+    with _calculate_distances.ostream_redirect(stdout=True, stderr=True):
+        cat1 = _read_catalog(
+            params_in["ifname1"], params_in.as_bool("has_true1"),
+            params_in.as_bool("has_obs1"), dtcol1, docol1, ztcol1, zocol1)
     if params_in["ifname2"] != params_in["ifname1"]:
         if params_in.as_bool("has_true2"):
             dtcol2 = params_in["dtcol2"]
@@ -324,9 +325,10 @@ def get_observed_pair_counts(rpo_binner, rlo_binner, zbar_binner, params_file):
             docol2 = None
             zocol2 = None
         logger.info("Reading second catalog")
-        cat2 = _read_catalog(
-            params_in["ifname2"], params_in.as_bool("has_true2"),
-            params_in.as_bool("has_obs2"), dtcol2, docol2, ztcol2, zocol2)
+        with _calculate_distances.ostream_redirect(stdout=True, stderr=True):
+            cat2 = _read_catalog(
+                params_in["ifname2"], params_in.as_bool("has_true2"),
+                params_in.as_bool("has_obs2"), dtcol2, docol2, ztcol2, zocol2)
         is_auto = False
     else:
         logger.info("Performing auto pair count")
@@ -341,3 +343,40 @@ def get_observed_pair_counts(rpo_binner, rlo_binner, zbar_binner, params_file):
     logger.info("Finished; elapsed time = {} sec".format(
         timedelta(seconds=(stop - start)).total_seconds()))
     return nn
+
+def convolve_pair_counts(nn_3d, prob_nn, r_binner, n_real=1):
+    """
+    Convolve the pair counts in :param:`nn_3d` with the probability
+    :param:`prob_nn` by doing :param:`n_real` realizations of a Monte Carlo
+    simulation of the pair counts. If :param:`n_real` is more than one,
+    calculate both the mean and variance of the realizations.
+
+    Parameters
+    ----------
+    :param nn_3d: The observed pair counts in bins of observed perpendicular
+    separation, observed parallel separation, and average observed redshift.
+    :type nn_3d: :class:`NNCounts3d`
+    :param prob_nn: The corresponding probability fitter for this pair count,
+    with fits already done (or use the context manager when calling this
+    function)
+    :type prob_nn: :class:`ProbFitter`
+    :param r_binner: The binning specifications in true separation to use
+    :type r_binner: :class:`BinSpecification`
+    :param n_real: The number of realizations of MC simulations to perform.
+    Default 1
+    :type n_real: `int`, optional
+
+    Returns
+    -------
+    :return nn_1d: The estimated true pair counts from the MC realizations. If
+    doing only one realization, the expected counts will be equal to the counts
+    from the single realization, and the variance will be `None`. For more than
+    one realization, the expected counts are an average of the realizations,
+    and the variance is calculated from (fill this in)
+    :rtype nn_1d: :class:`ExpectedNNCounts1D`
+
+    To Do
+    -----
+    - Build a :class:`ExpectedNNCounts1d`
+    - Determine how the variance should be calculated
+    """
