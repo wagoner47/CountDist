@@ -11,7 +11,7 @@
 #include <iterator>
 #include <fstream>
 #include <type_traits>
-#include <sqlite3.h>
+#include <stdexcept>
 #include "calc_distances.h"
 using namespace std;
 
@@ -61,8 +61,8 @@ vector<Pos> fill_catalog_vector(vector<double> nx_vec, vector<double> ny_vec, ve
 }
 
 ostream& operator<<(ostream &os, const Separation &s) {
-    os << s.r_perp_t << " " << s.r_par_t << " " 
-       << s.r_perp_o << " " << s.r_par_o << " " 
+    os << s.r_perp_t << " " << s.r_par_t << " "
+       << s.r_perp_o << " " << s.r_par_o << " "
        << s.ave_zo << " " << s.id1 << " " << s.id2;
     return os;
 }
@@ -136,7 +136,7 @@ VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_m
   size_t n2 = pos2.size();
   // double n2_density = (double) n2 / volume;
   // size_t max_size = n1 * npairs_each_est(rp_min, rp_max, rl_min, rl_max, n2_density);
-  
+
   VectorSeparation separations;
   /*
   cout << "Maximum vector size: " << separations.max_size() << endl;
@@ -148,7 +148,7 @@ VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_m
   omp_set_num_threads(OMP_NUM_THREADS);
   tuple<double, double> rp, rl;
   double rbar;
-  
+
 #if _OPENMP
 #pragma omp declare reduction (merge_vs : VectorSeparation : omp_out.insert(omp_in))
 #pragma omp parallel for collapse(2) reduction(merge_vs: separations) private(rp, rl, rbar)
@@ -174,9 +174,15 @@ VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_m
   return separations;
 }
 
+size_t get_1d_indexer_from_3d(size_t x_idx, size_t y_idx, size_t z_idx, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
+    if (x_idx < 0 || x_idx >= x_bins.get_nbins()) { throw out_of_range("Invalid index " + to_string(x_idx) + " for dimension with size " + to_string(x_bins.get_nbins())); }
+    if (y_idx < 0 || y_idx >= y_bins.get_nbins()) { throw out_of_range("Invalid index " + to_string(y_idx) + " for dimension with size " + to_string(y_bins.get_nbins())); }
+    if (z_idx < 0 || z_idx >= z_bins.get_nbins()) { throw out_of_range("Invalid index " + to_string(z_idx) + " for dimension with size " + to_string(z_bins.get_nbins())); }
+    return z_bins.get_nbins() * (y_bins.get_nbins() * x_idx + y_idx) + z_idx;
+}
+
 NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
     NNCounts3D nn(rpo_binning, rlo_binning, zo_binning);
-    double r_max = (isinf(rpo_binning.bin_max) || isinf(rlo_binning.bin_max)) ? INFINITY : sqrt((rpo_binning.bin_max * rpo_binning.bin_max) + (rlo_binning.bin_max * rlo_binning.bin_max));
 
     omp_set_num_threads(OMP_NUM_THREADS);
     double rp, rl;
@@ -192,15 +198,10 @@ NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier 
 	    if (is_auto && i >= j) {
 		continue;
 	    }
-	    if (check_box(pos1[i], pos2[j], r_max)) {
-		rp = get<1>(r_perp(pos1[i], pos2[j]));
-		rl = get<1>(r_par(pos1[i], pos2[j]));
-		zbar = ave_los_distance(pos1[i], pos2[j]);
-		nn.assign_bin(rp, rl, zbar);
-	    }
-	    else {
-		continue;
-	    }
+	    rp = get<1>(r_perp(pos1[i], pos2[j]));
+	    rl = get<1>(r_par(pos1[i], pos2[j]));
+	    zbar = ave_los_distance(pos1[i], pos2[j]);
+	    nn.assign_bin(rp, rl, zbar);
 	}
     }
     return nn;
