@@ -10,10 +10,29 @@
 #include <vector>
 #include <utility>
 #include <string>
+#include <type_traits>
 #include "calc_distances.h"
 PYBIND11_MAKE_OPAQUE(std::vector<Pos>);
 namespace py = pybind11;
 using namespace pybind11::literals;
+
+struct PosCatalog {
+    double RA;
+    double DEC;
+    double D_TRUE;
+    double D_OBS;
+    double Z_TRUE;
+    double Z_OBS;
+};
+struct UVecCatalog {
+    double nx;
+    double ny;
+    double nz;
+    double D_TRUE;
+    double D_OBS;
+    double Z_TRUE;
+    double Z_OBS;
+};
 
 py::array_t<std::size_t> convert_3d_vector(std::vector<std::size_t> vec, std::size_t size_x, std::size_t size_y, std::size_t size_z) {
     return py::array_t<std::size_t>(
@@ -122,10 +141,81 @@ NNCounts3D gil_pair_counts_wrapper(std::vector<Pos> pos1, std::vector<Pos> pos2,
 }
 */
 
+void set_separations(Separation &to, Separation &from) {
+    to.r_perp_t = from.r_perp_t;
+    to.r_par_t = from.r_par_t;
+    to.r_perp_o = from.r_perp_o;
+    to.r_par_o = from.r_par_o;
+    to.ave_zo = from.ave_zo;
+    to.id1 = from.id1;
+    to.id2 = from.id2;
+}
+
+template <typename T>
+py::array mkarray_via_buffer(std::size_t n) {
+    return py::array(py::buffer_info(nullptr, sizeof(T),
+				     py::format_descriptor<T>::format(),
+				     1, {n}, {sizeof(T)}));
+}
+
+template <typename S>
+py::array_t<S, 0> create_recarray_from_vector(std::vector<S> vec, std::function<void(S&, S&)> f) {
+    std::size_t n = vec.size();
+    auto arr = mkarray_via_buffer<S>(n);
+    auto req = arr.request();
+    auto ptr = static_cast<S*>(req.ptr);
+    for (std::size_t i = 0; i < n; i++) {
+	f(ptr[i], vec[i]);
+    }
+    return arr;
+}
+
+py::array_t<Separation> convert_vector_separations(VectorSeparation vs) {
+    return create_recarray_from_vector<Separation>(vs.seps_vec, set_separations);
+}
+
+std::vector<Pos> convert_catalog(py::array_t<PosCatalog> arr) {
+    auto uarr = arr.unchecked<1>();
+    std::size_t n = (std::size_t) uarr.size();
+    std::vector<Pos> vec;
+    for (std::size_t i = 0; i < n; i++) {
+	auto row = uarr(i);
+	Pos pos(row.RA, row.DEC, row.D_TRUE, row.D_OBS, row.Z_TRUE, row.Z_OBS);
+	vec.push_back(pos);
+    }
+    return vec;
+}
+
+std::vector<Pos> convert_catalog(py::array_t<UVecCatalog> arr) {
+    auto uarr = arr.unchecked<1>();
+    std::size_t n = (std::size_t) uarr.size();
+    std::vector<Pos> vec;
+    for (std::size_t i = 0; i < n; i++) {
+	auto row = uarr(i);
+	Pos pos(row.nx, row.ny, row.nz, row.D_TRUE, row.D_OBS, row.Z_TRUE, row.Z_OBS);
+	vec.push_back(pos);
+    }
+    return vec;
+}
+
+py::array_t<Separation> get_separations_arr(std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier perp_bins, BinSpecifier par_bins, bool use_true, bool use_obs, bool is_auto) {
+    VectorSeparation vs = get_separations(pos1, pos2, perp_bins.get_bin_min(), perp_bins.get_bin_max(), par_bins.get_bin_min(), par_bins.get_bin_max(), use_true, use_obs, is_auto);
+    return convert_vector_separations(vs);
+}
+
+py::array_t<Separation> get_separations_arr(py::array_t<PosCatalog> pos1, py::array_t<PosCatalog> pos2, BinSpecifier perp_bins, BinSpecifier par_bins, bool use_true, bool use_obs, bool is_auto) {
+    auto pos1_vec = convert_catalog(pos1);
+    auto pos2_vec = convert_catalog(pos2);
+    return get_separations_arr(pos1_vec, pos2_vec, perp_bins, par_bins, use_true, use_obs, is_auto);
+}
+
 
 PYBIND11_MODULE(calculate_distances, m) {
     py::add_ostream_redirect(m);
     py::bind_vector<std::vector<Pos>>(m, "VectorPos");
+    PYBIND11_NUMPY_DTYPE_EX(Separation, r_perp_t, "R_PERP_T", r_par_t, "R_PAR_T", r_perp_o, "R_PERP_O", r_par_o, "R_PAR_O", ave_zo, "AVE_Z_OBS", id1, "ID1", id2, "ID2");
+    PYBIND11_NUMPY_DTYPE(PosCatalog, RA, DEC, D_TRUE, D_OBS, Z_TRUE, Z_OBS);
+    PYBIND11_NUMPY_DTYPE(UVecCatalog, nx, ny, nz, D_TRUE, D_OBS, Z_TRUE, Z_OBS);
     py::class_<Pos>(m, "Pos", "Store the position of a object. Note that tz/oz refer to true/observed redshift while zt/zo refer to true/observed cartesian coordinates")
 	.def(py::init<double, double, double, double, double, double>(), "ra"_a, "dec"_a, "rt"_a, "ro"_a, "tz"_a, "oz"_a)
 	.def(py::init<double, double, double, double, double, double, double>(), "nx"_a, "ny"_a, "nz"_a, "rt"_a, "ro"_a, "tz"_a, "oz"_a)
@@ -183,7 +273,8 @@ PYBIND11_MODULE(calculate_distances, m) {
     m.def("r_par", &r_par, "Get the parallel separation between two postions, with order (true, observed)", "pos1"_a, "pos2"_a);
     m.def("r_perp", &r_perp, "Get the perpendicular separation between two positions, with order (true, observed)", "pos1"_a, "pos2"_a);
     m.def("ave_lost_distance", &ave_los_distance, "Get the average LOS distance between two positions, using observed positions unless either is missing the observed distance", "pos1"_a, "pos2"_a);
-    m.def("get_separations", &get_separations, py::return_value_policy::take_ownership, "Get the separations between two sets of positions", "pos1"_a, "pos2"_a, "rp_min"_a, "rp_max"_a, "rl_min"_a, "rl_max"_a, "use_true"_a, "use_obs"_a, "is_auto"_a);
+    m.def("get_separations", py::overload_cast<std::vector<Pos>, std::vector<Pos>, BinSpecifier, BinSpecifier, bool, bool, bool>(&get_separations_arr), "Get the separations between two sets of positions in vector format", "pos1"_a, "pos2"_a, "perp_bins"_a, "par_bins"_a, "use_true"_a, "use_obs"_a, "is_auto"_a);
+    m.def("get_separations", py::overload_cast<py::array_t<PosCatalog>, py::array_t<PosCatalog>, BinSpecifier, BinSpecifier, bool, bool, bool>(&get_separations_arr), "Get the separations between two sets of positions passed as numpy structured arrays", "pos1"_a, "pos2"_a, "perp_bins"_a, "par_bins"_a, "use_true"_a, "use_obs"_a, "is_auto"_a);
     py::class_<BinSpecifier>(m, "BinSpecifier", "Structure for the needed attributes for binning in a variable")
 	.def(py::init<double, double, double, bool>(), "Construct from min, max, and bin size. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "bin_width"_a, "use_log_bins"_a)
 	.def(py::init<double, double, std::size_t, bool>(), "Construct from min, max, and number of bins. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "num_bins"_a, "use_log_bins"_a)
