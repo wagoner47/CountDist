@@ -2021,7 +2021,7 @@ class ProbFitter(object):
             var_x_params=None, var_x_err_samples=None, mean_y_params=None,
             mean_y_err_samples=None, var_y_params=None,
             var_y_err_samples=None, mean_r_params=None,
-            mean_y_err_samples=None):
+            mean_r_err_samples=None):
         """
         A context manager for using set parameters rather than requiring a
         fit for the values. Note that for all instances, '*_err_samples' is
