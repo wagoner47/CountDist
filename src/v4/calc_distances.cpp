@@ -207,7 +207,7 @@ NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier 
     return nn;
 }
 
-NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier r_binning, bool is_auto) {
+NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier r_binning, bool is_auto, bool use_true) {
     NNCounts1D nn(r_binning);
     size_t n1 = pos1.size();
     size_t n2 = pos2.size();
@@ -224,8 +224,14 @@ NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier
 	    if (is_auto && i >= j) {
 		continue;
 	    }
-	    rp = get<0>(r_perp(pos1[i], pos2[j]));
-	    rl = get<0>(r_par(pos1[i], pos2[j]));
+	    if (use_true) {
+		rp = get<0>(r_perp(pos1[i], pos2[j]));
+		rl = get<0>(r_par(pos1[i], pos2[j]));
+	    }
+	    else {
+		rp = get<1>(r_perp(pos1[i], pos2[j]));
+		rl = get<1>(r_par(pos1[i], pos2[j]));
+	    }
 	    nn.assign_bin(sqrt((rp * rp) + (rl * rl)));
 	}
     }

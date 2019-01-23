@@ -847,6 +847,6 @@ class NNCounts1D {
 
 NNCounts3D get_obs_pair_counts(std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto);
 
-NNCounts1D get_true_pair_counts(std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier r_binning, bool is_auto);
+NNCounts1D get_true_pair_counts(std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier r_binning, bool is_auto, bool use_true=true);
 
 #endif
