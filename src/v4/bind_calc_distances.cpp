@@ -24,21 +24,19 @@ struct PosCatalog {
     double Z_TRUE;
     double Z_OBS;
 };
-struct UVecCatalog {
-    double nx;
-    double ny;
-    double nz;
-    double D_TRUE;
-    double D_OBS;
-    double Z_TRUE;
-    double Z_OBS;
+struct SPosCatalog {
+    double RA, DEC, D, Z;
 };
 
-py::array_t<std::size_t> convert_3d_vector(std::vector<std::size_t> vec, std::size_t size_x, std::size_t size_y, std::size_t size_z) {
-    return py::array_t<std::size_t>(
-	{size_x, size_y, size_z},
-	{size_y * size_z * sizeof(std::size_t), size_z * sizeof(std::size_t), sizeof(std::size_t)},
-	vec.data());
+template <typename T>
+py::array_t<T, 0> mkarray_from_vec(std::vector<T> vec, std::vector<std::size_t> shape) {
+    std::vector<std::size_t> strides = {shape[1] * shape[2] * sizeof(T), shape[2] * sizeof(T), sizeof(T)};
+    return py::array_t<T>(shape, strides, vec.data());
+}
+
+template <typename T>
+py::array_t<T, 0> mkarray_from_vec(std::vector<T> vec) {
+    return py::array_t<T>({vec.size()}, {sizeof(T)}, vec.data());
 }
 
 std::vector<std::pair<std::size_t, std::size_t>> convert_3d_array(py::array_t<std::size_t> counts_in, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
@@ -71,13 +69,6 @@ std::vector<std::pair<std::size_t, std::size_t>> convert_1d_array(py::array_t<st
     return out;
 }
 
-py::array_t<std::size_t> convert_1d_vector(std::vector<std::size_t> vec) {
-    return py::array_t<std::size_t>(
-	{vec.size()},
-	{sizeof(std::size_t)},
-	vec.data());
-}
-
 /*
 py::array_t<std::size_t> get_1d_indices_from_3d(py::array_t<py::array_t<std::size_t>> input_indices, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
     auto f = [x_bins, y_bins, z_bins](std::size_t x, std::size_t y, std::size_t z) { return get_1d_indexer_from_3d(x, y, z, x_bins, y_bins, z_bins); };
@@ -91,8 +82,8 @@ py::array_t<std::size_t> get_1d_indices_from_3d(py::array_t<py::array_t<std::siz
 
 ///*
 py::array_t<std::size_t> get_1d_indices_from_3d(py::array_t<std::size_t> x_indices, py::array_t<std::size_t> y_indices, py::array_t<std::size_t> z_indices, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
-auto f = [x_bins, y_bins, z_bins](std::size_t x, std::size_t y, std::size_t z) { return get_1d_indexer_from_3d(x, y, z, x_bins, y_bins, z_bins); };
-return py::vectorize(f)(x_indices, y_indices, z_indices);
+    auto f = [x_bins, y_bins, z_bins](std::size_t x, std::size_t y, std::size_t z) { return get_1d_indexer_from_3d(x, y, z, x_bins, y_bins, z_bins); };
+    return py::vectorize(f)(x_indices, y_indices, z_indices);
 }
 //*/
 
@@ -186,14 +177,13 @@ std::vector<Pos> convert_catalog(py::array_t<PosCatalog> arr) {
     return vec;
 }
 
-std::vector<Pos> convert_catalog(py::array_t<UVecCatalog> arr) {
+std::vector<SPos> convert_catalog(py::array_t<SPosCatalog> arr) {
     auto uarr = arr.unchecked<1>();
     std::size_t n = (std::size_t) uarr.size();
-    std::vector<Pos> vec;
+    std::vector<SPos> vec(n);
     for (std::size_t i = 0; i < n; i++) {
 	auto row = uarr(i);
-	Pos pos(row.nx, row.ny, row.nz, row.D_TRUE, row.D_OBS, row.Z_TRUE, row.Z_OBS);
-	vec.push_back(pos);
+	vec[i] = SPos(row.RA, row.DEC, row.D, row.Z);
     }
     return vec;
 }
@@ -209,38 +199,61 @@ py::array_t<Separation> get_separations_arr(py::array_t<PosCatalog> pos1, py::ar
     return get_separations_arr(pos1_vec, pos2_vec, perp_bins, par_bins, use_true, use_obs, is_auto);
 }
 
+NNCounts3D get_obs_pair_counts(py::array_t<SPosCatalog> pos1, py::array_t<SPosCatalog> pos2, BinSpecifier rpo_bins, BinSpecifier rlo_bins, BinSpecifier zo_bins, bool is_auto) {
+    auto pos1_vec = convert_catalog(pos1);
+    auto pos2_vec = convert_catalog(pos2);
+    return get_obs_pair_counts(pos1_vec, pos2_vec, rpo_bins, rlo_bins, zo_bins, is_auto);
+}
+
+NNCounts3D get_obs_pair_counts(py::array_t<PosCatalog> pos1, py::array_t<PosCatalog> pos2, BinSpecifier rpo_bins, BinSpecifier rlo_bins, BinSpecifier zo_bins, bool is_auto) {
+    auto pos1_vec = convert_catalog(pos1);
+    auto pos2_vec = convert_catalog(pos2);
+    return get_obs_pair_counts(pos1_vec, pos2_vec, rpo_bins, rlo_bins, zo_bins, is_auto);
+}
+
+NNCounts1D get_true_pair_counts(py::array_t<PosCatalog> pos1, py::array_t<PosCatalog> pos2, BinSpecifier r_bins, bool is_auto, bool use_true=true) {
+    auto pos1_vec = convert_catalog(pos1);
+    auto pos2_vec = convert_catalog(pos2);
+    return get_true_pair_counts(pos1_vec, pos2_vec, r_bins, is_auto, use_true);
+}
+
 
 PYBIND11_MODULE(calculate_distances, m) {
     py::add_ostream_redirect(m);
     py::bind_vector<std::vector<Pos>>(m, "VectorPos");
     PYBIND11_NUMPY_DTYPE_EX(Separation, r_perp_t, "R_PERP_T", r_par_t, "R_PAR_T", r_perp_o, "R_PERP_O", r_par_o, "R_PAR_O", ave_zo, "AVE_Z_OBS", id1, "ID1", id2, "ID2");
     PYBIND11_NUMPY_DTYPE(PosCatalog, RA, DEC, D_TRUE, D_OBS, Z_TRUE, Z_OBS);
-    PYBIND11_NUMPY_DTYPE(UVecCatalog, nx, ny, nz, D_TRUE, D_OBS, Z_TRUE, Z_OBS);
+    PYBIND11_NUMPY_DTYPE(SPosCatalog, RA, DEC, D, Z);
+    py::class_<SPos>(m, "SPos", "Store only true or only observed position of an object")
+	.def(py::init<>(), "Empty constructor")
+	.def(py::init<const double, const double, const double, const double>(), "Initialize from values", "ra"_a, "dec"_a, "r"_a, "z"_a)
+	.def(py::init<const SPos&>(), "Copy constructor", "other"_a)
+	.def("__eq__", [](const SPos& self, const SPos& other) { return self == other; })
+	.def("__neq__", [](const SPos& self, const SPos& other) { return self != other; })
+	.def_property_readonly("ra", &SPos::ra, "Right ascension (degrees)")
+	.def_property_readonly("dec", &SPos::dec, "Declination (degrees)")
+	.def_property_readonly("r", &SPos::r, "Line of sight distance")
+	.def_property_readonly("z", &SPos::z, "Redshift")
+	.def_property_readonly("uvec", &SPos::uvec, "Unit vector in cartesian coordinates")
+	.def_property_readonly("rvec", &SPos::rvec, "Cartesian coordinate vector");
     py::class_<Pos>(m, "Pos", "Store the position of a object. Note that tz/oz refer to true/observed redshift while zt/zo refer to true/observed cartesian coordinates")
-	.def(py::init<double, double, double, double, double, double>(), "ra"_a, "dec"_a, "rt"_a, "ro"_a, "tz"_a, "oz"_a)
-	.def(py::init<double, double, double, double, double, double, double>(), "nx"_a, "ny"_a, "nz"_a, "rt"_a, "ro"_a, "tz"_a, "oz"_a)
-	.def("nvec", &Pos::nvec, "Get the unit vector of the position")
-	.def("rtvec", &Pos::rtvec, "Get the vector for the true position")
-	.def("rovec", &Pos::rovec, "Get the vector for the observed position")
-	.def_property_readonly("rt", &Pos::rt)
-	.def_property_readonly("ro", &Pos::ro)
-	.def_property_readonly("true_redshift", &Pos::true_redshift)
-	.def_property_readonly("obs_redshift", &Pos::obs_redshift)
-	.def_property_readonly("ra", &Pos::ra)
-	.def_property_readonly("dec", &Pos::dec)
-	.def_property_readonly("nx", &Pos::nx)
-	.def_property_readonly("ny", &Pos::ny)
-	.def_property_readonly("nz", &Pos::nz)
-	.def_property_readonly("xt", &Pos::xt)
-	.def_property_readonly("yt", &Pos::yt)
-	.def_property_readonly("zt", &Pos::zt)
-	.def_property_readonly("xo", &Pos::xo)
-	.def_property_readonly("yo", &Pos::yo)
-	.def_property_readonly("zo", &Pos::zo)
-	.def_property_readonly("has_true", &Pos::has_true)
-	.def_property_readonly("has_obs", &Pos::has_obs);
-    m.def("fill_catalog_vector", py::overload_cast<std::vector<double>, std::vector<double>, std::vector<double>, std::vector<double>, std::vector<double>, std::vector<double>>(&fill_catalog_vector), "Initialize an std::vector<Pos> catalog from vectors of the RA, DEC, distances, and redshifts", "ra_vec"_a, "dec_vec"_a, "rt_vec"_a, "ro_vec"_a, "tz_vec"_a, "oz_vec"_a);
-    m.def("fill_catalog_vector", py::overload_cast<std::vector<double>, std::vector<double>, std::vector<double>, std::vector<double>, std::vector<double>, std::vector<double>, std::vector<double>>(&fill_catalog_vector), "Initialize an std::vector<Pos> catalog from vectors of the unit vector components and the distances and redshifts", "nx_vec"_a, "ny_vec"_a, "nz_vec"_a, "rt_vec"_a, "ro_vec"_a, "tz_vec"_a, "oz_vec"_a);
+	.def(py::init<>(), "Empty constructor")
+	.def(py::init<double, double, double, double, double, double>(), "Initialize from values", "ra"_a, "dec"_a, "rt"_a, "ro"_a, "tz"_a, "oz"_a)
+	.def(py::init<const Pos&>(), "Copy constructor", "other"_a)
+	.def_property_readonly("nvec", &Pos::nvec, "Get the unit vector of the position")
+	.def_property_readonly("rtvec", &Pos::rtvec, "Get the vector for the true position")
+	.def_property_readonly("rovec", &Pos::rovec, "Get the vector for the observed position")
+	.def_property_readonly("ra", &Pos::ra, "Right ascension (degrees)")
+	.def_property_readonly("dec", &Pos::dec, "Declination (degrees)")
+	.def_property_readonly("rt", &Pos::rt, "True line of sight distance")
+	.def_property_readonly("ro", &Pos::ro, "Observed line of sight distance")
+	.def_property_readonly("zt", &Pos::zt, "True redshift")
+	.def_property_readonly("zo", &Pos::zo, "Observed redshift")
+	.def_property_readonly("tpos", &Pos::tpos, "SPos instance for true position")
+	.def_property_readonly("opos", &Pos::opos, "SPos instance for observed position")
+	.def_property_readonly("has_true", &Pos::has_true, "Whether the object has true distance/redshift")
+	.def_property_readonly("has_obs", &Pos::has_obs, "Whether the object has observed distance/redshift");
+    m.def("fill_catalog_vector", &fill_catalog_vector, "Initialize an std::vector<Pos> catalog from vectors of the RA, DEC, distances, and redshifts", "ra_vec"_a, "dec_vec"_a, "rt_vec"_a, "ro_vec"_a, "tz_vec"_a, "oz_vec"_a);
     py::class_<Separation>(m, "Separation", "Container for the separations between two galaxies")
 	.def(py::init<>())
 	.def(py::init<double, double, double, double, double, std::size_t, std::size_t>(), "r_perp_t"_a, "r_par_t"_a, "r_perp_o"_a, "r_par_o"_a, "ave_r_obs"_a, "id1"_a, "id2"_a)
@@ -306,11 +319,14 @@ PYBIND11_MODULE(calculate_distances, m) {
 		 ))
 	.def("__eq__", [](const BinSpecifier &self, const BinSpecifier &other){ return self == other; })
 	.def("__ne__", [](const BinSpecifier &self, const BinSpecifier &other){ return self != other; })
+	.def("assign_bin", py::vectorize(&BinSpecifier::assign_bin), "Get the bin index/indices corresponding to the given value(s)", "value"_a)
+	.def("lower_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec<double>(self.lower_bin_edges()); }, "Get the lower edges of all bins")
+	.def("upper_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec<double>(self.upper_bin_edges()); }, "Get the upper edges of all bins")
 	.def_property_readonly("is_set", &BinSpecifier::is_set, "Flag to specify whether the values have actually been set (True) or not (False) yet");
     py::class_<NNCounts3D>(m, "NNCounts3D", "Container for getting pair counts in terms of observed perpendicular and parallel separations and average observed redshift")
 	.def(py::init<>(), "Empty constructor: use default empty constructor")
 	.def(py::init<const NNCounts3D&>(), "Copy constructor: make a copy of 'other'", "other"_a)
-	.def(py::init([](BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, py::array_t<std::size_t> counts, std::size_t n_tot) {
+	.def(py::init([](BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, py::array_t<int> counts, std::size_t n_tot) {
 		    auto counts_vec = convert_3d_array(counts, rpo_binning, rlo_binning, zo_binning);
 		    return NNCounts3D(rpo_binning, rlo_binning, zo_binning, counts_vec, n_tot);
 		}), "Like the copy constructor, but from pickled objects")
@@ -323,14 +339,18 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def("assign_bin", [](NNCounts3D &self, py::array_t<double> r_perp, py::array_t<double> r_par, py::array_t<double> zbar) { return assign_bin_vectorized(self, r_perp, r_par, zbar); }, "Assign a 1D bin number to the/each 3D observed separation, and add to the counts and total")
 	.def("__getitem__", [](const NNCounts3D &self, const std::size_t idx){ return self[idx]; })
 	.def_property_readonly("n_tot", &NNCounts3D::n_tot, "The total number of pairs considered, for normalization")
-	.def_property_readonly("counts",
-		      [](const NNCounts3D &nn) {
-				   return convert_3d_vector(nn.counts(), nn.rpo_bin_info().get_nbins(), nn.rlo_bin_info().get_nbins(), nn.zo_bin_info().get_nbins());
-			       }, "The pair counts in 3D bins, as a 3D ndarray")
+	.def_property_readonly("counts", [](const NNCounts3D &self) { return mkarray_from_vec<int>(self.counts(), {self.rpo_bin_info().get_nbins(), self.rlo_bin_info().get_nbins(), self.zo_bin_info().get_nbins()}); }, "The pair counts in 3D bins, as a 3D ndarray")
 	.def_property_readonly("r_perp_bin_info", &NNCounts3D::rpo_bin_info, "Get the bin specification for perpendicular bins")
 	.def_property_readonly("r_par_bin_info", &NNCounts3D::rlo_bin_info, "Get the bin specification for parallel bins")
 	.def_property_readonly("zbar_bin_info", &NNCounts3D::zo_bin_info, "Get the bin specification for average redshift bins")
 	.def(py::self += py::self)
+	.def(py::self += float())
+	.def(py::self += int())
+	.def(py::self + py::self)
+	.def(py::self + float())
+	.def(py::self + int())
+	.def(float() + py::self)
+	.def(int() + py::self)
 	.def(py::pickle(
 		 [](const NNCounts3D &self) { // __getstate__
 		     return py::make_tuple(self.rpo_bin_info(), self.rlo_bin_info(), self.zo_bin_info(), self.get_counts_1d(), self.n_tot());
@@ -341,13 +361,13 @@ PYBIND11_MODULE(calculate_distances, m) {
 		     NNCounts3D self(t[0].cast<BinSpecifier>(),
 				     t[1].cast<BinSpecifier>(),
 				     t[2].cast<BinSpecifier>(),
-				     t[3].cast<std::vector<std::pair<std::size_t, std::size_t>>>(),
+				     t[3].cast<std::vector<int>>(),
 				     t[4].cast<std::size_t>());
 
 		     return self;
 		 }
 		 ))
-	.def("get_1d_counts", &NNCounts3D::get_counts_1d, "Get a list of pairs (1d index, counts)")
+	.def_property_readonly("shape", [](const NNCounts3D &self) { return py::make_tuple(self.rpo_bin_info().get_nbins(), self.rlo_bin_info().get_nbins(), self.zo_bin_info().get_nbins()); })
 	.def("__repr__", &NNCounts3D::toString);
     py::class_<NNCounts1D>(m, "NNCounts1D", "Container for the pair counts in terms of the magnitude of the separation")
 	.def(py::init<>(), "Empty constructor")
@@ -362,16 +382,13 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def("assign_bin", [](NNCounts1D &self, py::array_t<double> r) { return assign_bin_vectorized(self, r); }, "Assign a bin number for the/each separation, and add to counts and total")
 	.def("__getitem__", [](const NNCounts1D &self, std::size_t idx) { return self[idx]; })
 	.def_property_readonly("n_tot", &NNCounts1D::n_tot)
-	.def_property_readonly("counts",
-		      [](const NNCounts1D &self) {
-			  return convert_1d_vector(self.counts());
-		      })
+	.def_property_readonly("counts", [](const NNCounts1D &self) { return mkarray_from_vec<std::size_t>(self.counts()); })
 	.def("get_1d_counts", &NNCounts1D::get_counts_pairs, "Get a list of pairs (index, counts)")
 	.def_property_readonly("bin_info", &NNCounts1D::bin_info)
 	.def(py::self += py::self)
 	.def(py::pickle(
 		 [](const NNCounts1D &self) { // __getstate__
-		     return py::make_tuple(self.bin_info(), convert_1d_vector(self.counts()), self.n_tot());
+		     return py::make_tuple(self.bin_info(), mkarray_from_vec(self.counts()), self.n_tot());
 		 },
 		 [](py::tuple t) { // __setstate__
 		     if (t.size() != 3) { throw std::runtime_error("Invalid state"); }
@@ -384,14 +401,10 @@ PYBIND11_MODULE(calculate_distances, m) {
 		 }
 		 ))
 	.def("__repr__", &NNCounts1D::toString);
-    m.def("get_obs_pair_counts", &get_obs_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
-    //m.def("get_obs_pair_counts", &gil_pair_counts_wrapper, py::call_guard<py::gil_scoped_release>(), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
-    /*
-    m.def("get_obs_pair_counts", [](std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
-	    py::gil_scoped_release release;
-	    return gil_pair_counts_wrapper(pos1, pos2, rpo_binning, rlo_binning, zo_binning, is_auto);
-	}, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
-    */
+    m.def("get_obs_pair_counts", py::overload_cast<py::array_t<SPosCatalog>, py::array_t<SPosCatalog>, BinSpecifier, BinSpecifier, BinSpecifier, bool>(&get_obs-pair_counts), py::return_value_policy::take_ownership, "Get 3D histogrammed pair counts for separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
+    m.def("get_obs_pair_counts", py::overload_cast<std::vector<Pos>, std::vector<Pos>, BinSpecifier, BinSpecifier, BinSpecifier, bool>(&get_obs_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
+    m.def("get_obs_pair_counts", py::overload_cast<py::array_t<PosCatalog>, py::array_t<PosCatalog>, BinSpecifier, BinSpecifier, BinSpecifier, bool>(&get_obs_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations (accepts numpy arrays)", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
     m.def("get_1d_index_from_3d", &get_1d_indices_from_3d, "Get the 1D indices from the given 3D indices and binning specifications", "x_indices"_a, "y_indices"_a, "z_indices"_a, "x_bins"_a, "y_bins"_a, "z_bins"_a);
-    m.def("get_true_pair_counts", &get_true_pair_counts, py::return_value_policy::take_ownership, "Get the histogrammed pair counts for separations in terms of the magnitude of the separation", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a, "use_true"_a=true);
+    m.def("get_true_pair_counts", py::overload_cast<std::vector<Pos>, std::vector<Pos>, BinSpecifier, bool, bool>(&get_true_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for separations in terms of the magnitude of the separation", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a, "use_true"_a=true);
+    m.def("get_true_pair_counts", py::overload_cast<py::array_t<PosCatalog>, py::array_t<PosCatalog>, BinSpecifier, bool, bool>(&get_true_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for separations in terms of the magnitude of the separation (accepts numpy arrays)", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a, "use_true"_a=true);
 }

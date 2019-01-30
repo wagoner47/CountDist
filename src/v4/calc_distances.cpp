@@ -11,7 +11,9 @@
 #include <iterator>
 #include <fstream>
 #include <type_traits>
+#include <limits>
 #include <stdexcept>
+#include "fast_math.h"
 #include "calc_distances.h"
 using namespace std;
 
@@ -50,83 +52,107 @@ vector<Pos> fill_catalog_vector(vector<double> ra_vec, vector<double> dec_vec, v
     return catalog;
 }
 
-vector<Pos> fill_catalog_vector(vector<double> nx_vec, vector<double> ny_vec, vector<double> nz_vec, vector<double> rt_vec, vector<double> ro_vec, vector<double> tz_vec, vector<double> oz_vec) {
-    vector<Pos> catalog;
-    catalog.reserve(nx_vec.size());
-    for (size_t i = 0; i < nx_vec.size(); i++) {
-	Pos pos(nx_vec[i], ny_vec[i], nz_vec[i], rt_vec[i], ro_vec[i], tz_vec[i], oz_vec[i]);
-	catalog.push_back(pos);
-    }
-    return catalog;
-}
-
-ostream& operator<<(ostream &os, const Separation &s) {
-    os << s.r_perp_t << " " << s.r_par_t << " "
-       << s.r_perp_o << " " << s.r_par_o << " "
-       << s.ave_zo << " " << s.id1 << " " << s.id2;
-    return os;
-}
-
-ostream& operator<<(ostream &os, const VectorSeparation &v) {
-    os << v[0];
-    for (size_t i = 1; i < v.size(); i++) {
-	os << endl << v[i];
-    }
-    return os;
-}
-
-double unit_dot(Pos pos1, Pos pos2) {
-    vector<double> n1(pos1.nvec());
-    vector<double> n2(pos2.nvec());
+double unit_dot(SPos pos1, SPos pos2) {
+    vector<double> n1(pos1.uvec()), n2(pos2.uvec());
     return inner_product(n1.begin(), n1.end(), n2.begin(), 0.0);
 }
 
+double unit_dot(Pos pos1, Pos pos2) {
+    return unit_dot(pos1.tpos(), pos2.tpos());
+}
+
+double dot(SPos pos1, SPos pos2) {
+    vector<double> r1(pos1.rvec()), r2(pos2.rvec());
+    return inner_product(r1.begin(), r1.end(), r2.begin(), 0.0);
+}
+
 tuple<double, double> dot(Pos pos1, Pos pos2) {
-    vector<double> rt1(pos1.rtvec()), ro1(pos1.rovec()), rt2(pos2.rtvec()), ro2(pos2.rovec());
-    return make_tuple(inner_product(rt1.begin(), rt1.end(), rt2.begin(), 0.0), inner_product(ro1.begin(), ro1.end(), ro2.begin(), 0.0));
+    return make_tuple(dot(pos1.tpos(), pos2.tpos()), dot(pos1.opos(), pos2.opos()));
+}
+
+double r_par(SPos pos1, SPos pos2) {
+    double mult_fac = one_over_root2 * sqrt(1.0 + unit_dot(pos1, pos2));
+    return mult_fac * fabs(pos1.r() - pos2.r());
 }
 
 tuple<double, double> r_par(Pos pos1, Pos pos2) {
-    double mult_fac = one_over_root2 * sqrt(1.0 + unit_dot(pos1, pos2));
     int sign = (pos1.has_obs() && pos2.has_obs()) ? signum(pos1.ro() - pos2.ro()) * signum(pos1.rt() - pos2.rt()) : 1;
-    return make_tuple(mult_fac * fabs(pos1.rt() - pos2.rt()) * sign, mult_fac * fabs(pos1.ro() - pos2.ro()));
+    return make_tuple(sign * r_par(pos1.tpos(), pos2.tpos()), r_par(pos1.opos(), pos2.opos()));
+}
+
+double r_perp(SPos pos1, SPos pos2) {
+    double mult_fac = one_over_root2 * sqrt(1.0 - unit_dot(pos1, pos2));
+    return mult_fac * (pos1.r() + pos2.r());
 }
 
 tuple<double, double> r_perp(Pos pos1, Pos pos2) {
-    double mult_fac = one_over_root2 * sqrt(1.0 - unit_dot(pos1, pos2));
-    return make_tuple(mult_fac * (pos1.rt() + pos2.rt()), mult_fac * (pos1.ro() + pos2.ro()));
+    return make_tuple(r_perp(pos1.tpos(), pos2.tpos()), r_perp(pos1.opos(), pos2.opos()));
+}
+
+double ave_z(SPos pos1, SPos pos2) {
+    if (isnan(pos1.z()) || isnan(pos2.z())) { return 0.0; }
+    else { return 0.5 * (pos1.z() + pos2.z()); }
+}
+
+tuple<double, double> ave_z(Pos pos1, Pos pos2) {
+    return make_tuple(ave_z(pos1.tpos(), pos2.tpos()), ave_z(pos1.opos(), pos2.opos()));
 }
 
 double ave_los_distance(Pos pos1, Pos pos2) {
-    return 0.5 * (pos1.obs_redshift() + pos2.obs_redshift());
+    return 0.5 * (pos1.zo() + pos2.zo());
 }
 
-bool check_box(Pos pos1, Pos pos2, double max) {
+bool check_sphere(SPos pos1, SPos pos2, double max) {
+    vector<double> r1(pos1.rvec()), r2(pos2.rvec()), diff;
+    transform(r1.begin(), r1.end(), r2.begin(), diff.begin(), minus<double>());
+    for (auto d : diff) {
+	if (fabs(d) > max) return false;
+    }
+    return true;
+}
+
+bool check_sphere(Pos pos1, Pos pos2, double max) {
     if (!(pos1.has_obs() && pos2.has_obs())) {
-        return ((fabs(pos1.xt() - pos2.xt()) <= max) && (fabs(pos1.yt() - pos2.yt()) <= max) && (fabs(pos1.zt() - pos2.zt()) <= max));
+	if (!(pos1.has_true() && pos2.has_true())) {
+	    throw runtime_error("Cannot mix true and observed distances");
+	}
+	return check_sphere(pos1.tpos(), pos2.tpos(), max);
     }
-    else if (pos1.has_obs() && pos2.has_obs()) {
-	return ((fabs(pos1.xo() - pos2.xo()) <= max) && (fabs(pos1.yo() - pos2.yo()) <= max) && (fabs(pos1.zo() - pos2.zo()) <= max));
+    return check_sphere(pos1.opos(), pos2.opos(), max);
+}
+
+bool check_shell(SPos pos1, SPos pos2, double min, double max) {
+    vector<double> r1(pos1.rvec()), r2(pos2.rvec()), diff;
+    transform(r1.begin(), r1.end(), r2.begin(), diff.begin(), minus<double>());
+    for (auto d : diff) {
+	if (fabs(d) < min || fabs(d) > max) return false;
     }
-    else {
-	cerr << "Cannot mix true and observed distances" << endl;
-	exit(13);
+    return true;
+}
+
+bool check_shell(Pos pos1, Pos pos2, double min, double max) {
+    if (!(pos1.has_obs() && pos2.has_obs())) {
+	if (!(pos1.has_true() && pos2.has_true())) {
+	    throw runtime_error("Cannot mix true and observed distances");
+	}
+	return check_shell(pos1.tpos(), pos2.tpos(), min, max);
     }
+    return check_shell(pos1.opos(), pos2.opos(), min, max);
 }
 
 bool check_lims(double val, double min, double max) {
     return (isfinite(val) && (val >= min) && (val <= max));
 }
 
-bool check_2lims(Pos pos1, Pos pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true) {
-    double rp, rl;
-    rp = use_true?get<0>(r_perp(pos1, pos2)):get<1>(r_perp(pos1, pos2));
-    rl = use_true?get<0>(r_par(pos1, pos2)):get<1>(r_par(pos1, pos2));
-    return (check_lims(rp, rp_min, rp_max) && check_lims(rl, rl_min, rl_max))?true:false;
+bool check_2lims(SPos pos1, SPos pos2, double rp_min, double rp_max, double rl_min, double rl_max) {
+    auto rp = r_perp(pos1, pos2);
+    auto rl = r_par(pos1, pos2);
+    return (check_lims(rp, rp_min, rp_max) && check_lims(rl, rl_min, rl_max));
 }
 
-inline size_t npairs_each_est(double rp_min, double rp_max, double rl_min, double rl_max, double n_density) {
-    return (size_t)ceil(3 * 2.0 * M_PI * (rp_max * rp_max - rp_min * rp_min) * (rl_max - rl_min) * n_density);
+bool check_2lims(Pos pos1, Pos pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true) {
+    if (use_true) { return check_2lims(pos1.tpos(), pos2.tpos(), rp_min, rp_max, rl_min, rl_max); }
+    return check_2lims(pos1.opos(), pos2.opos(), rp_min, rp_max, rl_min, rl_max);
 }
 
 VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true, bool use_obs, bool is_auto) {
@@ -134,8 +160,6 @@ VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_m
 
   size_t n1 = pos1.size();
   size_t n2 = pos2.size();
-  // double n2_density = (double) n2 / volume;
-  // size_t max_size = n1 * npairs_each_est(rp_min, rp_max, rl_min, rl_max, n2_density);
 
   VectorSeparation separations;
   /*
@@ -158,7 +182,7 @@ VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_m
 	  if (is_auto && i >= j) {
 	      continue;
 	  }
-	  if (check_box(pos1[i], pos2[j], r_max)) {
+	  if (check_sphere(pos1[i], pos2[j], r_max)) {
 	      if (check_2lims(pos1[i], pos2[j], rp_min, rp_max, rl_min, rl_max, (use_true && !use_obs))) {
 		  rp = r_perp(pos1[i], pos2[j]);
 		  rl = r_par(pos1[i], pos2[j]);
@@ -181,12 +205,62 @@ size_t get_1d_indexer_from_3d(size_t x_idx, size_t y_idx, size_t z_idx, BinSpeci
     return z_bins.get_nbins() * (y_bins.get_nbins() * x_idx + y_idx) + z_idx;
 }
 
-NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
+NNCounts3D get_obs_pair_counts(vector<SPos> pos1, vector<SPos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
     NNCounts3D nn(rpo_binning, rlo_binning, zo_binning);
 
+    double z_min = zo_binning.get_bin_min();
+    double z_max = zo_binning.get_bin_max();
+    double p_min = rpo_binning.get_bin_min();
+    double p_max = rpo_binning.get_bin_max();
+    double l_min = rlo_binning.get_bin_min();
+    double l_max = rlo_binning.get_bin_max();
+    double r_max = (isinf(p_max) || isinf(l_max)) ? numeric_limits<double>::max() : sqrt(math::power(p_max, 2) + math::power(l_max, 2));
+    double r_min = (math::isclose(p_min, 0.0) && math::isclose(l_min, 0.0)) ? 0.0 : sqrt(math::power(p_min, 2) + math::power(l_min, 2));
+
     omp_set_num_threads(OMP_NUM_THREADS);
+    cout << "Number of OpenMP threads = " << omp_get_num_threads() << endl;
+    size_t n1 = pos1.size(), n2 = pos2.size();
+
+#if _OPENMP
+#pragma omp declare reduction (add : NNCounts3D : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : nn)
+#endif
+    for (size_t i = 0; i < n1; i++) {
+	for (size_t j = 0; j < n2; j++) {
+	    if (is_auto && i >= j) continue;
+	    if (!check_shell(pos1[i], pos2[j], r_min, r_max)) continue;
+	    double zbar = ave_z(pos1[i], pos2[j]);
+	    if (!check_lims(zbar, z_min, z_max)) continue;
+	    double rp = r_perp(pos1[i], pos2[j]);
+	    if (!check_lims(rp, p_min, p_max)) continue;
+	    double rl = r_par(pos1[i], pos2[j]);
+	    if (!check_lims(rl, l_min, l_max)) continue;
+	    nn.assign_bin(rp, rl, zbar);
+	}
+    }
+    return nn;
+}
+
+NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
+    vector<SPos> spos1(pos1.size()), spos2(pos2.size());
+    for (size_t i = 0; i < pos1.size(); i++) {
+	spos1[i] = pos1[i].opos();
+    }
+    for (size_t i = 0; i < pos2.size(); i++) {
+	spos2[i] = pos2[i].opos();
+    }
+
+    return get_obs_pair_counts(spos1, spos2, rpo_binning, rlo_binning, zo_binning, is_auto);
+    /*
+    //AtomicWriter(debug, cerr) << "Initialize NNCounts3D" << endl;
+    NNCounts3D nn(rpo_binning, rlo_binning, zo_binning);
+
+    //AtomicWriter(debug, cerr) << "Set number of threads" << endl;
+    omp_set_num_threads(OMP_NUM_THREADS);
+    //AtomicWriter(debug, cerr) << "Initialize separation variables" << endl;
     double rp, rl;
     double zbar;
+    //AtomicWriter(debug, cerr) << "Get catalog sizes" << endl;
     size_t n1 = pos1.size();
     size_t n2 = pos2.size();
 #if _OPENMP
@@ -195,16 +269,27 @@ NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier 
 #endif
     for (size_t i = 0; i < n1; i++) {
 	for (size_t j = 0; j < n2; j++) {
+	    //AtomicWriter buff(debug, cerr);
 	    if (is_auto && i >= j) {
 		continue;
+	    }
+	    if (j - i == 1) {
+		buff << "i = " << to_string(i) << endl;
 	    }
 	    rp = get<1>(r_perp(pos1[i], pos2[j]));
 	    rl = get<1>(r_par(pos1[i], pos2[j]));
 	    zbar = ave_los_distance(pos1[i], pos2[j]);
+	    if (j - i == 1) {
+		buff << "assigning bin" << endl;;
+	    }
 	    nn.assign_bin(rp, rl, zbar);
+	    if (j - i == 1) {
+		buff << "done" << endl;
+	    }
 	}
     }
     return nn;
+    */
 }
 
 NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier r_binning, bool is_auto, bool use_true) {
