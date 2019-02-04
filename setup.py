@@ -57,13 +57,17 @@ class CMakeExtension(Extension):
 class CMakeBuild(build_ext):
     user_options = build_ext.user_options + [
         ("omp=", None, "Number of OpenMP threads to use, or 0 for no OpenMP"),
-        ("vers=", None, "Version of C++ code to compile")
+        ("vers=", None, "Version of C++ code to compile"),
+        ("c=", None, "C compiler to use (blank for system default)"),
+        ("cxx=", None, "C++ compiler to use (blank for system default)") 
         ]
 
     def initialize_options(self):
         build_ext.initialize_options(self)
         self.omp = None
         self.vers = None
+        self.c = None
+        self.cxx = None
 
     def finalize_options(self):
         build_ext.finalize_options(self)
@@ -98,6 +102,10 @@ class CMakeBuild(build_ext):
             cmake_args += ['-Domp=' + self.omp]
         if self.vers is not None:
             cmake_args += ['-Dvers=' + self.vers]
+        if self.c is not None:
+            cmake_args += ['-DCMAKE_C_COMPILER=' + self.c]
+        if self.cxx is not None:
+            cmake_args += ['-DCMAKE_CXX_COMPILER=' + self.cxx]
 
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]
