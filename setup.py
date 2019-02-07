@@ -4,8 +4,6 @@ import platform, sysconfig
 import pathlib
 import shutil
 from setuptools import setup, Extension, Command
-from setuptools.command.install import install
-from setuptools.command.develop import develop
 from setuptools.command.build_ext import build_ext
 from setuptools.command.test import test as TestCommand
 from distutils.version import LooseVersion
@@ -124,15 +122,29 @@ class CMakeBuild(build_ext):
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(
             os.getenv('CXXFLAGS', ''), self.distribution.get_version())
 
-        subprocess.check_call(
-            ['cmake', str(ext.sourcedir)] + cmake_args, cwd=build_temp, env=env)
-        if not self.dry_run:
+        try:
             subprocess.check_call(
-                ['cmake', '--build', '.'] + build_args, cwd=build_temp)
+                ['cmake', str(ext.sourcedir)] + cmake_args,
+                env=env, cwd=build_temp
+            )
+        except subprocess.CalledProcessError as e:
+            print(e.cmd, flush=True)
+            print(e.output, flush=True)
+            raise e
+        if not self.dry_run:
+            try:
+                subprocess.check_call(
+                    ['cmake', '--build', '.'] + build_args, cwd=build_temp
+                )
+            except subprocess.CalledProcessError as e:
+                print(e.cmd, flush=True)
+                print(e.output, flush=True)
+                raise e
             try:
                 os.link(
                     extdir,
-                    cd_dir.joinpath("countdist2", "calculate_distances.so"))
+                    cd_dir.joinpath("countdist2", "calculate_distances.so")
+                )
             except:
                 pass
 
@@ -159,8 +171,6 @@ class CatchTestCommand(TestCommand):
 
     def finalize_options(self):
         TestCommand.finalize_options(self)
-        if self.catch_args is None:
-            self.catch_args = ""
 
     def distutils_dir_name(self, dname):
         dir_name = "{dirname}.{platform}-{version[0]}.{version[1]}"
@@ -185,9 +195,17 @@ class CatchTestCommand(TestCommand):
         print("\nRunning Python tests...\n")
         TestCommand.run(self)
         print("\nRunning C++ tests...\n")
-        subprocess.check_call(
-            [str(pathlib.Path("bin", "*_test")), self.catch_args],
-            cwd=cd_dir.joinpath("tests"), shell=True)
+        cpp_command = str(pathlib.Path("bin", "*_test"))
+        if self.catch_args is not None:
+            cpp_command += " " + self.catch_args
+        try:
+            subprocess.check_call(
+                cpp_command, cwd=cd_dir.joinpath("tests"), shell=True
+            )
+        except subprocess.CalledProcessError as e:
+            print(e.cmd, flush=True)
+            print(e.output, flush=True)
+            raise e
 
 
 class CleanCommand(Command):
