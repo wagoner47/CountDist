@@ -194,99 +194,93 @@ struct VectorSeparation {
     VectorSeparation(std::vector<Separation> s_vec)
 	: seps_vec(s_vec), size_(s_vec.size()) {}
     void push_back(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double zbar, std::size_t i1, std::size_t i2) {
-	seps_vec.push_back(Separation(r_perp, r_par, zbar, i1, i2));
-	size_++;
+        seps_vec.push_back(Separation(r_perp, r_par, zbar, i1, i2));
+        size_++;
     }
     void push_back(Separation s) {
-	seps_vec.push_back(s);
-	size_++;
+        seps_vec.push_back(s);
+        size_++;
     }
     const Separation& operator[](int i) const {
-	if (i < 0) {
-	    i += (int)size_;
-	}
-	if (i >= (int)size_) {
-	    throw std::out_of_range("Index " + std::to_string(i) + " out of range for vector of length " + std::to_string(size_));
-	}
-	return seps_vec[i];
+        if (i < 0) {
+            i += (int)size_;
+        }
+        if (i >= (int)size_) {
+            throw std::out_of_range("Index " + std::to_string(i) + " out of range for vector of length " + std::to_string(size_));
+        }
+        return seps_vec[i];
     }
     std::vector<double> r_perp_t() {
-	std::vector<double> out(size_);
-	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_perp_t;
-	}
-	return out;
+        std::vector<double> out(size_);
+        for (std::size_t i = 0; i < size_; i++) {
+            out[i] = seps_vec[i].r_perp_t;
+        }
+        return out;
     }
     std::vector<double> r_par_t() {
-	std::vector<double> out(size_);
-	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_par_t;
-	}
-	return out;
+        std::vector<double> out(size_);
+        for (std::size_t i = 0; i < size_; i++) {
+            out[i] = seps_vec[i].r_par_t;
+        }
+        return out;
     }
     std::vector<double> r_perp_o() {
-	std::vector<double> out(size_);
-	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_perp_o;
-	}
-	return out;
+        std::vector<double> out(size_);
+        for (std::size_t i = 0; i < size_; i++) {
+            out[i] = seps_vec[i].r_perp_o;
+        }
+        return out;
     }
     std::vector<double> r_par_o() {
-	std::vector<double> out(size_);
-	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].r_par_o;
-	}
-	return out;
+        std::vector<double> out(size_);
+        for (std::size_t i = 0; i < size_; i++) {
+            out[i] = seps_vec[i].r_par_o;
+        }
+        return out;
     }
     std::vector<double> ave_zo() {
-	std::vector<double> out(size_);
-	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].ave_zo;
-	}
-	return out;
+        std::vector<double> out(size_);
+        for (std::size_t i = 0; i < size_; i++) {
+            out[i] = seps_vec[i].ave_zo;
+        }
+        return out;
     }
     std::vector<std::size_t> id1() {
-	std::vector<std::size_t> out(size_);
-	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].id1;
-	}
-	return out;
+        std::vector<std::size_t> out(size_);
+        for (std::size_t i = 0; i < size_; i++) {
+            out[i] = seps_vec[i].id1;
+        }
+        return out;
     }
     std::vector<std::size_t> id2() {
-	std::vector<std::size_t> out(size_);
-	for (std::size_t i = 0; i < size_; i++) {
-	    out[i] = seps_vec[i].id2;
-	}
-	return out;
+        std::vector<std::size_t> out(size_);
+        for (std::size_t i = 0; i < size_; i++) {
+            out[i] = seps_vec[i].id2;
+        }
+        return out;
     }
-    const std::size_t size() const {
-	return size_;
-    }
-    void reserve(std::size_t new_size) {
-	seps_vec.reserve(new_size);
-    }
-    const std::size_t max_size() const {
-	return seps_vec.max_size();
-    }
+    const std::size_t size() const { return size_; }
+    void reserve(std::size_t new_size) { seps_vec.reserve(new_size); }
+    const std::size_t max_size() const { return seps_vec.max_size(); }
     void insert(VectorSeparation other) {
-	seps_vec.insert(seps_vec.end(), other.seps_vec.begin(), other.seps_vec.end());
-	size_ += other.size();
+        seps_vec.insert(seps_vec.end(), other.seps_vec.begin(), other.seps_vec.end());
+        size_ += other.size();
     }
 
     friend std::ostream& operator<<(std::ostream& os, const VectorSeparation& v) {
-	auto vec = v.seps_vec;
-	for (const auto& this_v : vec) {
-	    os << this_v;
-	    if (vec.back() != this_v) { os << std::endl; }
-	}
-	return os;
+        auto vec = v.seps_vec;
+        for (const auto& this_v : vec) {
+            os << this_v;
+            if (vec.back() != this_v) { os << std::endl; }
+        }
+        return os;
     }
 
     bool operator==(const VectorSeparation& other) const {
-	for (auto sep : other.seps_vec) {
-	    if (std::find(seps_vec.begin(), seps_vec.end(), sep) == seps_vec.end()) return false;
-	}
-	return true;
+        for (auto sep : other.seps_vec) {
+            if (std::find(seps_vec.begin(), seps_vec.end(), sep) == seps_vec.end()) return false;
+        }
+        return true;
     }
 
     bool operator!=(const VectorSeparation& other) const { return !(*this == other); }
