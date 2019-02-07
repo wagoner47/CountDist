@@ -207,7 +207,7 @@ NNCounts3D get_obs_pair_counts(vector<SPos> pos1, vector<SPos> pos2, BinSpecifie
 #endif
     for (size_t i = 0; i < n1; i++) {
         for (size_t j = 0; j < n2; j++) {
-            if (i == 0 && j == 0) cout << "Number of OpenMP threads = " << omp_get_num_threads() << endl;
+            if (i == 0 && j == 0) cout << "Number of OpenMP threads = " << omp_get_num_threads() << endl << "OMP_NUM_THREADS = " << OMP_NUM_THREADS << endl;
             if (is_auto && i >= j) continue;
             if (!check_shell(pos1[i], pos2[j], r_min, r_max)) continue;
             double zbar = ave_z(pos1[i], pos2[j]);
