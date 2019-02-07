@@ -107,8 +107,8 @@ bool check_sphere(Pos pos1, Pos pos2, double max) {
 }
 
 bool check_shell(SPos pos1, SPos pos2, double min, double max) {
-    vector<double> r1(pos1.rvec()), r2(pos2.rvec()), diff;
-    transform(r1.begin(), r1.end(), r2.begin(), diff.begin(), minus<double>());
+    vector<double> r1(pos1.rvec()), r2(pos2.rvec()), diff(3, 0.0);
+    transform(r1.begin(), r1.end(), r2.begin(), diff.begin(), minus<>());
     for (auto d : diff) {
 	    if (fabs(d) < min || fabs(d) > max) return false;
     }
@@ -140,7 +140,8 @@ bool check_2lims(Pos pos1, Pos pos2, double rp_min, double rp_max, double rl_min
 }
 
 VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true, bool use_obs, bool is_auto) {
-  double r_max = (isinf(rp_max) || isinf(rl_max)) ? INFINITY : sqrt((rp_max * rp_max) + (rl_max * rl_max));
+  double r_max = (isinf(rp_max) || isinf(rl_max)) ? numeric_limits<double>::max() : sqrt(math::power(rp_max, 2) + math::power(rl_max, 2));
+  double r_min = (math::isclose(rp_min, 0.0) && math::isclose(rl_min, 0.0)) ? 0.0 : sqrt(math::power(rp_min, 2) + math::power(rl_min, 2));
 
   size_t n1 = pos1.size();
   size_t n2 = pos2.size();
@@ -154,29 +155,23 @@ VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_m
   cout << "Space reserved" << endl;
   */
   omp_set_num_threads(OMP_NUM_THREADS);
-  tuple<double, double> rp, rl;
-  double rbar;
 
 #if _OPENMP
-#pragma omp declare reduction (merge_vs : VectorSeparation : omp_out.insert(omp_in))
-#pragma omp parallel for collapse(2) reduction(merge_vs: separations) private(rp, rl, rbar)
+#pragma omp declare reduction (merge_vs : VectorSeparation : omp_out.insert(omp_in)) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(merge_vs: separations)
 #endif
   for(size_t i = 0; i < n1; i++) {
       for (size_t j = 0; j < n2; j++) {
-	  if (is_auto && i >= j) {
-	      continue;
-	  }
-	  if (check_sphere(pos1[i], pos2[j], r_max)) {
-	      if (check_2lims(pos1[i], pos2[j], rp_min, rp_max, rl_min, rl_max, (use_true && !use_obs))) {
-		  rp = r_perp(pos1[i], pos2[j]);
-		  rl = r_par(pos1[i], pos2[j]);
-		  rbar = ave_los_distance(pos1[i], pos2[j]);
-		  separations.push_back(rp, rl, rbar, i, j);
-	      }
-	      else {
-		  continue;
-	      }
-	  }
+          if (is_auto && i >= j) continue;
+          if (check_shell(pos1[i], pos2[j], r_min, r_max)) {
+              if (check_2lims(pos1[i], pos2[j], rp_min, rp_max, rl_min, rl_max, (use_true && !use_obs))) {
+                  tuple<double, double> rp = r_perp(pos1[i], pos2[j]);
+                  tuple<double, double> rl = r_par(pos1[i], pos2[j]);
+                  double rbar = ave_los_distance(pos1[i], pos2[j]);
+                  separations.push_back(rp, rl, rbar, i, j);
+              }
+              else continue;
+          }
       }
   }
   return separations;
