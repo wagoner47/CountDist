@@ -21,33 +21,18 @@ using namespace std;
 #if _OPENMP
 #include <omp.h>
 #else
-typedef int omp_int_t;
+//typedef int omp_int_t;
 inline void omp_set_num_threads(int n) {}
-inline omp_int_t omp_get_thread_num() { return 0; }
-inline omp_int_t omp_get_max_threads() { return 1; }
+//inline omp_int_t omp_get_thread_num() { return 0; }
+//inline omp_int_t omp_get_max_threads() { return 1; }
 #endif
-
-template <typename T> inline constexpr int signum(T x, false_type is_signed) {
-    return T(0) < x;
-}
-
-template <typename T> inline constexpr int signum(T x, true_type is_signed) {
-    return (T(0) < x) - (x < T(0));
-}
-
-template <typename T> inline constexpr int signum(T x) {
-    return isnan(x) ? 1 : signum(x, is_signed<T>());
-}
-
-const double one_over_root2 = 0.707106781186548;
-const size_t widx = 100000;
 
 vector<Pos> fill_catalog_vector(vector<double> ra_vec, vector<double> dec_vec, vector<double> rt_vec, vector<double> ro_vec, vector<double> tz_vec, vector<double> oz_vec) {
     vector<Pos> catalog;
     catalog.reserve(ra_vec.size());
     for (size_t i = 0; i < ra_vec.size(); i++) {
-	Pos pos(ra_vec[i], dec_vec[i], rt_vec[i], ro_vec[i], tz_vec[i], oz_vec[i]);
-	catalog.push_back(pos);
+        Pos pos(ra_vec[i], dec_vec[i], rt_vec[i], ro_vec[i], tz_vec[i], oz_vec[i]);
+        catalog.push_back(pos);
     }
     return catalog;
 }
@@ -71,17 +56,17 @@ tuple<double, double> dot(Pos pos1, Pos pos2) {
 }
 
 double r_par(SPos pos1, SPos pos2) {
-    double mult_fac = one_over_root2 * sqrt(1.0 + unit_dot(pos1, pos2));
+    double mult_fac = math::dsqrt_2 * sqrt(1.0 + unit_dot(pos1, pos2));
     return mult_fac * fabs(pos1.r() - pos2.r());
 }
 
 tuple<double, double> r_par(Pos pos1, Pos pos2) {
-    int sign = (pos1.has_obs() && pos2.has_obs()) ? signum(pos1.ro() - pos2.ro()) * signum(pos1.rt() - pos2.rt()) : 1;
+    int sign = (pos1.has_obs() && pos2.has_obs()) ? math::signof(pos1.ro() - pos2.ro()) * math::signof(pos1.rt() - pos2.rt()) : 1;
     return make_tuple(sign * r_par(pos1.tpos(), pos2.tpos()), r_par(pos1.opos(), pos2.opos()));
 }
 
 double r_perp(SPos pos1, SPos pos2) {
-    double mult_fac = one_over_root2 * sqrt(1.0 - unit_dot(pos1, pos2));
+    double mult_fac = math::dsqrt_2 * sqrt(1.0 - unit_dot(pos1, pos2));
     return mult_fac * (pos1.r() + pos2.r());
 }
 
@@ -106,17 +91,17 @@ bool check_sphere(SPos pos1, SPos pos2, double max) {
     vector<double> r1(pos1.rvec()), r2(pos2.rvec()), diff;
     transform(r1.begin(), r1.end(), r2.begin(), diff.begin(), minus<double>());
     for (auto d : diff) {
-	if (fabs(d) > max) return false;
+	    if (fabs(d) > max) return false;
     }
     return true;
 }
 
 bool check_sphere(Pos pos1, Pos pos2, double max) {
     if (!(pos1.has_obs() && pos2.has_obs())) {
-	if (!(pos1.has_true() && pos2.has_true())) {
-	    throw runtime_error("Cannot mix true and observed distances");
-	}
-	return check_sphere(pos1.tpos(), pos2.tpos(), max);
+        if (!(pos1.has_true() && pos2.has_true())) {
+            throw runtime_error("Cannot mix true and observed distances");
+        }
+	    return check_sphere(pos1.tpos(), pos2.tpos(), max);
     }
     return check_sphere(pos1.opos(), pos2.opos(), max);
 }
@@ -125,17 +110,17 @@ bool check_shell(SPos pos1, SPos pos2, double min, double max) {
     vector<double> r1(pos1.rvec()), r2(pos2.rvec()), diff;
     transform(r1.begin(), r1.end(), r2.begin(), diff.begin(), minus<double>());
     for (auto d : diff) {
-	if (fabs(d) < min || fabs(d) > max) return false;
+	    if (fabs(d) < min || fabs(d) > max) return false;
     }
     return true;
 }
 
 bool check_shell(Pos pos1, Pos pos2, double min, double max) {
     if (!(pos1.has_obs() && pos2.has_obs())) {
-	if (!(pos1.has_true() && pos2.has_true())) {
-	    throw runtime_error("Cannot mix true and observed distances");
-	}
-	return check_shell(pos1.tpos(), pos2.tpos(), min, max);
+        if (!(pos1.has_true() && pos2.has_true())) {
+            throw runtime_error("Cannot mix true and observed distances");
+        }
+        return check_shell(pos1.tpos(), pos2.tpos(), min, max);
     }
     return check_shell(pos1.opos(), pos2.opos(), min, max);
 }
@@ -151,8 +136,7 @@ bool check_2lims(SPos pos1, SPos pos2, double rp_min, double rp_max, double rl_m
 }
 
 bool check_2lims(Pos pos1, Pos pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true) {
-    if (use_true) { return check_2lims(pos1.tpos(), pos2.tpos(), rp_min, rp_max, rl_min, rl_max); }
-    return check_2lims(pos1.opos(), pos2.opos(), rp_min, rp_max, rl_min, rl_max);
+    return use_true ? check_2lims(pos1.tpos(), pos2.tpos(), rp_min, rp_max, rl_min, rl_max) : check_2lims(pos1.opos(), pos2.opos(), rp_min, rp_max, rl_min, rl_max);
 }
 
 VectorSeparation get_separations(vector<Pos> pos1, vector<Pos> pos2, double rp_min, double rp_max, double rl_min, double rl_max, bool use_true, bool use_obs, bool is_auto) {
