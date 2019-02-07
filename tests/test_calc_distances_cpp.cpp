@@ -273,65 +273,65 @@ TEST_CASE("Catalog of positions", "[VecPos][catalog]") {
     char *end;
     std::ifstream fin("test_data/catalog_three_objects_v2.txt");
     if (fin.is_open()) {
-	while(std::getline(fin, line)) {
-	    if (line[0] == '#') continue;
-	    CAPTURE(line);
-	    std::istringstream iss(line);
-	    if (!(iss >> rai >> deci >> rti >> nani >> tzi >> nani2)) FAIL("Unable to read test catalog file 'test_data/catalog_three_objects_v2.txt'");
-	    roi = std::strtod(nani.c_str(), &end);
-	    ozi = std::strtod(nani2.c_str(), &end);
-	    ra_vec.push_back(rai);
-	    dec_vec.push_back(deci);
-	    rt_vec.push_back(rti);
-	    ro_vec.push_back(roi);
-	    tz_vec.push_back(tzi);
-	    oz_vec.push_back(ozi);
-	}
-	fin.close();
+        while(std::getline(fin, line)) {
+            if (line[0] == '#') continue;
+            CAPTURE(line);
+            std::istringstream iss(line);
+            if (!(iss >> rai >> deci >> rti >> nani >> tzi >> nani2)) FAIL("Unable to read test catalog file 'test_data/catalog_three_objects_v2.txt'");
+            roi = std::strtod(nani.c_str(), &end);
+            ozi = std::strtod(nani2.c_str(), &end);
+            ra_vec.push_back(rai);
+            dec_vec.push_back(deci);
+            rt_vec.push_back(rti);
+            ro_vec.push_back(roi);
+            tz_vec.push_back(tzi);
+            oz_vec.push_back(ozi);
+        }
+        fin.close();
     }
     else FAIL("Unable to open test catalog file 'test_data/catalog_three_objects_v2.txt'");
     std::vector<Pos> catalog = fill_catalog_vector(ra_vec, dec_vec, rt_vec, ro_vec, tz_vec, oz_vec);
     // First require that the size of the catalog is correct
     REQUIRE(catalog.size() == ra_vec.size());
     SECTION("Check RA is correct for each entry") {
-	for (std::size_t i = 0; i < ra_vec.size(); i++) {
-	    CAPTURE(i);
-	    REQUIRE(catalog[i].ra() == Approx(ra_vec[i]).margin(1.e-7));
-	}
+        for (std::size_t i = 0; i < ra_vec.size(); i++) {
+            CAPTURE(i);
+            REQUIRE(catalog[i].ra() == Approx(ra_vec[i]).margin(1.e-7));
+        }
     }
     SECTION("Check DEC is correct for each entry") {
-	for (std::size_t i = 0; i < dec_vec.size(); i++) {
-	    CAPTURE(i);
-	    REQUIRE(catalog[i].dec() == Approx(dec_vec[i]).margin(1.e-7));
-	}
+        for (std::size_t i = 0; i < dec_vec.size(); i++) {
+            CAPTURE(i);
+            REQUIRE(catalog[i].dec() == Approx(dec_vec[i]).margin(1.e-7));
+        }
     }
     SECTION("Check true distance is correct for each entry") {
-	for (std::size_t i = 0; i < rt_vec.size(); i++) {
-	    CAPTURE(i);
-	    // Here I also require that it has true
-	    REQUIRE(catalog[i].has_true());
-	    REQUIRE(catalog[i].rt() == Approx(rt_vec[i]).margin(1.e-7));
-	}
+        for (std::size_t i = 0; i < rt_vec.size(); i++) {
+            CAPTURE(i);
+            // Here I also require that it has true
+            REQUIRE(catalog[i].has_true());
+            REQUIRE(catalog[i].rt() == Approx(rt_vec[i]).margin(1.e-7));
+        }
     }
     SECTION("Check observed distance is math::dnan for each entry") {
-	for (std::size_t i = 0; i < ro_vec.size(); i++) {
-	    CAPTURE(i);
-	    // Here I also require that it doesn't have obs
-	    REQUIRE_FALSE(catalog[i].has_obs());
-	    REQUIRE(std::isnan(catalog[i].ro()));
-	}
+        for (std::size_t i = 0; i < ro_vec.size(); i++) {
+            CAPTURE(i);
+            // Here I also require that it doesn't have obs
+            REQUIRE_FALSE(catalog[i].has_obs());
+            REQUIRE(std::isnan(catalog[i].ro()));
+        }
     }
     SECTION("Check true redshift is correct for each entry") {
-	for (std::size_t i = 0; i < tz_vec.size(); i++) {
-	    CAPTURE(i);
-	    REQUIRE(catalog[i].zt() == Approx(tz_vec[i]).margin(1.e-7));
-	}
+        for (std::size_t i = 0; i < tz_vec.size(); i++) {
+            CAPTURE(i);
+            REQUIRE(catalog[i].zt() == Approx(tz_vec[i]).margin(1.e-7));
+        }
     }
     SECTION("Check observed redshift is math::dnan for each entry") {
-	for (std::size_t i = 0; i < oz_vec.size(); i++) {
-	    CAPTURE(i);
-	    REQUIRE(std::isnan(catalog[i].zo()));
-	}
+        for (std::size_t i = 0; i < oz_vec.size(); i++) {
+            CAPTURE(i);
+            REQUIRE(std::isnan(catalog[i].zo()));
+        }
     }
 }
 
@@ -360,12 +360,6 @@ TEST_CASE("Catalog auto-separations", "[seps][catalog][auto]") {
         fin.close();
     }
     else FAIL("Unable to open test catalog file 'test_data/catalog_three_objects_v2.txt'");
-    CAPTURE(ra_vec);
-    CAPTURE(dec_vec);
-    CAPTURE(rt_vec);
-    CAPTURE(ro_vec);
-    CAPTURE(tz_vec);
-    CAPTURE(oz_vec);
     // Get the expected separations and IDs (individual calculations already tested)
     // Use a wide range of allowed separations here to keep all of them (only 3)
     std::tuple<double, double> r_perp_i, r_par_i;
@@ -401,24 +395,24 @@ TEST_CASE("Catalog auto-separations", "[seps][catalog][auto]") {
     REQUIRE(seps_result.size() == seps_expected.size());
     bool match_found;
     for (std::size_t i = 0; i < seps_expected.size(); i++) {
-	CAPTURE(i);
-	CAPTURE("Finding matching pair in output");
-	match_found = false;
-	for (std::size_t j = 0; j < seps_result.size(); j++) {
-	    if (seps_result[j].id1 == ids_expected[i][0] && seps_result[j].id2 == ids_expected[i][1]) {
-		match_found = true;
-		REQUIRE(seps_result[j].r_perp_t == Approx(std::get<0>(seps_expected[i][0])));
-		REQUIRE(seps_result[j].r_par_t == Approx(std::get<0>(seps_expected[i][1])));
-		REQUIRE(std::isnan(seps_result[j].r_perp_o));
-		REQUIRE(std::isnan(seps_result[j].r_par_o));
-		REQUIRE(std::isnan(seps_result[j].ave_zo));
-	    }
-	    else continue;
-	}
-	if (!match_found) {
-	    CAPTURE(ids_expected[i]);
-	    FAIL("No match found in output");
-	}
+        CAPTURE(i);
+        CAPTURE("Finding matching pair in output");
+        match_found = false;
+        for (std::size_t j = 0; j < seps_result.size(); j++) {
+            if (seps_result[j].id1 == ids_expected[i][0] && seps_result[j].id2 == ids_expected[i][1]) {
+            match_found = true;
+            REQUIRE(seps_result[j].r_perp_t == Approx(std::get<0>(seps_expected[i][0])));
+            REQUIRE(seps_result[j].r_par_t == Approx(std::get<0>(seps_expected[i][1])));
+            REQUIRE(std::isnan(seps_result[j].r_perp_o));
+            REQUIRE(std::isnan(seps_result[j].r_par_o));
+            REQUIRE(std::isnan(seps_result[j].ave_zo));
+            }
+            else continue;
+        }
+        if (!match_found) {
+            CAPTURE(ids_expected[i]);
+            FAIL("No match found in output");
+        }
     }
     // Write to file for future python test
     std::ofstream fout("test_data/cpp_seps_catalog_three_objects_v2.txt");
