@@ -21,10 +21,11 @@ using namespace std;
 #if _OPENMP
 #include <omp.h>
 #else
-//typedef int omp_int_t;
-inline void omp_set_num_threads(int n) {}
+typedef int omp_int_t;
+inline void omp_set_num_threads(int) {}
 //inline omp_int_t omp_get_thread_num() { return 0; }
 //inline omp_int_t omp_get_max_threads() { return 1; }
+inline omp_int_t omp_get_num_threads() { return 1; }
 #endif
 
 vector<Pos> fill_catalog_vector(vector<double> ra_vec, vector<double> dec_vec, vector<double> rt_vec, vector<double> ro_vec, vector<double> tz_vec, vector<double> oz_vec) {
@@ -197,7 +198,7 @@ NNCounts3D get_obs_pair_counts(vector<SPos> pos1, vector<SPos> pos2, BinSpecifie
     double r_min = (math::isclose(p_min, 0.0) && math::isclose(l_min, 0.0)) ? 0.0 : sqrt(math::power(p_min, 2) + math::power(l_min, 2));
 
     omp_set_num_threads(OMP_NUM_THREADS);
-    cout << "Number of OpenMP threads = " << omp_get_num_threads() << endl;
+    //cout << "Number of OpenMP threads = " << omp_get_num_threads() << endl;
     size_t n1 = pos1.size(), n2 = pos2.size();
 
 #if _OPENMP
@@ -205,99 +206,100 @@ NNCounts3D get_obs_pair_counts(vector<SPos> pos1, vector<SPos> pos2, BinSpecifie
 #pragma omp parallel for collapse(2) reduction(add : nn)
 #endif
     for (size_t i = 0; i < n1; i++) {
-	for (size_t j = 0; j < n2; j++) {
-	    if (is_auto && i >= j) continue;
-	    if (!check_shell(pos1[i], pos2[j], r_min, r_max)) continue;
-	    double zbar = ave_z(pos1[i], pos2[j]);
-	    if (!check_lims(zbar, z_min, z_max)) continue;
-	    double rp = r_perp(pos1[i], pos2[j]);
-	    if (!check_lims(rp, p_min, p_max)) continue;
-	    double rl = r_par(pos1[i], pos2[j]);
-	    if (!check_lims(rl, l_min, l_max)) continue;
-	    nn.assign_bin(rp, rl, zbar);
-	}
+        for (size_t j = 0; j < n2; j++) {
+            if (i == 0 && j == 0) cout << "Number of OpenMP threads = " << omp_get_num_threads() << endl;
+            if (is_auto && i >= j) continue;
+            if (!check_shell(pos1[i], pos2[j], r_min, r_max)) continue;
+            double zbar = ave_z(pos1[i], pos2[j]);
+            if (!check_lims(zbar, z_min, z_max)) continue;
+            double rp = r_perp(pos1[i], pos2[j]);
+            if (!check_lims(rp, p_min, p_max)) continue;
+            double rl = r_par(pos1[i], pos2[j]);
+            if (!check_lims(rl, l_min, l_max)) continue;
+            nn.assign_bin(rp, rl, zbar);
+        }
     }
-    return nn;
+return nn;
 }
 
 NNCounts3D get_obs_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
-    vector<SPos> spos1(pos1.size()), spos2(pos2.size());
-    for (size_t i = 0; i < pos1.size(); i++) {
-	spos1[i] = pos1[i].opos();
-    }
-    for (size_t i = 0; i < pos2.size(); i++) {
-	spos2[i] = pos2[i].opos();
-    }
+vector<SPos> spos1(pos1.size()), spos2(pos2.size());
+for (size_t i = 0; i < pos1.size(); i++) {
+spos1[i] = pos1[i].opos();
+}
+for (size_t i = 0; i < pos2.size(); i++) {
+spos2[i] = pos2[i].opos();
+}
 
-    return get_obs_pair_counts(spos1, spos2, rpo_binning, rlo_binning, zo_binning, is_auto);
-    /*
-    //AtomicWriter(debug, cerr) << "Initialize NNCounts3D" << endl;
-    NNCounts3D nn(rpo_binning, rlo_binning, zo_binning);
+return get_obs_pair_counts(spos1, spos2, rpo_binning, rlo_binning, zo_binning, is_auto);
+/*
+//AtomicWriter(debug, cerr) << "Initialize NNCounts3D" << endl;
+NNCounts3D nn(rpo_binning, rlo_binning, zo_binning);
 
-    //AtomicWriter(debug, cerr) << "Set number of threads" << endl;
-    omp_set_num_threads(OMP_NUM_THREADS);
-    //AtomicWriter(debug, cerr) << "Initialize separation variables" << endl;
-    double rp, rl;
-    double zbar;
-    //AtomicWriter(debug, cerr) << "Get catalog sizes" << endl;
-    size_t n1 = pos1.size();
-    size_t n2 = pos2.size();
+//AtomicWriter(debug, cerr) << "Set number of threads" << endl;
+omp_set_num_threads(OMP_NUM_THREADS);
+//AtomicWriter(debug, cerr) << "Initialize separation variables" << endl;
+double rp, rl;
+double zbar;
+//AtomicWriter(debug, cerr) << "Get catalog sizes" << endl;
+size_t n1 = pos1.size();
+size_t n2 = pos2.size();
 #if _OPENMP
 #pragma omp declare reduction (add : NNCounts3D : omp_out+=omp_in) initializer(omp_priv=omp_orig)
 #pragma omp parallel for collapse(2) reduction(add: nn) private(rp, rl, zbar)
 #endif
-    for (size_t i = 0; i < n1; i++) {
-	for (size_t j = 0; j < n2; j++) {
-	    //AtomicWriter buff(debug, cerr);
-	    if (is_auto && i >= j) {
-		continue;
-	    }
-	    if (j - i == 1) {
-		buff << "i = " << to_string(i) << endl;
-	    }
-	    rp = get<1>(r_perp(pos1[i], pos2[j]));
-	    rl = get<1>(r_par(pos1[i], pos2[j]));
-	    zbar = ave_los_distance(pos1[i], pos2[j]);
-	    if (j - i == 1) {
-		buff << "assigning bin" << endl;;
-	    }
-	    nn.assign_bin(rp, rl, zbar);
-	    if (j - i == 1) {
-		buff << "done" << endl;
-	    }
-	}
+for (size_t i = 0; i < n1; i++) {
+for (size_t j = 0; j < n2; j++) {
+    //AtomicWriter buff(debug, cerr);
+    if (is_auto && i >= j) {
+    continue;
     }
-    return nn;
-    */
+    if (j - i == 1) {
+    buff << "i = " << to_string(i) << endl;
+    }
+    rp = get<1>(r_perp(pos1[i], pos2[j]));
+    rl = get<1>(r_par(pos1[i], pos2[j]));
+    zbar = ave_los_distance(pos1[i], pos2[j]);
+    if (j - i == 1) {
+    buff << "assigning bin" << endl;;
+    }
+    nn.assign_bin(rp, rl, zbar);
+    if (j - i == 1) {
+    buff << "done" << endl;
+    }
+}
+}
+return nn;
+*/
 }
 
 NNCounts1D get_true_pair_counts(vector<Pos> pos1, vector<Pos> pos2, BinSpecifier r_binning, bool is_auto, bool use_true) {
-    NNCounts1D nn(r_binning);
-    size_t n1 = pos1.size();
-    size_t n2 = pos2.size();
+NNCounts1D nn(r_binning);
+size_t n1 = pos1.size();
+size_t n2 = pos2.size();
 
-    omp_set_num_threads(OMP_NUM_THREADS);
-    double rp, rl;
+omp_set_num_threads(OMP_NUM_THREADS);
+double rp, rl;
 
 #if _OPENMP
 #pragma omp declare reduction (add : NNCounts1D : omp_out+=omp_in) initializer(omp_priv=omp_orig)
 #pragma omp parallel for collapse(2) reduction(add: nn) private(rp, rl)
 #endif
-    for (size_t i = 0; i < n1; i++) {
-	for (size_t j = 0; j < n2; j++) {
-	    if (is_auto && i >= j) {
-		continue;
-	    }
-	    if (use_true) {
-		rp = get<0>(r_perp(pos1[i], pos2[j]));
-		rl = get<0>(r_par(pos1[i], pos2[j]));
-	    }
-	    else {
-		rp = get<1>(r_perp(pos1[i], pos2[j]));
-		rl = get<1>(r_par(pos1[i], pos2[j]));
-	    }
-	    nn.assign_bin(sqrt((rp * rp) + (rl * rl)));
-	}
+for (size_t i = 0; i < n1; i++) {
+for (size_t j = 0; j < n2; j++) {
+    if (is_auto && i >= j) {
+    continue;
     }
-    return nn;
+    if (use_true) {
+    rp = get<0>(r_perp(pos1[i], pos2[j]));
+    rl = get<0>(r_par(pos1[i], pos2[j]));
+    }
+    else {
+    rp = get<1>(r_perp(pos1[i], pos2[j]));
+    rl = get<1>(r_par(pos1[i], pos2[j]));
+    }
+    nn.assign_bin(sqrt((rp * rp) + (rl * rl)));
+}
+}
+return nn;
 }
