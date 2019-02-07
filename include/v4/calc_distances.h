@@ -32,46 +32,50 @@ struct SPos {
 
     SPos(const double ra, const double dec, const double r, const double z)
 	: r_(r), z_(z), is_initialized_(true) {
-	set_ra(ra);
-	set_dec(dec);
-	uvec_ = get_nxyz(ra, dec);
+        set_ra(ra);
+        set_dec(dec);
+        uvec_ = get_nxyz(ra, dec);
     }
 
     SPos(const SPos& other)
 	: ra_(other.ra_), dec_(other.dec_), r_(other.r_), z_(other.z_), uvec_(other.uvec_), is_initialized_(other.is_initialized_) {}
 
-    inline bool operator==(const SPos& other) {
-	return (is_initialized_ == other.is_initialized_) && (!is_initialized_ || (math::isclose(ra_, other.ra_) && math::isclose(dec_, other.dec_) && math::isclose(r_, other.r_) && math::isclose(z_, other.z_)));
+    bool operator==(const SPos& other) const {
+        bool same_init = is_initialized_ == other.is_initialized_;
+        if (!is_initialized_) return same_init;
+        bool rclose = std::isnan(r_) ? std::isnan(other.r_) : math::isclose(r_, other.r_);
+        bool zclose = std::isnan(z_) ? std::isnan(other.z_) : math::isclose(z_, other.z_);
+        return same_init && math::isclose(ra_, other.ra_) && math::isclose(dec_, other.dec_) && rclose && zclose;
     }
 
-    inline bool operator!=(const SPos& other) { return !(*this == other); }
+    bool operator!=(const SPos& other) const { return !(*this == other); }
 
     SPos& operator=(const SPos& other) {
-	if (*this != other) {
-	    uvec_.clear();
-	    uvec_.resize(other.uvec_.size());
-	    ra_ = other.ra_;
-	    dec_ = other.dec_;
-	    r_ = other.r_;
-	    z_ = other.z_;
-	    std::copy(other.uvec_.begin(), other.uvec_.end(), uvec_.begin());
-	    is_initialized_ = other.is_initialized_;
-	}
-	return *this;
+        if (*this != other) {
+            uvec_.clear();
+            uvec_.resize(other.uvec_.size());
+            ra_ = other.ra_;
+            dec_ = other.dec_;
+            r_ = other.r_;
+            z_ = other.z_;
+            std::copy(other.uvec_.begin(), other.uvec_.end(), uvec_.begin());
+            is_initialized_ = other.is_initialized_;
+        }
+        return *this;
     }
 
     SPos& operator=(SPos&& other) noexcept {
-	if (*this != other) {
-	    uvec_.clear();
-	    uvec_.shrink_to_fit();
-	    uvec_ = std::exchange(other.uvec_, std::vector<double>());
-	    ra_ = std::exchange(other.ra_, 0.0);
-	    dec_ = std::exchange(other.dec_, 0.0);
-	    r_ = std::exchange(other.r_, 0.0);
-	    z_ = std::exchange(other.z_, 0.0);
-	    is_initialized_ = std::exchange(other.is_initialized_, false);
-	}
-	return *this;
+        if (*this != other) {
+            uvec_.clear();
+            uvec_.shrink_to_fit();
+            uvec_ = std::exchange(other.uvec_, std::vector<double>());
+            ra_ = std::exchange(other.ra_, 0.0);
+            dec_ = std::exchange(other.dec_, 0.0);
+            r_ = std::exchange(other.r_, 0.0);
+            z_ = std::exchange(other.z_, 0.0);
+            is_initialized_ = std::exchange(other.is_initialized_, false);
+        }
+	    return *this;
     }
 
     double ra() const { return ra_; }
@@ -92,17 +96,17 @@ private:
     bool is_initialized_;
 
     void set_ra(const double value) {
-	if ((value < 0.0) || (value > 360.0) || std::isnan(value)) {
-	    throw std::invalid_argument("RA outside of valid range [0.0, 360.0]");
-	}
-	ra_ = value;
+        if ((value < 0.0) || (value > 360.0) || std::isnan(value)) {
+            throw std::invalid_argument("RA outside of valid range [0.0, 360.0]");
+        }
+        ra_ = value;
     }
 
     void set_dec(const double value) {
-	if ((value < -90.0) || (value > 90.0) || std::isnan(value)) {
-	    throw std::invalid_argument("DEC outside of valid range [-90.0, 90.0]");
-	}
-	dec_ = value;
+        if ((value < -90.0) || (value > 90.0) || std::isnan(value)) {
+            throw std::invalid_argument("DEC outside of valid range [-90.0, 90.0]");
+        }
+        dec_ = value;
     }
 
     friend struct Pos;
@@ -111,21 +115,11 @@ private:
 struct Pos{
     Pos() {}
 
-    Pos(double ra, double dec, double rt, double ro, double zt, double zo) {
-	tpos_ = SPos(ra, dec, rt, zt);
-	has_true_ = !std::isnan(tpos_.r_);
-	opos_ = SPos(tpos_);
-	opos_.r_ = ro;
-	opos_.z_ = zo;
-	has_obs_ = !std::isnan(opos_.r_);
-    }
+    Pos(double ra, double dec, double rt, double ro, double zt, double zo)
+    : tpos_(SPos(ra, dec, rt, zt)), opos_(SPos(ra, dec, ro, zo)) {}
 
-    Pos(const Pos& other) {
-	tpos_ = other.tpos_;
-	opos_ = other.opos_;
-	has_true_ = other.has_true_;
-	has_obs_ = other.has_obs_;
-    }
+    Pos(const Pos& other)
+    : tpos_(other.tpos_), opos_(other.opos_) {}
 
     std::vector<double> nvec() { return tpos_.uvec_; }
 
@@ -149,12 +143,18 @@ struct Pos{
 
     SPos opos() const { return opos_; }
 
-    bool has_true() const { return has_true_; }
+    bool has_true() const { return !std::isnan(tpos_.r_); }
 
-    bool has_obs() const { return has_obs_; }
+    bool has_obs() const { return !std::isnan(opos_.r_); }
+
+    bool operator==(const Pos& other) const {
+        return std::isnan(tpos_.r_) == std::isnan(other.opos_.r_) && std::isnan(opos_.r_) == std::isnan(other.opos_.r_) && tpos_ == other.tpos_ && opos_ == other.opos_;
+    }
+
+    bool operator!=(const Pos& other) const { return !(*this == other); }
+    
 private:
     SPos tpos_, opos_;
-    bool has_true_, has_obs_;
 };
 
 std::vector<Pos> fill_catalog_vector(std::vector<double> ra_vec, std::vector<double> dec_vec, std::vector<double> rt_vec, std::vector<double> ro_vec, std::vector<double> tz_vec, std::vector<double> oz_vec);
@@ -168,22 +168,22 @@ struct Separation {
     Separation(std::tuple<double, double> r_perp, std::tuple<double, double> r_par, double zbar, std::size_t i1, std::size_t i2)
 	: r_perp_t(std::get<0>(r_perp)), r_par_t(std::get<0>(r_par)), r_perp_o(std::get<1>(r_perp)), r_par_o(std::get<1>(r_par)), ave_zo(zbar), id1(i1), id2(i2) {}
 
-    inline bool operator==(const Separation& other) {
-	bool rpt = (std::isnan(r_perp_t) && std::isnan(other.r_perp_t)) || math::isclose(r_perp_t, other.r_perp_t);
-	bool rlt = (std::isnan(r_par_t) && std::isnan(other.r_par_t)) || math::isclose(r_par_t, other.r_par_t);
-	bool rpo = (std::isnan(r_perp_o) && std::isnan(other.r_perp_o)) || math::isclose(r_perp_o, other.r_perp_o);
-	bool rlo = (std::isnan(r_par_o) && std::isnan(other.r_par_o)) || math::isclose(r_par_o, other.r_par_o);
-	bool zo = (std::isnan(ave_zo) && std::isnan(other.ave_zo)) || math::isclose(ave_zo, other.ave_zo);
-	return rpt && rlt && rpo && rlo && zo && id1 == other.id1 && id2 == other.id2;
+    bool operator==(const Separation& other) const {
+        bool rpt = std::isnan(r_perp_t) ? std::isnan(other.r_perp_t) : math::isclose(r_perp_t, other.r_perp_t);
+        bool rlt = std::isnan(r_par_t) ? std::isnan(other.r_par_t) : math::isclose(r_par_t, other.r_par_t);
+        bool rpo = std::isnan(r_perp_o) ? std::isnan(other.r_perp_o) : math::isclose(r_perp_o, other.r_perp_o);
+        bool rlo = std::isnan(r_par_o) ? std::isnan(other.r_par_o) : math::isclose(r_par_o, other.r_par_o);
+        bool zo = std::isnan(ave_zo) ? std::isnan(other.ave_zo) : math::isclose(ave_zo, other.ave_zo);
+        return rpt && rlt && rpo && rlo && zo && id1 == other.id1 && id2 == other.id2;
     }
 
-    inline bool operator!=(const Separation& other) { return !(*this == other); }
+    bool operator!=(const Separation& other) const { return !(*this == other); }
 
     friend std::ostream& operator<<(std::ostream& os, const Separation& s) {
-	os << s.r_perp_t << " " << s.r_par_t << " "
-	   << s.r_perp_o << " " << s.r_par_o << " "
-	   << s.ave_zo << " " << s.id1 << " " << s.id2;
-	return os;
+        os << s.r_perp_t << " " << s.r_par_t << " "
+           << s.r_perp_o << " " << s.r_par_o << " "
+           << s.ave_zo << " " << s.id1 << " " << s.id2;
+        return os;
     }
 };
 
@@ -281,6 +281,15 @@ struct VectorSeparation {
 	}
 	return os;
     }
+
+    bool operator==(const VectorSeparation& other) const {
+	for (auto sep : other.seps_vec) {
+	    if (std::find(seps_vec.begin(), seps_vec.end(), sep) == seps_vec.end()) return false;
+	}
+	return true;
+    }
+
+    bool operator!=(const VectorSeparation& other) const { return !(*this == other); }
 
 private:
     std::size_t size_;
@@ -548,20 +557,14 @@ public:
 	return ((_is_set == other._is_set) && (log_binning == other.log_binning) && (nbins == other.nbins) && math::isclose(bin_size, other.bin_size) && math::isclose(bin_min, other.bin_min) && math::isclose(bin_max, other.bin_max));
     }
 
-    bool operator!=(const BinSpecifier &other) const {
-	return !(*this == other);
-    }
+    bool operator!=(const BinSpecifier &other) const { return !(*this == other); }
 
     int assign_bin(double value) {
-	if ((value < bin_min) || (value > bin_max)) {
-	    return -1;
-	}
-	else {
-	    double diff;
-	    if (log_binning) { diff = log(value) - log(bin_min); }
-	    else { diff = value - bin_min; }
-	    return (int) floor(diff / bin_size);
-	}
+	if ((value < bin_min) || (value > bin_max)) return -1;
+	double diff;
+	if (log_binning) diff = log(value) - log(bin_min);
+	else diff = value - bin_min;
+	return (int) floor(diff / bin_size);
     }
 
     std::vector<double> lower_bin_edges() const {
@@ -753,30 +756,13 @@ class NNCounts3D {
 class NNCounts1D {
     BinSpecifier binner;
     std::size_t n_tot_, max_index_;
-    std::vector<std::pair<std::size_t, std::size_t>> counts_;
+    std::vector<int> counts_;
 
     void on_bin_update() {
 	n_tot_ = 0;
 	max_index_ = binner.get_nbins();
-	if (!counts_.empty()) { counts_.clear(); }
-    }
-
-    void add_count(std::pair<std::size_t, std::size_t> new_index) {
-	auto it = std::find_if(counts_.begin(), counts_.end(), [&](std::pair<std::size_t, std::size_t> el) { return std::get<0>(el) == std::get<0>(new_index); });
-	if (it == counts_.end()) {
-	    counts_.push_back(new_index);
-	    std::sort(counts_.begin(), counts_.end(), [](std::pair<std::size_t, std::size_t> a, std::pair<std::size_t, std::size_t> b) { return std::get<0>(a) < std::get<0>(b); });
-	}
-	else {
-	    auto insert_at = std::distance(counts_.begin(), it);
-	    std::pair<std::size_t, std::size_t> temp_pair = counts_[insert_at];
-	    counts_[insert_at] = std::make_pair(std::get<0>(temp_pair), std::get<1>(temp_pair)+std::get<1>(new_index));
-	}
-    }
-
-    void add_count(std::size_t new_index) {
-	std::pair<std::size_t, std::size_t> new_pair(new_index, 1);
-	add_count(new_pair);
+	std::vector<int> temp(max_index_, 0);
+	counts_.swap(temp);
     }
 
  public:
@@ -792,7 +778,7 @@ class NNCounts1D {
     }
 
     // Like the copy constructor, but from pickled objects (for python)
-    NNCounts1D(BinSpecifier binning, std::vector<std::pair<std::size_t, std::size_t>> counts, std::size_t n_tot) {
+    NNCounts1D(BinSpecifier binning, std::vector<int> counts, std::size_t n_tot) {
 	binner = binning;
 	on_bin_update();
 	counts_ = counts;
@@ -814,50 +800,19 @@ class NNCounts1D {
 	on_bin_update();
     }
 
-    int get_bin(double value) {
-	if (value > binner.get_bin_min() && value < binner.get_bin_max()) {
-	    double diff;
-	    if (binner.get_log_binning()) {
-		diff = (log(value) - log(binner.get_bin_min()));
-	    }
-	    else {
-		diff = value - binner.get_bin_min();
-	    }
-	    return (int) floor(diff / binner.get_bin_size());
-	}
-	else { return -1; }
-    }
+    int get_bin(double value) { return binner.assign_bin(value); }
 
     void assign_bin(double value) {
 	n_tot_++;
-	int bin_index = get_bin(value);
-	if (bin_index > -1) {
-	    add_count((std::size_t) bin_index);
-	}
+	int bin_index = binner.assign_bin(value);
+	if (bin_index > -1) counts_[bin_index]++;
     }
 
-    const std::size_t operator[](std::size_t idx) const {
-	if (idx >= max_index_) { throw std::out_of_range("Index " + std::to_string(idx) + " is out of bounds for size of " + std::to_string(max_index_)); }
-	auto it = std::find_if(counts_.begin(), counts_.end(), [&](std::pair<std::size_t, std::size_t> el) { return std::get<0>(el) == idx; });
-	if (it == counts_.end()) {
-	    return 0;
-	}
-	else {
-	    return std::get<1>(*it);
-	}
-    }
+    const int operator[](std::size_t idx) const { return counts_[idx]; }
 
     std::size_t n_tot() const { return n_tot_; }
 
-    std::vector<std::size_t> counts() const {
-	std::vector<std::size_t> temp(max_index_, 0);
-	for (auto p : counts_) {
-	    temp[std::get<0>(p)] = std::get<1>(p);
-	}
-	return temp;
-    }
-
-    std::vector<std::pair<std::size_t, std::size_t>> get_counts_pairs() const { return counts_; }
+    std::vector<int> counts() const { return counts_; }
 
     BinSpecifier bin_info() const { return binner; }
 
@@ -869,16 +824,41 @@ class NNCounts1D {
 	    throw std::runtime_error("Cannot combine NNCounts1D instances with different binning schemes");
 	}
 	n_tot_ += other.n_tot_;
-	for (auto p : other.counts_) {
-	    add_count(p);
+	std::transform(counts_.begin(), counts_.end(), other.counts_.begin(), counts_.begin(), std::plus<int>());
+	return *this;
+    }
+
+    template<typename T>
+    typename std::enable_if_t<std::is_arithmetic<T>::value, NNCounts1D&>
+    operator+=(const T& x) {
+	if (!math::isclose(x, (T)0)) {
+	    throw std::invalid_argument("Only 0 valid for scalar addition with NNCounts1D");
 	}
 	return *this;
+    }
+
+    friend NNCounts1D operator+(const NNCounts1D& lhs, const NNCounts1D& rhs) {
+	return NNCounts1D(lhs) += rhs;
+    }
+
+    template<typename T>
+    friend typename std::enable_if_t<std::is_arithmetic<T>::value, NNCounts1D>
+    operator+(const NNCounts1D& lhs, const T& rhs) {
+	return NNCounts1D(lhs) += rhs;
+    }
+
+    template<typename T>
+    friend typename std::enable_if_t<std::is_arithmetic<T>::value, NNCounts1D>
+    operator+(const T& lhs, const NNCounts1D& rhs) {
+	return NNCounts1D(rhs) += lhs;
     }
 
     std::string toString() {
 	return "NNCounts1D(bins=" + binner.toString() + ")";
     }
 };
+
+NNCounts3D get_obs_pair_counts(std::vector<SPos> pos1, std::vector<SPos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto);
 
 NNCounts3D get_obs_pair_counts(std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto);
 
