@@ -527,9 +527,12 @@ def make_single_realization(nn_3d, prob, perp_binner, par_binner, sigmaz,
     parallel separations so that they cannot be negative. Default `True`
     :type rlt_mag: `bool`, optional
     """
-    if seed is not None:
-        np.random.seed(0)
-        np.random.seed(seed)
+    if rstate is not None:
+        if isinstance(rstate, int):
+            np.random.seed(0)
+            np.random.seed(rstate)
+        else:
+            np.random.set_state(rstate)
     if lock is None:
         lock = DummyLock()
     nn_2d = _calculate_distances.ExpectedNNCounts2D(
