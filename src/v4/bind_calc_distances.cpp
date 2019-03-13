@@ -7,39 +7,104 @@
 #include <stdexcept>
 #include <cstddef>
 #include <iostream>
+#include <cmath>
 #include <vector>
 #include <utility>
 #include <string>
 #include <type_traits>
+#include <tuple>
+#include "fast_math.h"
 #include "calc_distances.h"
-PYBIND11_MAKE_OPAQUE(std::vector<Pos>);
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+#if _OPENMP
+#include <omp.h>
+#else
+typedef int omp_int_t;
+inline void omp_set_num_threads(int) {}
+inline omp_int_t omp_get_num_threads() { return 1; }
+#endif
+
 struct PosCatalog {
-    double RA;
-    double DEC;
-    double D_TRUE;
-    double D_OBS;
-    double Z_TRUE;
-    double Z_OBS;
+    double RA, DEC, D_TRUE, D_OBS, Z_TRUE, Z_OBS;
 };
+
 struct SPosCatalog {
     double RA, DEC, D, Z;
 };
 
+bool same_catalog(const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2) {
+    if (cat1.size() != cat2.size()) return false;
+    for (ssize_t i = 0; i < cat1.size(); i++) {
+	bool dclose = std::isnan(cat1.at(i).D) ? std::isnan(cat2.at(i).D) : math::isclose(cat1.at(i).D, cat2.at(i).D);
+	bool zclose = std::isnan(cat1.at(i).Z) ? std::isnan(cat2.at(i).Z) : math::isclose(cat1.at(i).Z, cat2.at(i).Z);
+	if (!(math::isclose(cat1.at(i).RA, cat2.at(i).RA) && math::isclose(cat1.at(i).DEC, cat2.at(i).DEC) && dclose && zclose)) return false;
+    }
+    return true;
+}
+
+bool same_catalog(const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2) {
+    if (cat1.size() != cat2.size()) return false;
+    for (ssize_t i = 0; i < cat1.size(); i++) {
+	bool dtclose = std::isnan(cat1.at(i).D_TRUE) ? std::isnan(cat2.at(i).D_TRUE) : math::isclose(cat1.at(i).D_TRUE, cat2.at(i).D_TRUE);
+	bool ztclose = std::isnan(cat1.at(i).Z_TRUE) ? std::isnan(cat2.at(i).Z_TRUE) : math::isclose(cat1.at(i).Z_TRUE, cat2.at(i).Z_TRUE);
+	bool doclose = std::isnan(cat1.at(i).D_OBS) ? std::isnan(cat2.at(i).D_OBS) : math::isclose(cat1.at(i).D_OBS, cat2.at(i).D_OBS);
+	bool zoclose = std::isnan(cat1.at(i).Z_OBS) ? std::isnan(cat2.at(i).Z_OBS) : math::isclose(cat1.at(i).Z_OBS, cat2.at(i).Z_OBS);
+	if (!(math::isclose(cat1.at(i).RA, cat2.at(i).RA) && math::isclose(cat1.at(i).DEC, cat2.at(i).DEC) && dtclose && ztclose && doclose && zoclose)) return false;
+    }
+    return true;
+}
+
+struct SepDType {
+    double r_perp, r_par, zbar;
+    std::size_t id1, id2;
+};
+
+struct TOSepDType {
+    double r_perp_t, r_par_t, zbar_t, r_perp_o, r_par_o, zbar_o;
+    std::size_t id1, id2;
+};
+
 template <typename T>
-py::array_t<T, 0> mkarray_from_vec(std::vector<T> vec, std::vector<std::size_t> shape) {
-    std::vector<std::size_t> strides = {shape[1] * shape[2] * sizeof(T), shape[2] * sizeof(T), sizeof(T)};
+py::array_t<T, 0> mkarray_from_vec(const std::vector<T>& vec, const std::vector<std::size_t>& shape) {
+    std::vector<std::size_t> strides;
+    for (std::size_t i = 0; i < shape.size(); i++) {
+	std::size_t this_size = sizeof(T);
+	for (std::size_t j = i + 1; j < shape.size(); j++) {
+	    this_size *= shape[j];
+	}
+	strides.push_back(this_size);
+    }
     return py::array_t<T>(shape, strides, vec.data());
 }
 
 template <typename T>
-py::array_t<T, 0> mkarray_from_vec(std::vector<T> vec) {
+py::array_t<T, 0> mkarray_from_vec(const std::vector<T>& vec) {
     return py::array_t<T>({vec.size()}, {sizeof(T)}, vec.data());
 }
 
-std::vector<int> convert_3d_array(py::array_t<int> counts_in, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
+template<typename T, std::size_t N>
+py::array_t<T, 0> mkarray_from_array(const std::array<T,N>& arr) {
+    return py::array_t<T>({N}, {sizeof(T)}, arr.data());
+}
+
+template<std::size_t N>
+py::array_t<int, 0> convert_counts_vec(const NNCountsND<N>& nn) {
+    return mkarray_from_vec(nn.counts(), nn.shape_vec());
+}
+
+template<std::size_t N>
+py::array_t<double, 0> convert_normed_counts_vec(const NNCountsND<N>& nn) {
+    return mkarray_from_vec(nn.normed_counts(), nn.shape_vec());
+}
+
+template <class C>
+py::array_t<int, 0> convert_counts_vec(const C& c) {
+    return mkarray_from_vec(c.counts(), c.shape_vec());
+}
+
+std::vector<int> convert_3d_array(const py::array_t<int>& counts_in) {
     std::vector<int> out;
     auto in = counts_in.unchecked<3>();
     for (ssize_t i = 0; i < in.shape(0); i++) {
@@ -52,7 +117,18 @@ std::vector<int> convert_3d_array(py::array_t<int> counts_in, BinSpecifier x_bin
     return out;
 }
 
-std::vector<int> convert_1d_array(py::array_t<int> counts_in) {
+std::vector<int> convert_2d_array(const py::array_t<int>& counts_in) {
+    std::vector<int> out;
+    auto in = counts_in.unchecked<2>();
+    for (ssize_t i = 0; i < in.shape(0); i++) {
+	for (ssize_t j = 0; j < in.shape(1); j++) {
+	    out.push_back(in(i,j));
+	}
+    }
+    return out;
+}
+
+std::vector<int> convert_1d_array(const py::array_t<int>& counts_in) {
     auto in = counts_in.unchecked<1>();
     std::vector<int> out(in.size());
     for (ssize_t i = 0; i < in.size(); i++) {
@@ -61,77 +137,65 @@ std::vector<int> convert_1d_array(py::array_t<int> counts_in) {
     return out;
 }
 
-/*
-py::array_t<std::size_t> get_1d_indices_from_3d(py::array_t<py::array_t<std::size_t>> input_indices, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
-    auto f = [x_bins, y_bins, z_bins](std::size_t x, std::size_t y, std::size_t z) { return get_1d_indexer_from_3d(x, y, z, x_bins, y_bins, z_bins); };
-    auto g = [x_bins, y_bins, z_bins, f](py::array_t<std::size_t> index) {
-	auto arr = index.unchecked<1>();
-	return f(arr(0), arr(1), arr(2));
-    };
-    return py::vectorize(g)(input_indices);
-}
-*/
-
-///*
-py::array_t<std::size_t> get_1d_indices_from_3d(py::array_t<std::size_t> x_indices, py::array_t<std::size_t> y_indices, py::array_t<std::size_t> z_indices, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
-    auto f = [x_bins, y_bins, z_bins](std::size_t x, std::size_t y, std::size_t z) { return get_1d_indexer_from_3d(x, y, z, x_bins, y_bins, z_bins); };
-    return py::vectorize(f)(x_indices, y_indices, z_indices);
-}
-//*/
-
-/*
-py::array_t<std::size_t> get_1d_indices_from_3d(py::array_t<std::size_t> input_indices, BinSpecifier x_bins, BinSpecifier y_bins, BinSpecifier z_bins) {
-    py::buffer_info input_buff = input_indices.request();
-    if (!(input_buff.ndim == 1 || input_buff.ndim == 2)) { throw std::runtime_error("Number of dimensions must be 1 or 2 for multiple index conversion, instead have " + std::to_string(input_buff.ndim)); }
-    if (input_buff.ndim == 1) {
-	input_indices.resize(std::vector<ptrdiff_t>{1, input_buff.shape[0]});
+template<typename T, std::size_t N>
+auto convert_pyarray_to_stdarray(const py::array_t<T>& input_arr) {
+    auto uarr = input_arr.template unchecked<1>();
+    if ((std::size_t)uarr.size() != N) throw std::length_error("Invalid input py::array size " + std::to_string(uarr.size()) + " for conversion to std::array of size " + std::to_string(N));
+    std::array<T,N> output_arr;
+    for (std::size_t i = 0; i < N; i++) {
+	output_arr[i] = uarr(i);
     }
-    auto input = input_indices.unchecked<2>();
-    if (input.shape(1) != 3) { throw std::runtime_error("Shape must be (N, 3) for converting N indices"); }
-    auto output_indices = py::array_t<std::size_t>(input.shape(0));
-    auto output = output_indices.mutable_unchecked<1>();
-    for (ssize_t i = 0; i < input.shape(0); i++) {
-	output(i) = get_1d_indexer_from_3d(input(i,0), input(i,1), input(i,2), x_bins, y_bins, z_bins);
+    return output_arr;
+}
+
+template<typename T, std::size_t N>
+auto convert_pyarray_to_vec_stdarray(const py::array_t<T>& input_arr) {
+    auto uarr = input_arr.template unchecked<2>();
+    if ((std::size_t)uarr.shape(1) != N) throw std::length_error("Invalid input py::array shape (" + std::to_string(uarr.shape(0)) + "," + std::to_string(uarr.shape(1)) + "): last dimension must have length " + std::to_string(N));
+    std::array<T,N> temp;
+    std::vector<std::array<T,N>> output_arr;
+    for (ssize_t i = 0; i < uarr.shape(0); i++) {
+	for (ssize_t j = 0; j < uarr.shape(1); j++) {
+	    temp[j] = uarr(i,j);
+	}
+	output_arr.push_back(temp);
     }
-    return output_indices;
+    return output_arr;
 }
-*/
 
-void assign_bin_vectorized(NNCounts3D &self, py::array_t<double> r_perp, py::array_t<double> r_par, py::array_t<double> zbar) {
-    auto rpo = r_perp.unchecked<1>();
-    auto rlo = r_par.unchecked<1>();
-    if (rpo.size() != rlo.size()) { throw std::runtime_error("Must have same number of perpendicular and parallel separations"); }
-    auto zo = zbar.unchecked<1>();
-    if (rpo.size() != zo.size()) { throw std::runtime_error("Must have same number of perpendicular separations and average redshifts"); }
-    for (std::size_t i = 0; i < (std::size_t) rpo.size(); i++) {
-	self.assign_bin(rpo(i), rlo(i), zo(i));
+template<std::size_t N>
+py::array_t<std::size_t> get_1d_index_from_nd(const py::array_t<int>& indices, const std::array<BinSpecifier, N>& bins) {
+    auto idx_arr = convert_pyarray_to_vec_stdarray<int,N>(indices);
+    auto result = py::array_t<std::size_t>(idx_arr.size());
+    for (std::size_t i = 0; i < idx_arr.size(); i++) {
+	result.mutable_at(i) = get_1d_indexer_from_nd(idx_arr[i], bins);
     }
+    return result;
 }
 
-void assign_bin_vectorized(NNCounts1D &self, py::array_t<double> r_vals) {
-    auto r = r_vals.unchecked<1>();
-    for (std::size_t i = 0; i < (std::size_t) r.size(); i++) {
-	self.assign_bin(r(i));
-    }
+template<std::size_t N>
+static void bind_get_1d_indices(py::module& mod) {
+    mod.def(("get_1d_index_from_" + std::to_string(N) + "d").c_str(), py::overload_cast<const std::array<int,N>, const std::array<BinSpecifier,N>>(&get_1d_indexer_from_nd<N>), ("Get the 1-dimensional index corresponding to the given index for " + std::to_string(N) + "-dimensional data with shape specified by the BinSpecifier objects in 'bins'").c_str(), "index"_a, "bins"_a);
+    mod.def(("get_1d_index_from_" + std::to_string(N) + "d").c_str(), py::overload_cast<const py::array_t<int>, const std::array<BinSpecifier,N>>(&get_1d_index_from_nd<N>), ("Get the 1-dimensional indices corresponding to each given ND index for " + std::to_string(N) + "-dimensional data with shape specified by the BinSpecifier objects in 'bins'").c_str(), "index"_a, "bins"_a);
 }
 
-/*
-NNCounts3D gil_pair_counts_wrapper(std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, bool is_auto) {
-    std::cout << "Acquire the GIL" << std::endl;
-    py::gil_scoped_acquire acquire;
-    std::cout << "Call get_obs_pair_counts" << std::endl;
-    return get_obs_pair_counts(pos1, pos2, rpo_binning, rlo_binning, zo_binning, is_auto);
-}
-*/
-
-void set_separations(Separation &to, Separation &from) {
-    to.r_perp_t = from.r_perp_t;
-    to.r_par_t = from.r_par_t;
-    to.r_perp_o = from.r_perp_o;
-    to.r_par_o = from.r_par_o;
-    to.ave_zo = from.ave_zo;
+void set_separations(SepDType& to, const Separation& from) {
+    to.r_perp = from.r_perp;
+    to.r_par = from.r_par;
+    to.zbar = from.zbar;
     to.id1 = from.id1;
     to.id2 = from.id2;
+}
+
+void set_toseparations(TOSepDType& to, const TOSeparation& from) {
+    to.r_perp_t = from.tsep.r_perp;
+    to.r_par_t = from.tsep.r_par;
+    to.zbar_t = from.tsep.zbar;
+    to.r_perp_o = from.osep.r_perp;
+    to.r_par_o = from.osep.r_par;
+    to.zbar_o = from.osep.zbar;
+    to.id1 = from.tsep.id1;
+    to.id2 = from.tsep.id2;
 }
 
 template <typename T>
@@ -141,23 +205,37 @@ py::array mkarray_via_buffer(std::size_t n) {
 				     1, {n}, {sizeof(T)}));
 }
 
-template <typename S>
-py::array_t<S, 0> create_recarray_from_vector(std::vector<S> vec, std::function<void(S&, S&)> f) {
+template <typename S, typename toS>
+py::array_t<toS, 0> create_recarray_from_vector(const std::vector<S>& vec, std::function<void(toS&, const S&)> f) {
     std::size_t n = vec.size();
-    auto arr = mkarray_via_buffer<S>(n);
+    auto arr = mkarray_via_buffer<toS>(n);
     auto req = arr.request();
-    auto ptr = static_cast<S*>(req.ptr);
+    auto ptr = static_cast<toS*>(req.ptr);
     for (std::size_t i = 0; i < n; i++) {
 	f(ptr[i], vec[i]);
     }
     return arr;
 }
 
-py::array_t<Separation> convert_vector_separations(VectorSeparation vs) {
-    return create_recarray_from_vector<Separation>(vs.seps_vec, set_separations);
+/*
+py::array_t<SepDType> convert_vector_separations(const VectorSeparation& vs) {
+    return create_recarray_from_vector<Separation, SepDType>(vs.sep_vec(), set_separations);
 }
 
-std::vector<Pos> convert_catalog(py::array_t<PosCatalog> arr) {
+py::array_t<TOSepDType> convert_vector_separations(const VectorTOSeparation& vs) {
+    return create_recarray_from_vector<TOSeparation, TOSepDType>(vs.sep_vec(), set_toseparations);
+}
+*/
+
+py::array_t<SepDType> convert_vector_separations(const std::vector<Separation>& vs) {
+    return create_recarray_from_vector<Separation, SepDType>(vs, set_separations);
+}
+
+py::array_t<TOSepDType> convert_vector_separations(const std::vector<TOSeparation>& vs) {
+    return create_recarray_from_vector<TOSeparation, TOSepDType>(vs, set_toseparations);
+}
+
+std::vector<Pos> convert_catalog(const py::array_t<PosCatalog>& arr) {
     auto uarr = arr.unchecked<1>();
     std::size_t n = (std::size_t) uarr.size();
     std::vector<Pos> vec;
@@ -169,7 +247,7 @@ std::vector<Pos> convert_catalog(py::array_t<PosCatalog> arr) {
     return vec;
 }
 
-std::vector<SPos> convert_catalog(py::array_t<SPosCatalog> arr) {
+std::vector<SPos> convert_catalog(const py::array_t<SPosCatalog>& arr) {
     auto uarr = arr.unchecked<1>();
     std::size_t n = (std::size_t) uarr.size();
     std::vector<SPos> vec(n);
@@ -180,61 +258,830 @@ std::vector<SPos> convert_catalog(py::array_t<SPosCatalog> arr) {
     return vec;
 }
 
-py::array_t<Separation> get_separations_arr(std::vector<Pos> pos1, std::vector<Pos> pos2, BinSpecifier perp_bins, BinSpecifier par_bins, bool use_true, bool use_obs, bool is_auto) {
-    VectorSeparation vs = get_separations(pos1, pos2, perp_bins.get_bin_min(), perp_bins.get_bin_max(), par_bins.get_bin_min(), par_bins.get_bin_max(), use_true, use_obs, is_auto);
+py::array_t<SepDType> get_auto_separations_arr(const py::array_t<SPosCatalog>& cat, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    auto pos = convert_catalog(cat);
+    auto vs = get_auto_separations(pos, rp_bins, rl_bins, num_threads);
     return convert_vector_separations(vs);
 }
 
-py::array_t<Separation> get_separations_arr(py::array_t<PosCatalog> pos1, py::array_t<PosCatalog> pos2, BinSpecifier perp_bins, BinSpecifier par_bins, bool use_true, bool use_obs, bool is_auto) {
-    auto pos1_vec = convert_catalog(pos1);
-    auto pos2_vec = convert_catalog(pos2);
-    return get_separations_arr(pos1_vec, pos2_vec, perp_bins, par_bins, use_true, use_obs, is_auto);
+py::array_t<SepDType> get_auto_separations_arr(const py::array_t<PosCatalog>& cat, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, bool use_true, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    auto pos = convert_catalog(cat);
+    auto vs = get_auto_separations(pos, rp_bins, rl_bins, use_true, num_threads);
+    return convert_vector_separations(vs);
 }
 
-NNCounts3D get_obs_pair_counts(py::array_t<SPosCatalog> pos1, py::array_t<SPosCatalog> pos2, BinSpecifier rpo_bins, BinSpecifier rlo_bins, BinSpecifier zo_bins, bool is_auto) {
-    auto pos1_vec = convert_catalog(pos1);
-    auto pos2_vec = convert_catalog(pos2);
-    return get_obs_pair_counts(pos1_vec, pos2_vec, rpo_bins, rlo_bins, zo_bins, is_auto);
+py::array_t<SepDType> get_cross_separations_arr(const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    auto pos1 = convert_catalog(cat1);
+    auto pos2 = convert_catalog(cat2);
+    auto vs = get_cross_separations(pos1, pos2, rp_bins, rl_bins, num_threads);
+    return convert_vector_separations(vs);
 }
 
-NNCounts3D get_obs_pair_counts(py::array_t<PosCatalog> pos1, py::array_t<PosCatalog> pos2, BinSpecifier rpo_bins, BinSpecifier rlo_bins, BinSpecifier zo_bins, bool is_auto) {
-    auto pos1_vec = convert_catalog(pos1);
-    auto pos2_vec = convert_catalog(pos2);
-    return get_obs_pair_counts(pos1_vec, pos2_vec, rpo_bins, rlo_bins, zo_bins, is_auto);
+py::array_t<SepDType> get_cross_separations_arr(const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, bool use_true, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    auto pos1 = convert_catalog(cat1);
+    auto pos2 = convert_catalog(cat2);
+    auto vs = get_cross_separations(pos1, pos2, rp_bins, rl_bins, use_true, num_threads);
+    return convert_vector_separations(vs);
 }
 
-NNCounts1D get_true_pair_counts(py::array_t<PosCatalog> pos1, py::array_t<PosCatalog> pos2, BinSpecifier r_bins, bool is_auto, bool use_true=true) {
-    auto pos1_vec = convert_catalog(pos1);
-    auto pos2_vec = convert_catalog(pos2);
-    return get_true_pair_counts(pos1_vec, pos2_vec, r_bins, is_auto, use_true);
+py::array_t<SepDType> get_separations_arr(const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, bool is_auto, int num_threads = OMP_NUM_THREADS) {
+    auto pos1 = convert_catalog(cat1);
+    auto pos2 = convert_catalog(cat2);
+    auto vs = get_separations(pos1, pos2, rp_bins, rl_bins, is_auto, num_threads);
+    return convert_vector_separations(vs);
 }
 
+py::array_t<SepDType> get_separations_arr(const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, bool use_true, bool is_auto, int num_threads = OMP_NUM_THREADS) {
+    auto pos1 = convert_catalog(cat1);
+    auto pos2 = convert_catalog(cat2);
+    auto vs = get_separations(pos1, pos2, rp_bins, rl_bins, use_true, is_auto, num_threads);
+    return convert_vector_separations(vs);
+}
+
+py::array_t<TOSepDType> get_auto_separations_arr(const py::array_t<PosCatalog>& cat, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    auto pos = convert_catalog(cat);
+    auto vs = get_auto_separations(pos, rp_bins, rl_bins, num_threads);
+    std::cout << vs.size() << std::endl;
+    return convert_vector_separations(vs);
+}
+
+py::array_t<TOSepDType> get_cross_separations_arr(const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    auto pos1 = convert_catalog(cat1);
+    auto pos2 = convert_catalog(cat2);
+    auto vs = get_cross_separations(pos1, pos2, rp_bins, rl_bins, num_threads);
+    return convert_vector_separations(vs);
+}
+
+py::array_t<TOSepDType> get_separations_arr(const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, const BinSpecifier& rp_bins, const BinSpecifier& rl_bins, bool is_auto, int num_threads = OMP_NUM_THREADS) {
+    auto pos1 = convert_catalog(cat1);
+    auto pos2 = convert_catalog(cat2);
+    auto vs = get_separations(pos1, pos2, rp_bins, rl_bins, is_auto, num_threads);
+    return convert_vector_separations(vs);
+}
+
+template<std::size_t N>
+py::array_t<std::size_t, 0> get_1d_indexer(const NNCountsND<N>& self, const py::array_t<int>& indices) {
+    auto idx_vec = convert_pyarray_to_vec_stdarray<int,N>(indices);
+    auto result = py::array_t<std::size_t>(idx_vec.size());
+    for (std::size_t i = 0; i < idx_vec.size(); i++) {
+	result.mutable_at(i) = self.get_1d_indexer(idx_vec[i]);
+    }
+    return result;
+}
+
+template<std::size_t N>
+py::array_t<int, 0> get_bin(const NNCountsND<N>& self, const py::array_t<double>& values) {
+    auto val_vec = convert_pyarray_to_vec_stdarray<double,N>(values);
+    auto result = py::array_t<int>(val_vec.size());
+    for (std::size_t i = 0; i < val_vec.size(); i++) {
+	result.mutable_at(i) = self.get_bin(val_vec[i]);
+    }
+    return result;
+}
+
+template<std::size_t N>
+void process_auto(NNCountsND<N>&, const py::array_t<SPosCatalog>&, int=OMP_NUM_THREADS) { return; }
+
+template<>
+void process_auto(NNCountsND<3>& self, const py::array_t<SPosCatalog>& cat, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<3>;
+    NNType temp(self.bin_info());
+    auto vcat = convert_catalog(cat);
+    std::size_t n = vcat.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(+ : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(+ : temp)
+#endif
+    for (std::size_t i = 0; i < n - 1; i++) {
+	for (std::size_t j = 0; j < n; j++) {
+	    if (!(j > i)) continue;
+	    temp.process_pair(vcat[i], vcat[j]);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_auto(NNCountsND<2>& self, const py::array_t<SPosCatalog>& cat, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<2>;
+    NNType temp(self.bin_info());
+    auto vcat = convert_catalog(cat);
+    std::size_t n = vcat.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(+ : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(+ : temp)
+#endif
+    for (std::size_t i = 0; i < n - 1; i++) {
+	for (std::size_t j = 0; j < n; j++) {
+	    if (!(j > i)) continue;
+	    temp.process_pair(vcat[i], vcat[j]);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_auto(NNCountsND<1>& self, const py::array_t<SPosCatalog>& cat, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<1>;
+    NNType temp(self.bin_info());
+    auto vcat = convert_catalog(cat);
+    std::size_t n = vcat.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(+ : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(+ : temp)
+#endif
+    for (std::size_t i = 0; i < n; i++) {
+	for (std::size_t j = 0; j < n; j++) {
+	    if (!(j > i)) continue;
+	    temp.process_pair(vcat[i], vcat[j]);
+	}
+    }
+    self += temp;
+}
+
+template<std::size_t N>
+void process_auto(NNCountsND<N>&, const py::array_t<PosCatalog>&, bool, int=OMP_NUM_THREADS) { return; }
+
+template<>
+void process_auto(NNCountsND<3>& self, const py::array_t<PosCatalog>& cat, bool use_true, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<3>;
+    NNType temp(self.bin_info());
+    auto vcat = convert_catalog(cat);
+    std::size_t n = vcat.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n - 1; i++) {
+	for (std::size_t j = 0; j < n; j++) {
+	    if (i >= j) continue;
+	    temp.process_pair(vcat[i], vcat[j], use_true);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_auto(NNCountsND<2>& self, const py::array_t<PosCatalog>& cat, bool use_true, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<2>;
+    NNType temp(self.bin_info());
+    auto vcat = convert_catalog(cat);
+    std::size_t n = vcat.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n - 1; i++) {
+	for (std::size_t j = 0; j < n; j++) {
+	    if (i >= j) continue;
+	    temp.process_pair(vcat[i], vcat[j], use_true);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_auto(NNCountsND<1>& self, const py::array_t<PosCatalog>& cat, bool use_true, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<1>;
+    NNType temp(self.bin_info());
+    auto vcat = convert_catalog(cat);
+    std::size_t n = vcat.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n - 1; i++) {
+	for (std::size_t j = 0; j < n; j++) {
+	    if (i >= j) continue;
+	    temp.process_pair(vcat[i], vcat[j], use_true);
+	}
+    }
+    self += temp;
+}
+
+template<std::size_t N>
+void process_cross(NNCountsND<N>&, const py::array_t<SPosCatalog>&, const py::array_t<SPosCatalog>&, int=OMP_NUM_THREADS) { return; }
+
+template<>
+void process_cross(NNCountsND<3>& self, const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<3>;
+    NNType temp(self.bin_info());
+    auto vcat1 = convert_catalog(cat1);
+    auto vcat2 = convert_catalog(cat2);
+    std::size_t n1 = vcat1.size(), n2 = vcat2.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n1; i++) {
+	for (std::size_t j = 0; j < n2; j++) {
+	    temp.process_pair(vcat1[i], vcat2[j]);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_cross(NNCountsND<2>& self, const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<2>;
+    NNType temp(self.bin_info());
+    auto vcat1 = convert_catalog(cat1);
+    auto vcat2 = convert_catalog(cat2);
+    std::size_t n1 = vcat1.size(), n2 = vcat2.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n1; i++) {
+	for (std::size_t j = 0; j < n2; j++) {
+	    temp.process_pair(vcat1[i], vcat2[j]);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_cross(NNCountsND<1>& self, const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<1>;
+    NNType temp(self.bin_info());
+    auto vcat1 = convert_catalog(cat1);
+    auto vcat2 = convert_catalog(cat2);
+    std::size_t n1 = vcat1.size(), n2 = vcat2.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n1; i++) {
+	for (std::size_t j = 0; j < n2; j++) {
+	    temp.process_pair(vcat1[i], vcat2[j]);
+	}
+    }
+    self += temp;
+}
+
+template<std::size_t N>
+void process_cross(NNCountsND<N>&, const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, bool, int=OMP_NUM_THREADS) { return; }
+
+template<>
+void process_cross(NNCountsND<3>& self, const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, bool use_true, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<3>;
+    NNType temp(self.bin_info());
+    auto vcat1 = convert_catalog(cat1);
+    auto vcat2 = convert_catalog(cat2);
+    std::size_t n1 = vcat1.size(), n2 = vcat2.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n1; i++) {
+	for (std::size_t j = 0; j < n2; j++) {
+	    temp.process_pair(vcat1[i], vcat2[j], use_true);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_cross(NNCountsND<2>& self, const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, bool use_true, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<2>;
+    NNType temp(self.bin_info());
+    auto vcat1 = convert_catalog(cat1);
+    auto vcat2 = convert_catalog(cat2);
+    std::size_t n1 = vcat1.size(), n2 = vcat2.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n1; i++) {
+	for (std::size_t j = 0; j < n2; j++) {
+	    temp.process_pair(vcat1[i], vcat2[j], use_true);
+	}
+    }
+    self += temp;
+}
+
+template<>
+void process_cross(NNCountsND<1>& self, const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, bool use_true, int num_threads) {
+    py::gil_scoped_acquire acquire;
+    using NNType = NNCountsND<1>;
+    NNType temp(self.bin_info());
+    auto vcat1 = convert_catalog(cat1);
+    auto vcat2 = convert_catalog(cat2);
+    std::size_t n1 = vcat1.size(), n2 = vcat2.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(add : NNType : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for collapse(2) reduction(add : temp)
+#endif
+    for (std::size_t i = 0; i < n1; i++) {
+	for (std::size_t j = 0; j < n2; j++) {
+	    temp.process_pair(vcat1[i], vcat2[j], use_true);
+	}
+    }
+    self += temp;
+}
+
+template<std::size_t N>
+void process(NNCountsND<N>& self, const py::array_t<SPosCatalog>& cat, int num_threads = OMP_NUM_THREADS) {
+    process_auto(self, cat, num_threads);
+}
+
+template<std::size_t N>
+void process(NNCountsND<N>& self, const py::array_t<PosCatalog>& cat, bool use_true, int num_threads = OMP_NUM_THREADS) {
+    process_auto(self, cat, use_true, num_threads);
+}
+
+template<std::size_t N>
+void process(NNCountsND<N>& self, const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2, bool is_auto, int num_threads = OMP_NUM_THREADS) {
+    if (is_auto) process_auto(self, cat1, num_threads);
+    else process_cross(self, cat1, cat2, num_threads);
+}
+
+template<std::size_t N>
+void process(NNCountsND<N>& self, const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, bool use_true, bool is_auto, int num_threads = OMP_NUM_THREADS) {
+    if (is_auto) process_auto(self, cat1, use_true, num_threads);
+    else process_cross(self, cat1, cat2, use_true, num_threads);
+}
+
+template<std::size_t N>
+void process(NNCountsND<N>& self, const py::array_t<SPosCatalog>& cat1, const py::array_t<SPosCatalog>& cat2, int num_threads = OMP_NUM_THREADS) {
+    if (same_catalog(cat1, cat2)) process_auto(self, cat1, num_threads);
+    else process_cross(self, cat1, cat2, num_threads);
+}
+
+template<std::size_t N>
+void process(NNCountsND<N>& self, const py::array_t<PosCatalog>& cat1, const py::array_t<PosCatalog>& cat2, bool use_true, int num_threads = OMP_NUM_THREADS) {
+    if (same_catalog(cat1, cat2)) process_auto(self, cat1, use_true, num_threads);
+    else process_cross(self, cat1, cat2, use_true, num_threads);
+}
+
+template<std::size_t N>
+static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
+    using Class = NNCountsND<N>;
+    using BSType = std::array<BinSpecifier,N>;
+    py::class_<Class> cls(mod, ("NNCounts" + std::to_string(N) + "D").c_str(), ("Pair counts in " + std::to_string(N) + "D").c_str());
+    cls.def(py::init<>(), "Empty constructor");
+    cls.def(py::init<const Class&>(), "Copy constructor", "other"_a);
+    cls.def(py::init<const BSType&>(), "Construct from list of BinSpecifier objects", "bins"_a);
+    cls.def(py::init<const BSType&, const std::vector<int>&, std::size_t>(), "Constructor from pieces, for pickling support", "bins"_a, "counts"_a, "n_tot"_a);
+    cls.def_property_readonly("bin_info", &Class::bin_info, "The binning information in all dimensions");
+    cls.def("get_1d_index", py::overload_cast<const std::array<int,N> &>(&Class::get_1d_indexer, py::const_), "Get 1D index for the given array assumed to be the ND index", "index"_a);
+    //cls.def("get_1d_index", (std::size_t (Class::*)(const std::array<int,N>&) const) &Class::get_1d_indexer, "Get  1D index for the given array, assumed to be the ND index of a single bin", "index"_a);
+    cls.def("get_1d_index", &get_1d_indexer<N>, "Get 1D indices for each ND index array", "indices"_a);
+    cls.def("get_bin", &Class::get_bin, "Get the 1D bin index corresponding to the (1D, size N) array of ND separation values", "values"_a);
+    cls.def("get_bin", &get_bin<N>, "Get the 1D bin indices corresponding to each array of ND separation values", "values"_a);
+    cls.def("process_pair", py::overload_cast<const SPos&, const SPos&>(&Class::process_pair), "Process a single pair of single positions", "pos1"_a, "pos2"_a);
+    cls.def("process_pair", py::overload_cast<const Pos&, const Pos&, const bool>(&Class::process_pair), "Process a single pair of positions, specifying whether to use true or observed separations", "pos1"_a, "pos2"_a, "use_true"_a);
+    cls.def("process_auto", py::overload_cast<Class&, const py::array_t<SPosCatalog>&, int>(&process_auto<N>), py::call_guard<py::gil_scoped_release>(), "Process auto-correlation pairs in a catalog of single positions", "cat"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process_auto", py::overload_cast<Class&, const py::array_t<PosCatalog>&, bool, int>(&process_auto<N>), py::call_guard<py::gil_scoped_release>(), "Process auto-correlation paris in catalog of positions, specifying whether to use true or observed separations", "cat"_a, "use_true"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process_cross", py::overload_cast<Class&, const py::array_t<SPosCatalog>&, const py::array_t<SPosCatalog>&, int>(&process_cross<N>), py::call_guard<py::gil_scoped_release>(), "Process cross-correlation pairs in catalogs of single positions", "cat1"_a, "cat2"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process_cross", py::overload_cast<Class&, const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, bool, int>(&process_cross<N>), py::call_guard<py::gil_scoped_release>(), "Process cross-correlation pairs in catalogs of positions, specifying whether to use true or observed separations", "cat1"_a, "cat2"_a, "use_true"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process", py::overload_cast<Class&, const py::array_t<SPosCatalog>&, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process correlation pairs in a catalog of single positions", "cat1"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process", py::overload_cast<Class&, const py::array_t<PosCatalog>&, bool, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process correlation pairs in a catalog of positions, specifying whether to use true or observed separations", "cat1"_a, "use_true"_a, "num_threads"_a);
+    cls.def("process", py::overload_cast<Class&, const py::array_t<SPosCatalog>&, const py::array_t<SPosCatalog>&, bool, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process pairs between catalogs of single positions, specifying whether this is an auto or cross correlation", "cat1"_a, "cat2"_a, "is_auto"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process", py::overload_cast<Class&, const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, bool, bool, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process pairs between catalogs of positions, specifying whether this is an auto or cross correlation and whether to use true or observed separations", "cat1"_a, "cat2"_a, "use_true"_a, "is_auto"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process", py::overload_cast<Class&, const py::array_t<SPosCatalog>&, const py::array_t<SPosCatalog>&, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process pairs between catalogs of single positions, allowing for automatic deduction on whether this is an auto or cross correlation based on equivalence of the catalogs", "cat1"_a, "cat2"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("process", py::overload_cast<Class&, const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, bool, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process pairs between catalogs of positions, allowing for automatic deduction of auto or cross correlation based on equivalence of the catalogs, but still specifying whether to use true or observed separations", "cat1"_a, "cat2"_a, "use_true"_a, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def("__getitem__", py::vectorize(py::overload_cast<std::size_t>(&Class::operator[], py::const_)), py::is_operator());
+    cls.def_property_readonly("ntot", &Class::n_tot, "Total number of processed pairs");
+    cls.def_property_readonly("counts", [](const Class& self) { return convert_counts_vec(self); }, ("Counts of pairs in " + std::to_string(N) + "D bins").c_str());
+    cls.def_property_readonly("normed_counts", [](const Class& self) { return convert_normed_counts_vec(self); }, ("Normalized counts of pairs in " + std::to_string(N) + "D bins").c_str());
+    cls.def(py::self += py::self);
+    cls.def(py::self += float());
+    cls.def(py::self += int());
+    cls.def(py::self + float());
+    cls.def(py::self + int());
+    cls.def(float() + py::self);
+    cls.def(int() + py::self);
+    cls.def("__eq__", &Class::operator==, py::is_operator());
+    cls.def("__neq__", &Class::operator!=, py::is_operator());
+    cls.def_property_readonly("size", &Class::size, "Total size of data array");
+    cls.def_property_readonly("nbins_nonzero", &Class::nbins_nonzero, "Number of bins with non-zero counts");
+    cls.def_property_readonly("ncounts", &Class::ncounts, "Sum of all counts");
+    cls.def("__repr__", &Class::toString);
+    cls.def(py::pickle(
+		[](const Class& c) { // __getstate__
+		    return py::make_tuple(c.bin_info(), c.counts(), c.n_tot());
+		},
+		[](py::tuple t) { // __setstate__
+		    // For backwards compatability, define a variable to
+		    // hold the data
+		    BSType binners;
+		    std::vector<int> counts;
+		    std::size_t n_tot;
+		    if (t.size() != 3) {
+			// For backwards compatability for instances pickled
+			// on previous version
+			if (t.size() != 2 + N) throw std::length_error("Invalid state");
+			for (std::size_t i = 0; i < N; i++) {
+			    binners[i] = t[i].cast<BinSpecifier>();
+			}
+			counts = t[N].cast<std::vector<int>>();
+			n_tot = t[N+1].cast<std::size_t>();
+		    }
+		    else {
+			binners = t[0].cast<BSType>();
+			counts = t[1].cast<std::vector<int>>();
+			n_tot = t[2].cast<std::size_t>();
+		    }
+		    Class c(binners, counts, n_tot);
+		    return c;
+		}));
+    return cls;
+}
+
+static void declareNNCounts3D(py::module& mod) {
+    using Class = NNCountsND<3>;
+    auto cls = declareNNCountsND<3>(mod);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&, const BinSpecifier&>(), "From three BinSpecifier objects", "rperp_bins"_a, "rpar_bins"_a, "zbar_bins"_a);
+    cls.def_property("rperp_bins", py::overload_cast<>(&Class::rperp_bins, py::const_), [](Class& self, py::object obj) {
+	    try {
+		self.rperp_bins(obj.cast<BinSpecifier>());
+	    }
+	    catch (const py::cast_error&) {
+		py::tuple t = py::reinterpret_steal<py::tuple>(obj);
+		if (t.size() < 1 || t.size() > 2) throw std::length_error("Invalid tuple size " + std::to_string(t.size()) + " for rperp_bins: tuple should have 1 or 2 elements");
+		if (t.size() == 1) self.rperp_bins(t[0].cast<BinSpecifier>());
+		else self.rperp_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>());
+	    }
+	}, "Perpendicular separation binning. The setter can take either a BinSpecifier object, or a tuple(BinSpecifier, bool). The boolean parameter specifies that values existing in both the original and new binning should default to the original value (if true, default) or not");
+    cls.def_property("rpar_bins", py::overload_cast<>(&Class::rpar_bins, py::const_), [](Class& self, py::object obj) {
+	    try {
+		self.rpar_bins(obj.cast<BinSpecifier>());
+	    }
+	    catch (const py::cast_error&) {
+		py::tuple t = py::reinterpret_steal<py::tuple>(obj);
+		if (t.size() < 1 || t.size() > 2) throw std::length_error("Invalid tuple size " + std::to_string(t.size()) + " for rpar_bins: tuple should have 1 or 2 elements");
+		if (t.size() == 1) self.rpar_bins(t[0].cast<BinSpecifier>());
+		else self.rpar_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>());
+	    }
+	}, "Parallel separation binning. The setter can take either a BinSpecifier object, or a tuple(BinSpecifier, bool). The boolean parameter specifies that values existing in both the original and new binning should default to the original value (if true, default) or not");
+    cls.def_property("zbar_bins", py::overload_cast<>(&Class::zbar_bins, py::const_), [](Class& self, py::object obj) {
+	    try {
+		self.zbar_bins(obj.cast<BinSpecifier>());
+	    }
+	    catch (const py::cast_error&) {
+		py::tuple t = py::reinterpret_steal<py::tuple>(obj);
+		if (t.size() < 1 || t.size() > 2) throw std::length_error("Invalid tuple size " + std::to_string(t.size()) + " for zbar_bins: tuple should have 1 or 2 elements");
+		if (t.size() == 1) self.zbar_bins(t[0].cast<BinSpecifier>());
+		else self.zbar_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>());
+	    }
+	}, "Average redshift binning. The setter can take either a BinSpecifier object, or a tuple(BinSpecifier, bool). The boolean parameter specifies that values existing in both the original and new binning should default to the original value (if true, default) or not");
+    cls.def("get_1d_index", py::vectorize(py::overload_cast<int, int, int>(&Class::get_1d_indexer, py::const_)), "Get 1D index/indices from the indices given individually", "rp_bin"_a, "rl_bin"_a, "zb_bin"_a);
+    cls.def_property_readonly("shape", &Class::shape, "Shape of data array");
+}
+
+static void declareNNCounts2D(py::module& mod) {
+    using Class = NNCountsND<2>;
+    auto cls = declareNNCountsND<2>(mod);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&>(), "From 2 BinSpecifier objects", "rperp_bins"_a, "rpar_bins"_a);
+    cls.def_property("rperp_bins", py::overload_cast<>(&Class::rperp_bins, py::const_), [](Class& self, py::object obj) {
+	    try {
+		self.rperp_bins(obj.cast<BinSpecifier>());
+	    }
+	    catch (const py::cast_error&) {
+		py::tuple t = py::reinterpret_steal<py::tuple>(obj);
+		if (t.size() < 1 || t.size() > 2) throw std::length_error("Invalid tuple size " + std::to_string(t.size()) + " for rperp_bins: tuple should have 1 or 2 elements");
+		if (t.size() == 1) self.rperp_bins(t[0].cast<BinSpecifier>());
+		else self.rperp_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>());
+	    }
+	}, "Perpendicular separation binning. The setter can take either a BinSpecifier object, or a tuple(BinSpecifier, bool). The boolean parameter specifies that values existing in both the original and new binning should default to the original value (if true, default) or not");
+    cls.def_property("rpar_bins", py::overload_cast<>(&Class::rpar_bins, py::const_), [](Class& self, py::object obj) {
+	    try {
+		self.rpar_bins(obj.cast<BinSpecifier>());
+	    }
+	    catch (const py::cast_error&) {
+		py::tuple t = py::reinterpret_steal<py::tuple>(obj);
+		if (t.size() < 1 || t.size() > 2) throw std::length_error("Invalid tuple size " + std::to_string(t.size()) + " for rpar_bins: tuple should have 1 or 2 elements");
+		if (t.size() == 1) self.rpar_bins(t[0].cast<BinSpecifier>());
+		else self.rpar_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>());
+	    }
+	}, "Parallel separation binning. The setter can take either a BinSpecifier object, or a tuple(BinSpecifier, bool). The boolean parameter specifies that values existing in both the original and new binning should default to the original value (if true, default) or not");
+    cls.def("get_1d_index", py::vectorize(py::overload_cast<int, int>(&Class::get_1d_indexer, py::const_)), "Get 1D index/indices from the indices given individually", "rp_bin"_a, "rl_bin"_a);
+    cls.def_property_readonly("shape", &Class::shape, "Shape of data array");
+}
+
+static void declareNNCounts1D(py::module& mod) {
+    using Class = NNCountsND<1>;
+    auto cls = declareNNCountsND<1>(mod);
+    cls.def(py::init<const BinSpecifier&>(), "From single BinSpecifier", "r_bins"_a);
+    cls.def_property("r_bins", py::overload_cast<>(&Class::r_bins, py::const_), [](Class& self, py::object obj) {
+	    try {
+		self.r_bins(obj.cast<BinSpecifier>());
+	    }
+	    catch (const py::cast_error&) {
+		py::tuple t = py::reinterpret_steal<py::tuple>(obj);
+		if (t.size() < 1 || t.size() > 2) throw std::length_error("Invalid tuple size " + std::to_string(t.size()) + " for r_bins: tuple should have 1 or 2 elements");
+		if (t.size() == 1) self.r_bins(t[0].cast<BinSpecifier>());
+		else self.r_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>());
+	    }
+	}, "Separation magnitude binning. The setter can take either a BinSpecifier object, or a tuple(BinSpecifier, bool). The boolean parameter specifies that values existing in both the original and new binning should default to the original value (if true, default) or not");
+    cls.def("get_1d_index", py::vectorize(py::overload_cast<int>(&Class::get_1d_indexer, py::const_)), "Get 1D index/indices from the indices given individually. Note that for this class, this function is pretty pointless", "r_bin"_a);
+    cls.def_property_readonly("shape", &Class::shape, "Shape of data array");
+}
+
+void process_separation(ExpectedNNCountsND<3>& self, const py::array_t<double>& r_perp, const py::array_t<double>& r_par, const py::array_t<double>& zbar, bool new_real = false, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    using Type = ExpectedNNCountsND<3>;
+    auto uperp = r_perp.unchecked<1>();
+    auto upar = r_par.unchecked<1>();
+    auto uz = zbar.unchecked<1>();
+    if (uperp.size() != upar.size() || uperp.size() != uz.size()) throw std::length_error("r_perp, r_par, and zbar must have same length");
+    Type temp(self.bin_info(), self.n_tot());
+    std::size_t n = (std::size_t)uperp.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(+ : Type : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for reduction(+ : temp)
+#endif
+    for (std::size_t i = 0; i < n; i++) {
+	temp.process_separation(uperp(i), upar(i), uz(i));
+    }
+    if (new_real) self.append_real(temp[0]);
+    else self += temp;
+}
+
+void process_separation(ExpectedNNCountsND<2>& self, const py::array_t<double>& r_perp, const py::array_t<double>& r_par, bool new_real = false, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    using Type = ExpectedNNCountsND<2>;
+    auto uperp = r_perp.unchecked<1>();
+    auto upar = r_par.unchecked<1>();
+    if (uperp.size() != upar.size()) throw std::length_error("r_perp and r_par must have same length");
+    Type temp(self.bin_info(), self.n_tot());
+    std::size_t n = (std::size_t)uperp.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(+ : Type : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for reduction(+ : temp)
+#endif
+    for (std::size_t i = 0; i < n; i++) {
+	temp.process_separation(uperp(i), upar(i));
+    }
+    if (new_real) self.append_real(temp[0]);
+    else self += temp;
+}
+
+void process_separation(ExpectedNNCountsND<1>& self, const py::array_t<double>& r, bool new_real = false, int num_threads = OMP_NUM_THREADS) {
+    py::gil_scoped_acquire acquire;
+    using Type = ExpectedNNCountsND<1>;
+    auto ur = r.unchecked<1>();
+    Type temp(self.bin_info(), self.n_tot());
+    std::size_t n = (std::size_t)ur.size();
+    omp_set_num_threads(num_threads);
+#if _OPENMP
+#pragma omp declare reduction(+ : Type : omp_out+=omp_in) initializer(omp_priv=omp_orig)
+#pragma omp parallel for reduction(+ : temp)
+#endif
+    for (std::size_t i = 0; i < n; i++) {
+	temp.process_separation(ur(i));
+    }
+    if (new_real) self.append_real(temp[0]);
+    else self += temp;
+}
+
+template<std::size_t N>
+static py::class_<ExpectedNNCountsND<N>> declareExpectedNNCountsND(py::module& mod) {
+    using Class = ExpectedNNCountsND<N>;
+    using BSType = std::array<BinSpecifier, N>;
+    using NNType = NNCountsND<N>;
+    py::class_<ExpectedNNCountsND<N>> cls(mod, ("ExpectedNNCounts" + std::to_string(N) + "D").c_str());
+    cls.def(py::init<>(), "Empty constructor");
+    cls.def(py::init<const Class&>(), "Copy constructor", "other"_a);
+    cls.def(py::init<const BSType&, const std::vector<NNType>&, std::size_t, std::size_t>(), "Constructor for pickling support", "bins"_a, "nn_list"_a, "n_real"_a, "n_tot"_a);
+    cls.def(py::init<const BSType&, std::size_t>(), "Typical constructor from bin specification and total number of pairs", "bins"_a, "n_tot"_a);
+    cls.def_property_readonly("bin_info", &Class::bin_info, "List of bin specifications");
+    cls.def("get_1d_mean_indexer", &Class::get_1d_mean_indexer, "Get index for flattened mean array from a list providing the ND index", "index"_a);
+    cls.def("get_1d_cov_indexer", &Class::get_1d_cov_indexer, "Get index for flattened covariance array from a list providing the (2*N)D index", "index"_a);
+    //cls.def("process_separation", py::overload_cast<const darr&, bool>(&Class::process_separation), "Process the ND separation, optionally starting a new realization with this separation", "separation"_a, "new_real"_a=false);
+    cls.def("__getitem__", &Class::operator[], py::is_operator());
+    cls.def("__getitem__", [](const Class& self, const py::array_t<std::size_t>& idx) {
+	    std::vector<NNType> output;
+	    auto uidx = idx.unchecked<1>();
+	    output.reserve(uidx.size());
+	    for (ssize_t i = 0; i < uidx.size(); i++) {
+		output.push_back(self.operator[](uidx(i)));
+	    }
+	    return output;
+	}, py::is_operator());
+    cls.def_property("ntot", py::overload_cast<>(&Class::n_tot, py::const_), py::overload_cast<std::size_t>(&Class::n_tot), "Total number of pairs per realization");
+    cls.def_property_readonly("nreal", &Class::n_real, "Number of completed realizations (this will be one less than the number of NNCountsND objects unless a mean or covariance was recently calculated)");
+    cls.def_property_readonly("mean_size", &Class::mean_size, "Total number of elements in the mean array");
+    cls.def_property_readonly("cov_size", &Class::cov_size, "Total number of elements in the covariance array");
+    cls.def_property_readonly("nn_list", &Class::nn_list, "List of the individual NNCountsND objects. The ntot in each of these is updated to be the ntot of this instance");
+    cls.def("update", &Class::update, "Update the calculations of the mean and covariance");
+    cls.def_property_readonly("mean", [](const Class& self) { return mkarray_from_vec(self.mean(), self.mean_shape_vec()); }, "The mean counts of the NNCountsND objects");
+    cls.def_property_readonly("cov", [](const Class& self) { return mkarray_from_vec(self.cov(), self.cov_shape_vec()); }, "The covariance of counts of the NNCountsND objects");
+    cls.def("__repr__", [](const Class& self) { return self.toString(); });
+    cls.def(py::self += py::self);
+    //cls.def("__iadd__", py::overload_cast<const NNType&>(&Class::operator+=), py::is_operator());
+    cls.def(py::self += int());
+    cls.def(py::self += float());
+    cls.def(py::self + int());
+    cls.def(py::self + float());
+    cls.def(int() + py::self);
+    cls.def(float() + py::self);
+    cls.def("__eq__", &Class::operator==, py::is_operator());
+    cls.def("__neq__", &Class::operator!=, py::is_operator());
+    cls.def("append_real", py::overload_cast<const NNType&>(&Class::append_real), ("Append a realization as a single NNCounts" + std::to_string(N) + "D object").c_str(), "other"_a);
+    cls.def("append_real", py::overload_cast<const Class&>(&Class::append_real), ("Append realizations of another ExpectedNNCounts" + std::to_string(N) + "D object").c_str(), "other"_a);
+    cls.def("append_real", [](Class& self, const std::vector<NNType>& other) {
+	    for (auto nn : other) { self.append_real(nn); }
+	}, ("Append a list of NNCounts" + std::to_string(N) + "D objects as individual realizations").c_str(), "realizations"_a);
+    cls.def("append_real", [](Class& self, const std::vector<Class>& other) {
+	    for (auto nn : other) { self.append_real(nn); }
+	}, ("Append realizations from each ExpectedNNCounts" + std::to_string(N) + "D object in a list").c_str(), "realizations"_a);
+    cls.def(py::pickle(
+		[](const Class& c) { // __getstate__
+		    return py::make_tuple(c.bin_info(), c.nn_list(), c.n_real(), c.n_tot());
+		},
+		[](py::tuple t) { // __setstate__
+		    // For backwards compatability, define a variable to
+		    // hold the data
+		    BSType binners;
+		    std::vector<NNType> nn_list;
+		    std::size_t n_real, n_tot;
+		    if (t.size() != 4) {
+			// For backwards compatability for instances pickled
+			// on previous version
+			if (t.size() != 3 + N) throw std::length_error("Invalid state");
+			for (std::size_t i = 0; i < N; i++) {
+			    binners[i] = t[i].cast<BinSpecifier>();
+			}
+			nn_list = t[N].cast<std::vector<NNType>>();
+			n_real = t[N+1].cast<std::size_t>();
+			n_tot = t[N+2].cast<std::size_t>();
+		    }
+		    else {
+			binners = t[0].cast<BSType>();
+			nn_list = t[1].cast<std::vector<NNType>>();
+			n_real = t[2].cast<std::size_t>();
+			n_tot = t[3].cast<std::size_t>();
+		    }
+		    Class c(binners, nn_list, n_real, n_tot);
+		    return c;
+		}));
+    return cls;
+}
+
+static void declareExpectedNNCounts3D(py::module& mod) {
+    using Class = ExpectedNNCountsND<3>;
+    auto cls = declareExpectedNNCountsND<3>(mod);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&, const BinSpecifier&, std::size_t>(), "Initialize with individual BinSpecifier objects", "rperp_binning"_a, "rpar_binning"_a, "zbar_binning"_a, "ntot"_a);
+    cls.def_property("rperp_bins", py::overload_cast<>(&Class::rperp_bins, py::const_), py::overload_cast<const BinSpecifier&, bool>(&Class::rperp_bins), "Perpendicular separation binning");
+    cls.def_property("rpar_bins", py::overload_cast<>(&Class::rpar_bins, py::const_), py::overload_cast<const BinSpecifier&, bool>(&Class::rpar_bins), "Parallel separation binning");
+    cls.def_property("zbar_bins", py::overload_cast<>(&Class::zbar_bins, py::const_), py::overload_cast<const BinSpecifier&, bool>(&Class::zbar_bins), "Average redshift binning");
+    cls.def("get_1d_mean_indexer", py::vectorize(&Class::get_1d_mean_indexer_from_args), "Get the index for the flattened mean array correpsonding to the 3D indices given", "rp_bin"_a, "rl_bin"_a, "zb_bin"_a);
+    cls.def("get_1d_cov_indexer", py::vectorize(&Class::get_1d_cov_indexer_from_args), "Get the index for the flattened covariance array corresponding to the 6D indices given", "rpi_bin"_a, "rli_bin"_a, "zbi_bin"_a, "rpj_bin"_a, "rlj_bin"_a, "zbj_bin"_a);
+    cls.def("process_separation", py::overload_cast<double, double, double, bool>(&Class::process_separation), "Process the given 3D separation", "r_perp"_a, "r_par"_a, "zbar"_a, "new_real"_a=false);
+    cls.def("process_separation", [](Class& self, const py::array_t<double>& rp, const py::array_t<double> rl, const py::array_t<double> zb, bool new_real=false, int num_threads=OMP_NUM_THREADS) { return process_separation(self, rp, rl, zb, new_real, num_threads); }, "Process the given sets of 3D separations", "r_perp"_a, "r_par"_a, "zbar"_a, "new_real"_a=false, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def_property_readonly("mean_shape", &Class::mean_shape, "Shape tuple for the mean counts");
+    cls.def_property_readonly("cov_shape", &Class::cov_shape, "Shape tuple for the covariance of the counts");
+}
+
+static void declareExpectedNNCounts2D(py::module& mod) {
+    using Class = ExpectedNNCountsND<2>;
+    auto cls = declareExpectedNNCountsND<2>(mod);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&, std::size_t>(), "Initialize with individual BinSpecifier objects", "rperp_binning"_a, "rpar_binning"_a, "ntot"_a);
+    cls.def_property("rperp_bins", py::overload_cast<>(&Class::rperp_bins, py::const_), py::overload_cast<const BinSpecifier&, bool>(&Class::rperp_bins), "Perpendicular separation binning");
+    cls.def_property("rpar_bins", py::overload_cast<>(&Class::rpar_bins, py::const_), py::overload_cast<const BinSpecifier&, bool>(&Class::rpar_bins), "Parallel separation binning");
+    cls.def("get_1d_mean_indexer", py::vectorize(&Class::get_1d_mean_indexer_from_args), "Get the index for the flattened mean array correpsonding to the 2D indices given", "rp_bin"_a, "rl_bin"_a);
+    cls.def("get_1d_cov_indexer", py::vectorize(&Class::get_1d_cov_indexer_from_args), "Get the index for the flattened covariance array corresponding to the 4D indices given", "rpi_bin"_a, "rli_bin"_a, "rpj_bin"_a, "rlj_bin"_a);
+    cls.def("process_separation", py::overload_cast<double, double, bool>(&Class::process_separation), "Process the given 2D separation", "r_perp"_a, "r_par"_a, "new_real"_a=false);
+    cls.def("process_separation", [](Class& self, const py::array_t<double>& rp, const py::array_t<double> rl, bool new_real=false, int num_threads=OMP_NUM_THREADS) { return process_separation(self, rp, rl, new_real, num_threads); }, "Process the given sets of 2D separations", "r_perp"_a, "r_par"_a, "new_real"_a=false, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def_property_readonly("mean_shape", &Class::mean_shape, "Shape tuple for the mean counts");
+    cls.def_property_readonly("cov_shape", &Class::cov_shape, "Shape tuple for the covariance of the counts");
+}
+
+static void declareExpectedNNCounts1D(py::module& mod) {
+    using Class = ExpectedNNCountsND<1>;
+    auto cls = declareExpectedNNCountsND<1>(mod);
+    cls.def(py::init<const BinSpecifier&, std::size_t>(), "Initialize with individual BinSpecifier objects", "r_binning"_a, "ntot"_a);
+    cls.def_property("r_bins", py::overload_cast<>(&Class::r_bins, py::const_), py::overload_cast<const BinSpecifier&, bool>(&Class::r_bins), "Separation binning");
+    cls.def("get_1d_mean_indexer", py::vectorize(&Class::get_1d_mean_indexer_from_args), "Get the index for the flattened mean array correpsonding to the 1D indices given", "r_bin"_a);
+    cls.def("get_1d_cov_indexer", py::vectorize(&Class::get_1d_cov_indexer_from_args), "Get the index for the flattened covariance array corresponding to the 2D indices given", "ri_bin"_a, "rj_bin"_a);
+    cls.def("process_separation", py::overload_cast<double, bool>(&Class::process_separation), "Process the given 1D separation", "r"_a, "new_real"_a=false);
+    cls.def("process_separation", [](Class& self, const py::array_t<double>& r, bool new_real=false, int num_threads=OMP_NUM_THREADS) { return process_separation(self, r, new_real, num_threads); }, "Process the given sets of 1D separations", "r"_a, "new_real"_a=false, "num_threads"_a=OMP_NUM_THREADS);
+    cls.def_property_readonly("mean_shape", &Class::mean_shape, "Shape tuple for the mean counts");
+    cls.def_property_readonly("cov_shape", &Class::cov_shape, "Shape tuple for the covariance of the counts");
+}
+
+/*
+template<class C>
+static py::class_<CorrFunc<C>> declareCorrFunc(py::module& mod, const std::string& suffix) {
+    using Class = CorrFunc<C>;
+    py::class_<Class> cls(mod, ("CorrFunc" + suffix).c_str(), ("Container for correlation function from NNCounts" + suffix + " objects").c_str());
+
+    cls.def(py::init<>(), "Empty constructor");
+    cls.def(py::init<const Class&>(), "Copy constructor", "other"_a);
+    cls.def(py::init<const C&>(), "Construct from DD pair counts", "dd"_a);
+    cls.def("assign_dd", &Class::assign_dd, "Assign new DD pair counts", "dd"_a);
+    cls.def("assign_rr", &Class::assign_rr, "Assign new RR pair counts", "rr"_a);
+    cls.def("assign_dr", &Class::assign_dr, "Assign new DR pair counts", "dr"_a);
+    cls.def("assign_rd", &Class::assign_rd, "Assign new RD pair counts", "rd"_a);
+    cls.def("calculate_xi", &Class::calculate_xi, "Calculate the correlation function with the current pair counts");
+    cls.def_property_readonly("xi", [](const Class& self) { return mkarray_from_vec(self.xi(), self.shape_vec()); }, "The correlation function values");
+    cls.def_property_readonly("shape", &Class::shape, "The shape of the data");
+    cls.def_property_readonly("size", &Class::size, "The size of the data");
+    cls.def("__eq__", &Class::operator==, py::is_operator());
+    cls.def("__neq__", &Class::operator!=, py::is_operator());
+    cls.def("__repr__", &Class::toString);
+    return cls;
+}
+
+static void declareCorrFunc1D(py::module& mod) {
+    using Class = CorrFunc<NNCounts1D>;
+    py::class_<Class> cls = declareCorrFunc<NNCounts1D>(mod, "1D");
+    cls.def_property_readonly("bin_info", &Class::bin_info, "Binning information");
+    cls.def_property_readonly("bins", &Class::bins, "Bin centers");
+}
+
+static void declareCorrFunc2D(py::module& mod) {
+    using Class = CorrFunc<NNCounts2D>;
+    py::class_<Class> cls = declareCorrFunc<NNCounts2D>(mod, "2D");
+    cls.def_property_readonly("perp_bin_info", &Class::perp_bin_info, "Perpendicular binning info");
+    cls.def_property_readonly("par_bin_info", &Class::par_bin_info, "Parallel binning info");
+    cls.def_property_readonly("perp_bins", &Class::perp_bins, "Bin centers of perpendicular bins");
+    cls.def_property_readonly("par_bins", &Class::par_bins, "Bin centers of parallel bins");
+}
+
+static void declareCorrFunc3D(py::module& mod) {
+    using Class = CorrFunc<NNCounts3D>;
+    py::class_<Class> cls = declareCorrFunc<NNCounts3D>(mod, "3D");
+    cls.def_property_readonly("perp_bin_info", &Class::perp_bin_info, "Perpendicular binning info");
+    cls.def_property_readonly("par_bin_info", &Class::par_bin_info, "Parallel binning info");
+    cls.def_property_readonly("zbar_bin_info", &Class::zbar_bin_info, "Redshift binning info");
+    cls.def_property_readonly("perp_bins", &Class::perp_bins, "Bin centers of perpendicular bins");
+    cls.def_property_readonly("par_bins", &Class::par_bins, "Bin centers of parallel bins");
+    cls.def_property_readonly("zbar_bins", &Class::zbar_bins, "Bin centers of redshift bins");
+}
+*/
 
 PYBIND11_MODULE(calculate_distances, m) {
     py::add_ostream_redirect(m);
-    py::bind_vector<std::vector<Pos>>(m, "VectorPos");
-    PYBIND11_NUMPY_DTYPE_EX(Separation, r_perp_t, "R_PERP_T", r_par_t, "R_PAR_T", r_perp_o, "R_PERP_O", r_par_o, "R_PAR_O", ave_zo, "AVE_Z_OBS", id1, "ID1", id2, "ID2");
+    PYBIND11_NUMPY_DTYPE_EX(SepDType, r_perp, "R_PERP", r_par, "R_PAR", zbar, "AVE_Z", id1, "ID1", id2, "ID2");
+    PYBIND11_NUMPY_DTYPE_EX(TOSepDType, r_perp_t, "R_PERP_T", r_par_t, "R_PAR_T", zbar_t, "AVE_Z_TRUE", r_perp_o, "R_PERP_O", r_par_o, "R_PAR_O", zbar_o, "AVE_Z_OBS", id1, "ID1", id2, "ID2");
     PYBIND11_NUMPY_DTYPE(PosCatalog, RA, DEC, D_TRUE, D_OBS, Z_TRUE, Z_OBS);
     PYBIND11_NUMPY_DTYPE(SPosCatalog, RA, DEC, D, Z);
     py::class_<SPos>(m, "SPos", "Store only true or only observed position of an object")
 	.def(py::init<>(), "Empty constructor")
-	.def(py::init<const double, const double, const double, const double>(), "Initialize from values", "ra"_a, "dec"_a, "r"_a, "z"_a)
+	.def(py::init<double, double, double, double>(), "Initialize from values", "ra"_a, "dec"_a, "r"_a, "z"_a)
 	.def(py::init<const SPos&>(), "Copy constructor", "other"_a)
-	.def("__eq__", [](const SPos& self, const SPos& other) { return self == other; })
-	.def("__neq__", [](const SPos& self, const SPos& other) { return self != other; })
+	.def("__eq__", &SPos::operator==, py::is_operator())
+	.def("__neq__", &SPos::operator!=, py::is_operator())
+	.def("__repr__", &SPos::toString)
 	.def_property_readonly("ra", &SPos::ra, "Right ascension (degrees)")
 	.def_property_readonly("dec", &SPos::dec, "Declination (degrees)")
 	.def_property_readonly("r", &SPos::r, "Line of sight distance")
 	.def_property_readonly("z", &SPos::z, "Redshift")
-	.def_property_readonly("uvec", &SPos::uvec, "Unit vector in cartesian coordinates")
-	.def_property_readonly("rvec", &SPos::rvec, "Cartesian coordinate vector");
+	.def_property_readonly("uvec", [](const SPos& self) { return mkarray_from_array(self.uvec()); }, "Unit vector in cartesian coordinates")
+	.def_property_readonly("rvec", [](const SPos& self) { return mkarray_from_array(self.rvec()); }, "Cartesian coordinate vector")
+	.def("dot_norm", &SPos::dot_norm, "Take the dot product between the unit vectors of this object and the other", "other"_a)
+	.def("dot_mag", &SPos::dot_mag, "Take the dot product between the vector with magnitude of this object and that of other", "other"_a)
+	.def("distance_zbar", &SPos::distance_zbar, "Get the average redshift component of the distance between self and other (used in 3D pair count binning). If either redshift is NaN, returns NaN", "other"_a)
+	.def("distance_par", &SPos::distance_par, "Get the parallel separation between self and other. If r is NaN for either, returns NaN", "other"_a)
+	.def("distance_perp", &SPos::distance_perp, "Get the perpendicular separation between self and other. If r is NaN for either, returns NaN", "other"_a)
+	.def("distance_vector", [](const SPos& self, const SPos& other) { return mkarray_from_array(self.distance_vector(other)); }, "Get the Cartesian distance vector between self and other", "other"_a)
+	.def("distance_magnitude", &SPos::distance_magnitude, "Get the magnitude of the separation between self and other", "other"_a)
+	.def("check_shell", py::overload_cast<const SPos&, double, double>(&SPos::check_shell, py::const_), "Check whether all components of the difference vector between self and other lie within r_min and r_max (each, not magnitude)", "other"_a, "r_min"_a, "r_max"_a)
+	.def("check_shell", py::overload_cast<const SPos&, const BinSpecifier&>(&SPos::check_shell, py::const_), "Check whether all components of the difference vector between self and other lie within the limits specified in binner", "other"_a, "binner"_a)
+	.def("check_shell", py::overload_cast<const SPos&, double>(&SPos::check_shell, py::const_), "Check whether all components of the difference vector between self and other are less than r_max, i.e. that they lie between 0 and r_max", "other"_a, "r_max"_a)
+	.def("check_limits", py::overload_cast<const SPos&, double, double, double, double>(&SPos::check_limits, py::const_), "Check whether the perpendicular and parallel separations between self and other lie within the limits specified in each direction", "other"_a, "rperp_min"_a, "rperp_max"_a, "rpar_min"_a, "rpar_max"_a)
+	.def("check_limits", py::overload_cast<const SPos&, const BinSpecifier&, const BinSpecifier&>(&SPos::check_limits, py::const_), "Check whether the perpendicular and parallel separations between self and other lie within the limits specified by the binner in each direction", "other"_a, "perp_binner"_a, "par_binner"_a);
     py::class_<Pos>(m, "Pos", "Store the position of a object. Note that tz/oz refer to true/observed redshift while zt/zo refer to true/observed cartesian coordinates")
 	.def(py::init<>(), "Empty constructor")
 	.def(py::init<double, double, double, double, double, double>(), "Initialize from values", "ra"_a, "dec"_a, "rt"_a, "ro"_a, "tz"_a, "oz"_a)
 	.def(py::init<const Pos&>(), "Copy constructor", "other"_a)
-	.def_property_readonly("nvec", &Pos::nvec, "Get the unit vector of the position")
-	.def_property_readonly("rtvec", &Pos::rtvec, "Get the vector for the true position")
-	.def_property_readonly("rovec", &Pos::rovec, "Get the vector for the observed position")
+	.def_property_readonly("uvec", [](const Pos& self) { return mkarray_from_array(self.uvec()); }, "Get the unit vector of the position")
+	.def_property_readonly("rtvec", [](const Pos& self) { return mkarray_from_array(self.rtvec()); }, "Get the vector for the true position")
+	.def_property_readonly("rovec", [](const Pos& self) { return mkarray_from_array(self.rovec()); }, "Get the vector for the observed position")
 	.def_property_readonly("ra", &Pos::ra, "Right ascension (degrees)")
 	.def_property_readonly("dec", &Pos::dec, "Declination (degrees)")
 	.def_property_readonly("rt", &Pos::rt, "True line of sight distance")
@@ -245,53 +1092,62 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def_property_readonly("opos", &Pos::opos, "SPos instance for observed position")
 	.def_property_readonly("has_true", &Pos::has_true, "Whether the object has true distance/redshift")
 	.def_property_readonly("has_obs", &Pos::has_obs, "Whether the object has observed distance/redshift")
-	.def("__eq__", [](const Pos& self, const Pos& other) { return self == other; })
-	.def("__neq__", [](const Pos& self, const Pos& other) { return self != other; });
-    m.def("fill_catalog_vector", &fill_catalog_vector, "Initialize an std::vector<Pos> catalog from vectors of the RA, DEC, distances, and redshifts", "ra_vec"_a, "dec_vec"_a, "rt_vec"_a, "ro_vec"_a, "tz_vec"_a, "oz_vec"_a);
-    py::class_<Separation>(m, "Separation", "Container for the separations between two galaxies")
-	.def(py::init<>())
-	.def(py::init<double, double, double, double, double, std::size_t, std::size_t>(), "r_perp_t"_a, "r_par_t"_a, "r_perp_o"_a, "r_par_o"_a, "ave_r_obs"_a, "id1"_a, "id2"_a)
-	.def(py::init<std::tuple<double, double>, std::tuple<double, double>, double, std::size_t, std::size_t>(), "r_perp"_a, "r_par"_a, "ave_r_obs"_a, "id1"_a, "id2"_a)
-	.def_readonly("r_perp_t", &Separation::r_perp_t)
-	.def_readonly("r_par_t", &Separation::r_par_t)
-	.def_readonly("r_perp_o", &Separation::r_perp_o)
-	.def_readonly("r_par_o", &Separation::r_par_o)
-	.def_readonly("ave_z_obs", &Separation::ave_zo)
-	.def_readonly("id1", &Separation::id1)
-	.def_readonly("id2", &Separation::id2)
-	.def("__eq__", [](const Separation& self, const Separation& other) { return self == other; })
-	.def("__neq__", [](const Separation& self, const Separation& other) { return self != other; });
-    py::class_<VectorSeparation>(m, "VectorSeparation", "Container for the separations between many galaxies, indexed on individual columns or by rows")
-	.def(py::init<>(), "Default empty constructor")
-	.def(py::init<std::vector<Separation>>(), "Construct from a vector of Separation instances", "separation_vector"_a)
-	.def("push_back", py::overload_cast<std::tuple<double, double>, std::tuple<double, double>, double, std::size_t, std::size_t>(&VectorSeparation::push_back), "Push back a new row from individual items", "r_perpendicular"_a, "r_parallel"_a, "zo_ave"_a, "index1"_a, "index2"_a)
-	.def("reserve", &VectorSeparation::reserve, "Reserve space for the internal vectors", "new_size"_a)
-	.def("push_back", py::overload_cast<Separation>(&VectorSeparation::push_back), "Push back a new row from a Separation inststance", "new_separation"_a)
-	.def("insert", &VectorSeparation::insert, "Insert the contents of another VectorSeparation at the end of this one", "other"_a)
-	.def("__getitem__", [](const VectorSeparation &vs, int i) { try { return vs[i]; } catch (std::out_of_range& e) { throw py::index_error(e.what()); } })
-	.def_property_readonly("size", &VectorSeparation::size, "Size of internal vectors")
-	.def_property_readonly("r_perp_t", &VectorSeparation::r_perp_t, "True perpendicular separations")
-	.def_property_readonly("r_par_t", &VectorSeparation::r_par_t, "True parallel separations")
-	.def_property_readonly("r_perp_o", &VectorSeparation::r_perp_o, "Observed perpendicular separations")
-	.def_property_readonly("r_par_o", &VectorSeparation::r_par_o, "Observed parallel separations")
-	.def_property_readonly("ave_z_obs", &VectorSeparation::ave_zo, "Pair-wise average of observed redshifts")
-	.def_property_readonly("id1", &VectorSeparation::id1, "Index of the first item of each pair")
-	.def_property_readonly("id2", &VectorSeparation::id2, "Index of the second item of each pair")
-	.def("__eq__", [](const VectorSeparation& self, const VectorSeparation& other) { return self == other; })
-	.def("__neq__", [](const VectorSeparation& self, const VectorSeparation& other) { return self != other; });
-    m.def("unit_dot", py::overload_cast<SPos, SPos>(&unit_dot), "Get the dot product between the unit vectors of two single positions", "pos1"_a, "pos2"_a);
-    m.def("unit_dot", py::overload_cast<Pos, Pos>(&unit_dot), "Get the dot product between the unit vectors of two full positions", "pos1"_a, "pos2"_a);
-    m.def("dot", py::overload_cast<SPos, SPos>(&dot), "Get the dot product between two single positions", "pos1"_a, "pos2"_a);
-    m.def("dot", py::overload_cast<Pos, Pos>(&dot), "Get the dot product between two full positions, with order (true, observed)", "pos1"_a, "pos2"_a);
-    m.def("r_par", py::overload_cast<SPos, SPos>(&r_par), "Get the parallel separation between two single positions", "pos1"_a, "pos2"_a);
-    m.def("r_par", py::overload_cast<Pos, Pos>(&r_par), "Get the parallel separation between two full postions, with order (true, observed)", "pos1"_a, "pos2"_a);
-    m.def("r_perp", py::overload_cast<SPos, SPos>(&r_perp), "Get the perpendicular separation between two single positions", "pos1"_a, "pos2"_a);
-    m.def("r_perp", py::overload_cast<Pos, Pos>(&r_perp), "Get the perpendicular separation between two full positions, with order (true, observed)", "pos1"_a, "pos2"_a);
-    m.def("ave_z", py::overload_cast<SPos, SPos>(&ave_z), "Get the average redshift for two single positions", "pos1"_a, "pos2"_a);
-    m.def("ave_z", py::overload_cast<Pos, Pos>(&ave_z), "Get the average redshift for two full positions, as (true, observed)", "pos1"_a, "pos2"_a);
-    m.def("ave_lost_distance", &ave_los_distance, "Get the average redshift of the two full positions, using observed positions unless either is missing the observed distance", "pos1"_a, "pos2"_a);
-    m.def("get_separations", py::overload_cast<std::vector<Pos>, std::vector<Pos>, BinSpecifier, BinSpecifier, bool, bool, bool>(&get_separations_arr), "Get the separations between two sets of positions in vector format", "pos1"_a, "pos2"_a, "perp_bins"_a, "par_bins"_a, "use_true"_a, "use_obs"_a, "is_auto"_a);
-    m.def("get_separations", py::overload_cast<py::array_t<PosCatalog>, py::array_t<PosCatalog>, BinSpecifier, BinSpecifier, bool, bool, bool>(&get_separations_arr), "Get the separations between two sets of positions passed as numpy structured arrays", "pos1"_a, "pos2"_a, "perp_bins"_a, "par_bins"_a, "use_true"_a, "use_obs"_a, "is_auto"_a);
+	.def("__eq__", &Pos::operator==, py::is_operator())
+	.def("__neq__", &Pos::operator!=, py::is_operator())
+	.def("__repr__", &Pos::toString)
+	.def("dot_norm", py::overload_cast<const SPos&>(&Pos::dot_norm, py::const_), "Take the dot product of the unit vectors of self and an SPos object", "other"_a)
+	.def("dot_norm", py::overload_cast<const Pos&>(&Pos::dot_norm, py::const_), "Take the dot product of the unit vectors of self and other", "other"_a)
+	.def("dot_mag", py::overload_cast<const SPos&>(&Pos::dot_mag, py::const_), "Take the dot product with magnitude between self and an SPos object, preferring the true distance if available", "other"_a)
+	.def("dot_mag", py::overload_cast<const Pos&>(&Pos::dot_mag, py::const_), "Take the dot product with magnitude between self and other, using either the true distance for both or the observed distance for both depending on which is available. If both true and observed distances are available in both cases, prefer the true distance", "other"_a)
+	.def("zbar_t", py::overload_cast<const SPos&>(&Pos::zbar_t, py::const_), "Get the average of the true redshift of self and the redshift in an SPos object", "other"_a)
+	.def("zbar_t", py::overload_cast<const Pos&>(&Pos::zbar_t, py::const_), "Get the average true redshift of self and other", "other"_a)
+	.def("zbar_o", py::overload_cast<const SPos&>(&Pos::zbar_o, py::const_), "Get the average of the observed redshift of self and the redshift in an SPos object", "other"_a)
+	.def("zbar_o", py::overload_cast<const Pos&>(&Pos::zbar_o, py::const_), "Get the average observed redshift of self and other", "other"_a)
+	.def("distance_zbar", &Pos::distance_zbar, "Get the average true and observed redshifts of self and other, as a tuple of (zbar_t, zbar_o)", "other"_a)
+	.def("r_par_t", py::overload_cast<const SPos&>(&Pos::r_par_t, py::const_), "Get the parallel separation between self and an SPos object, using the true distance from self", "other"_a)
+	.def("r_par_t", py::overload_cast<const Pos&>(&Pos::r_par_t, py::const_), "Get the parallel separation between self and other using the true distances", "other"_a)
+	.def("r_par_t_signed", &Pos::r_par_t_signed, "Get the true parallel separation with sign based on the orientation of true vs observed positions", "other"_a)
+	.def("r_par_o", py::overload_cast<const SPos&>(&Pos::r_par_o, py::const_), "Get the parallel separation between self and an SPos object, using the observed distance from self", "other"_a)
+	.def("r_par_o", py::overload_cast<const Pos&>(&Pos::r_par_o, py::const_), "Get the parallel separation between self and other using the observed distances", "other"_a)
+	.def("distance_par", &Pos::distance_par, "Get the true and observed parallel separations between self and other, as a tuple of (r_par_t, r_par_o)", "other"_a)
+	.def("r_perp_t", py::overload_cast<const SPos&>(&Pos::r_perp_t, py::const_), "Get the perpendicular separation between self and an SPos object, using the true distance from self", "other"_a)
+	.def("r_perp_t", py::overload_cast<const Pos&>(&Pos::r_perp_t, py::const_), "Get the perpendicular separation between self and other using the true distances", "other"_a)
+	.def("r_perp_o", py::overload_cast<const SPos&>(&Pos::r_perp_o, py::const_), "Get the perpendicular separation between self and an SPos object, using the observed distance from self", "other"_a)
+	.def("r_perp_o", py::overload_cast<const Pos&>(&Pos::r_perp_o, py::const_), "Get the perpendicular separation between self and other using the observed distances", "other"_a)
+	.def("distance_perp", &Pos::distance_perp, "Get the true and observed perpendicular separations between self and other, as a tuple of (r_perp_t, r_perp_o)", "other"_a)
+	.def("distance_vector_t", [](const Pos& self, const SPos& other) { return mkarray_from_array(self.distance_vector_t(other)); }, "Get the difference vector between the true position of self and single position other", "other"_a)
+	.def("distance_vector_t", [](const Pos& self, const Pos& other) { return mkarray_from_array(self.distance_vector_t(other)); }, "Get the difference vector between the true position of self and the true position of other", "other"_a)
+	.def("distance_vector_o", [](const Pos& self, const SPos& other) { return mkarray_from_array(self.distance_vector_o(other)); }, "Get the difference vector between the observed position of self and single position other", "other"_a)
+	.def("distance_vector_o", [](const Pos& self, const Pos& other) { return mkarray_from_array(self.distance_vector_o(other)); }, "Get the difference vector between the observed position of self and the observed position of other", "other"_a)
+	.def("distance_vector", [](const Pos& self, const SPos& other, bool use_true) { return mkarray_from_array(self.distance_vector(other, use_true)); }, "Get the difference vector between self and single position other, specifying whether to use the true or observed position of self", "other"_a, "use_true"_a)
+	.def("distance_vector", [](const Pos& self, const Pos& other, bool use_true) { return mkarray_from_array(self.distance_vector(other, use_true)); }, "Get the difference vector between self and other, specifying whether to use the true or observed positions", "other"_a, "use_true"_a)
+	.def("distance_magnitude_t", py::overload_cast<const SPos&>(&Pos::distance_magnitude_t, py::const_), "Get the separation magnitude between the true position of self and single position other", "other"_a)
+	.def("distance_magnitude_t", py::overload_cast<const Pos&>(&Pos::distance_magnitude_t, py::const_), "Get the separation magnitude between the true position of self and the true position of other", "other"_a)
+	.def("distance_magnitude_o", py::overload_cast<const SPos&>(&Pos::distance_magnitude_o, py::const_), "Get the separation magnitude between the observed position of self and single position other", "other"_a)
+	.def("distance_magnitude_o", py::overload_cast<const Pos&>(&Pos::distance_magnitude_o, py::const_), "Get the separation magnitude between the observed position of self and the observed position of other", "other"_a)
+	.def("distance_magnitude", py::overload_cast<const SPos&, bool>(&Pos::distance_magnitude, py::const_), "Get the separation magnitude between self and single position other, specifying whether to use the true or observed position of self", "other"_a, "use_true"_a)
+	.def("distance_magnitude", py::overload_cast<const Pos&, bool>(&Pos::distance_magnitude, py::const_), "Get the separation magnitude between self and other, specifying whether to use the true or observed positions", "other"_a, "use_true"_a)
+	.def("check_shell", py::overload_cast<const SPos&, double, double>(&Pos::check_shell, py::const_), "Check whether each component of the difference vector between self and other is within r_min and r_max, defaulting to the observed position of self", "other"_a, "r_min"_a, "r_max"_a)
+	.def("check_shell", py::overload_cast<const SPos&, const BinSpecifier&>(&Pos::check_shell, py::const_), "Check whether each component of the difference vector between self and other is within the limits specified byt binner, defaulting to the observed position of self", "other"_a, "binner"_a)
+	.def("check_shell", py::overload_cast<const SPos&, double>(&Pos::check_shell, py::const_), "Check whether each component of the difference vector between self and other is within (0 and) r_max, defaulting to the observed position of self", "other"_a, "r_max"_a)
+	.def("check_shell", py::overload_cast<const Pos&, double, double>(&Pos::check_shell, py::const_), "Check whether each component of the difference vector between self and other is within r_min and r_max, defaulting to the observed positions", "other"_a, "r_min"_a, "r_max"_a)
+	.def("check_shell", py::overload_cast<const Pos&, const BinSpecifier&>(&Pos::check_shell, py::const_), "Check whether each component of the difference vector between self and other is within the limits specified byt binner, defaulting to the observed positions", "other"_a, "binner"_a)
+	.def("check_shell", py::overload_cast<const Pos&, double>(&Pos::check_shell, py::const_), "Check whether each component of the difference vector between self and other is within (0 and) r_max, defaulting to the observed positions", "other"_a, "r_max"_a)
+	.def("check_limits", py::overload_cast<const SPos&, double, double, double, double>(&Pos::check_limits, py::const_), "Check whether the separation components are within the limits in each direction, defaulting to the observed position of self", "other"_a, "rperp_min"_a, "rperp_max"_a, "rpar_min"_a, "rpar_max"_a)
+	.def("check_limits", py::overload_cast<const SPos&, const BinSpecifier&, const BinSpecifier&>(&Pos::check_limits, py::const_), "Check whether the separation components are within the limits for the binner in each direction, defaulting to the observed position of self", "other"_a, "perp_binner"_a, "par_binner"_a)
+	.def("check_limits", py::overload_cast<const Pos&, double, double, double, double>(&Pos::check_limits, py::const_), "Check whether the separation components are within the limits in each direction, defaulting to the observed positions", "other"_a, "rperp_min"_a, "rperp_max"_a, "rpar_min"_a, "rpar_max"_a)
+	.def("check_limits", py::overload_cast<const Pos&, const BinSpecifier&, const BinSpecifier&>(&Pos::check_limits, py::const_), "Check whether the separation components are within the limits for the binner in each direction, defaulting to the observed positions", "other"_a, "perp_binner"_a, "par_binner"_a);
+    m.def("convert_catalog", py::overload_cast<const py::array_t<SPosCatalog>&>(&convert_catalog), py::return_value_policy::take_ownership, "Convert structured array catalog to SPos objects", "cat"_a);
+    m.def("convert_catalog", py::overload_cast<const py::array_t<PosCatalog>&>(&convert_catalog), py::return_value_policy::take_ownership, "Convert structured array catalog to Pos objects", "cat"_a);
+    m.def("get_auto_separations", py::overload_cast<const py::array_t<SPosCatalog>&, const BinSpecifier&, const BinSpecifier&, int>(&get_auto_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get auto-correlation separations limited in the perpendicular and parallel directions by the binners", "cat"_a, "perp_binner"_a, "par_binner"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_auto_separations", py::overload_cast<const py::array_t<PosCatalog>&, const BinSpecifier&, const BinSpecifier&, bool, int>(&get_auto_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get auto-correlation separations limited in the perpendicular and parallel directions by the binners, specifying to use true or observed separations", "cat"_a, "perp_binner"_a, "par_binner"_a, "use_true"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_cross_separations", py::overload_cast<const py::array_t<SPosCatalog>&, const py::array_t<SPosCatalog>&, const BinSpecifier&, const BinSpecifier&, int>(&get_cross_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get cross-correlation separations limited in the perpendicular and parallel directions by the binners", "cat1"_a, "cat2"_a, "perp_binner"_a, "par_binner"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_cross_separations", py::overload_cast<const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, const BinSpecifier&, const BinSpecifier&, bool, int>(&get_cross_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get cross-correlation separations limited in the perpendicular and parallel directions by the binners, specifying to use true or observed separations", "cat1"_a, "cat2"_a, "perp_binner"_a, "par_binner"_a, "use_true"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_separations", py::overload_cast<const py::array_t<SPosCatalog>&, const py::array_t<SPosCatalog>&, const BinSpecifier&, const BinSpecifier&, bool, int>(&get_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get the separations limited in the perpendiculare and parallel directions by the binners, specifying whether this is an auto or cross correlation", "cat1"_a, "cat2"_a, "perp_binner"_a, "par_binner"_a, "is_auto"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_separations", py::overload_cast<const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, const BinSpecifier&, const BinSpecifier&, bool, bool, int>(&get_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get the separations limited in the perpendiculare and parallel directions by the binners, specifying whether this is an auto or cross correlation and whether to use true or observed separations", "cat1"_a, "cat2"_a, "perp_binner"_a, "par_binner"_a, "use_true"_a, "is_auto"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_auto_separations", py::overload_cast<const py::array_t<PosCatalog>&, const BinSpecifier&, const BinSpecifier&, int>(&get_auto_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get auto-correlation separations limited in the observed perpendicular and parallel directions by the binners", "cat"_a, "perp_binner"_a, "par_binner"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_cross_separations", py::overload_cast<const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, const BinSpecifier&, const BinSpecifier&, int>(&get_cross_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get cross-correlation separations limited in the observed perpendicular and parallel directions by the binners", "cat1"_a, "cat2"_a, "perp_binner"_a, "par_binner"_a, "num_threads"_a=OMP_NUM_THREADS);
+    m.def("get_separations", py::overload_cast<const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, const BinSpecifier&, const BinSpecifier&, bool, int>(&get_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get the separations limited in the observed perpendiculare and parallel directions by the binners, specifying whether this is an auto or cross correlation", "cat1"_a, "cat2"_a, "perp_binner"_a, "par_binner"_a, "is_auto"_a, "num_threads"_a=OMP_NUM_THREADS);
     py::class_<BinSpecifier>(m, "BinSpecifier", "Structure for the needed attributes for binning in a variable")
 	.def(py::init<double, double, double, bool>(), "Construct from min, max, and bin size. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "bin_width"_a, "use_log_bins"_a)
 	.def(py::init<double, double, std::size_t, bool>(), "Construct from min, max, and number of bins. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "num_bins"_a, "use_log_bins"_a)
@@ -321,100 +1177,24 @@ PYBIND11_MODULE(calculate_distances, m) {
 		     return bs;
 		 }
 		 ))
-	.def("__eq__", [](const BinSpecifier &self, const BinSpecifier &other){ return self == other; })
-	.def("__ne__", [](const BinSpecifier &self, const BinSpecifier &other){ return self != other; })
+	.def("__eq__", &BinSpecifier::operator==, py::is_operator())
+	.def("__neq__", &BinSpecifier::operator!=, py::is_operator())
 	.def("assign_bin", py::vectorize(&BinSpecifier::assign_bin), "Get the bin index/indices corresponding to the given value(s)", "value"_a)
-	.def("lower_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec<double>(self.lower_bin_edges()); }, "Get the lower edges of all bins")
-	.def("upper_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec<double>(self.upper_bin_edges()); }, "Get the upper edges of all bins")
+	.def_property_readonly("lower_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec(self.lower_bin_edges()); }, "Get the lower edges of all bins")
+	.def_property_readonly("upper_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec(self.upper_bin_edges()); }, "Get the upper edges of all bins")
+	.def_property_readonly("bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec(self.bin_edges()); }, "Get the nbins+1 bin edges")
+	.def_property_readonly("bin_centers", [](const BinSpecifier &self) { return mkarray_from_vec(self.bin_centers()); }, "Get the centers of all bins. May not be centered in linear space if log binning is used")
+	.def_property_readonly("bin_widths", [](const BinSpecifier &self) { return mkarray_from_vec(self.bin_widths()); }, "Get the difference between linear space bin edges. Note that these will all be the same value for linear binning, but not for log binning")
 	.def_property_readonly("is_set", &BinSpecifier::is_set, "Flag to specify whether the values have actually been set (True) or not (False) yet");
-    py::class_<NNCounts3D>(m, "NNCounts3D", "Container for getting pair counts in terms of observed perpendicular and parallel separations and average observed redshift")
-	.def(py::init<>(), "Empty constructor: use default empty constructor")
-	.def(py::init<const NNCounts3D&>(), "Copy constructor: make a copy of 'other'", "other"_a)
-	.def(py::init([](BinSpecifier rpo_binning, BinSpecifier rlo_binning, BinSpecifier zo_binning, py::array_t<int> counts, std::size_t n_tot) {
-		    auto counts_vec = convert_3d_array(counts, rpo_binning, rlo_binning, zo_binning);
-		    return NNCounts3D(rpo_binning, rlo_binning, zo_binning, counts_vec, n_tot);
-		}), "Like the copy constructor, but from pickled objects")
-	.def(py::init<BinSpecifier, BinSpecifier, BinSpecifier>(), "Initialize a new pair counter with the specified binning", "rperp_bin_specifier"_a, "rpar_bin_specifier"_a, "zbar_bin_specifier"_a)
-	.def("update_rpo_binning", &NNCounts3D::update_rpo_binning, "Update the binning in r_perp, optionally preferring the old values over the new (default)", "new_binning"_a, "prefer_old"_a=true)
-	.def("update_rlo_binning", &NNCounts3D::update_rlo_binning, "Update the binning in r_parallel, optionally preferring the old values over the new (default)", "new_binning"_a, "prefer_old"_a=true)
-	.def("update_zbar_binning", &NNCounts3D::update_zo_binning, "Update the binning in zbar, optionally preferring the old values over the new (default)", "new_binning"_a, "prefer_old"_a=true)
-	.def("get_1d_index", &NNCounts3D::get_1d_indexer, "Get the 1D index for the given 3D index", "x_idx"_a, "y_idx"_a, "z_idx"_a)
-	.def("get_bin", py::vectorize(&NNCounts3D::get_bin), "Get the 1D bin index/indices corresponding to the/each 3D observed separation, with -1 indicating a separation is outside of the bins", "r_perp"_a, "r_par"_a, "zbar"_a)
-	.def("assign_bin", [](NNCounts3D &self, py::array_t<double> r_perp, py::array_t<double> r_par, py::array_t<double> zbar) { return assign_bin_vectorized(self, r_perp, r_par, zbar); }, "Assign a 1D bin number to the/each 3D observed separation, and add to the counts and total")
-	.def("__getitem__", [](const NNCounts3D &self, const std::size_t idx){ return self[idx]; })
-	.def_property_readonly("n_tot", &NNCounts3D::n_tot, "The total number of pairs considered, for normalization")
-	.def_property_readonly("counts", [](const NNCounts3D &self) { return mkarray_from_vec<int>(self.counts(), {self.rpo_bin_info().get_nbins(), self.rlo_bin_info().get_nbins(), self.zo_bin_info().get_nbins()}); }, "The pair counts in 3D bins, as a 3D ndarray")
-	.def_property_readonly("r_perp_bin_info", &NNCounts3D::rpo_bin_info, "Get the bin specification for perpendicular bins")
-	.def_property_readonly("r_par_bin_info", &NNCounts3D::rlo_bin_info, "Get the bin specification for parallel bins")
-	.def_property_readonly("zbar_bin_info", &NNCounts3D::zo_bin_info, "Get the bin specification for average redshift bins")
-	.def(py::self += py::self)
-	.def(py::self += float())
-	.def(py::self += int())
-	.def(py::self + py::self)
-	.def(py::self + float())
-	.def(py::self + int())
-	.def(float() + py::self)
-	.def(int() + py::self)
-	.def(py::pickle(
-		 [](const NNCounts3D &self) { // __getstate__
-		     return py::make_tuple(self.rpo_bin_info(), self.rlo_bin_info(), self.zo_bin_info(), self.counts(), self.n_tot());
-		 },
-		 [](py::tuple t) { // __setstate__
-		     if (t.size() != 5) { throw std::runtime_error("Invalid state"); }
-
-		     NNCounts3D self(t[0].cast<BinSpecifier>(),
-				     t[1].cast<BinSpecifier>(),
-				     t[2].cast<BinSpecifier>(),
-				     t[3].cast<std::vector<int>>(),
-				     t[4].cast<std::size_t>());
-
-		     return self;
-		 }
-		 ))
-	.def_property_readonly("shape", [](const NNCounts3D &self) { return py::make_tuple(self.rpo_bin_info().get_nbins(), self.rlo_bin_info().get_nbins(), self.zo_bin_info().get_nbins()); })
-	.def("__repr__", &NNCounts3D::toString);
-    py::class_<NNCounts1D>(m, "NNCounts1D", "Container for the pair counts in terms of the magnitude of the separation")
-	.def(py::init<>(), "Empty constructor")
-	.def(py::init<const NNCounts1D&>(), "Copy constructor", "other"_a)
-	.def(py::init([](BinSpecifier binning, py::array_t<std::size_t> counts, std::size_t n_tot) {
-		    auto counts_vec = convert_1d_array(counts);
-		    return NNCounts1D(binning, counts_vec, n_tot);
-		}), "Like the copy constructor, but from pickled objects")
-	.def(py::init<BinSpecifier>(), "Initialize an empty NNCounts1D with the specified binning", "binning"_a)
-	.def("update_binning", &NNCounts1D::update_binning, "Update the binning specifications, and optionally prefer the original options (default)", "new_binning"_a, "prefer_old"_a=true)
-	.def("get_bin", py::vectorize(&NNCounts1D::get_bin), "Get the bin index/indices corresponding to the/each separation, with -1 meaning the separation is outside of the bin range", "r"_a)
-	.def("assign_bin", [](NNCounts1D &self, py::array_t<double> r) { return assign_bin_vectorized(self, r); }, "Assign a bin number for the/each separation, and add to counts and total")
-	.def("__getitem__", [](const NNCounts1D &self, std::size_t idx) { return self[idx]; })
-	.def_property_readonly("n_tot", &NNCounts1D::n_tot)
-	.def_property_readonly("counts", [](const NNCounts1D &self) { return mkarray_from_vec<int>(self.counts()); })
-	.def_property_readonly("bin_info", &NNCounts1D::bin_info)
-	.def(py::self += py::self)
-	.def(py::self += float())
-	.def(py::self += int())
-	.def(py::self + py::self)
-	.def(py::self + float())
-	.def(py::self + int())
-	.def(float() + py::self)
-	.def(int() + py::self)
-	.def(py::pickle(
-		 [](const NNCounts1D &self) { // __getstate__
-		     return py::make_tuple(self.bin_info(), self.counts(), self.n_tot());
-		 },
-		 [](py::tuple t) { // __setstate__
-		     if (t.size() != 3) { throw std::runtime_error("Invalid state"); }
-
-		     NNCounts1D self(t[0].cast<BinSpecifier>(),
-				     t[1].cast<std::vector<int>>(),
-				     t[2].cast<std::size_t>());
-
-		     return self;
-		 }
-		 ))
-	.def("__repr__", &NNCounts1D::toString);
-    m.def("get_obs_pair_counts", py::overload_cast<py::array_t<SPosCatalog>, py::array_t<SPosCatalog>, BinSpecifier, BinSpecifier, BinSpecifier, bool>(&get_obs_pair_counts), py::return_value_policy::take_ownership, "Get 3D histogrammed pair counts for separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
-    m.def("get_obs_pair_counts", py::overload_cast<std::vector<Pos>, std::vector<Pos>, BinSpecifier, BinSpecifier, BinSpecifier, bool>(&get_obs_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
-    m.def("get_obs_pair_counts", py::overload_cast<py::array_t<PosCatalog>, py::array_t<PosCatalog>, BinSpecifier, BinSpecifier, BinSpecifier, bool>(&get_obs_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for observed separations (accepts numpy arrays)", "pos1"_a, "pos2"_a, "rpo_binning"_a, "rlo_binning"_a, "zo_binning"_a, "is_auto"_a);
-    m.def("get_1d_index_from_3d", &get_1d_indices_from_3d, "Get the 1D indices from the given 3D indices and binning specifications", "x_indices"_a, "y_indices"_a, "z_indices"_a, "x_bins"_a, "y_bins"_a, "z_bins"_a);
-    m.def("get_true_pair_counts", py::overload_cast<std::vector<Pos>, std::vector<Pos>, BinSpecifier, bool, bool>(&get_true_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for separations in terms of the magnitude of the separation", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a, "use_true"_a=true);
-    m.def("get_true_pair_counts", py::overload_cast<py::array_t<PosCatalog>, py::array_t<PosCatalog>, BinSpecifier, bool, bool>(&get_true_pair_counts), py::return_value_policy::take_ownership, "Get the histogrammed pair counts for separations in terms of the magnitude of the separation (accepts numpy arrays)", "pos1"_a, "pos2"_a, "r_binning"_a, "is_auto"_a, "use_true"_a=true);
+    declareNNCounts3D(m);
+    declareNNCounts2D(m);
+    declareNNCounts1D(m);
+    declareExpectedNNCounts3D(m);
+    declareExpectedNNCounts2D(m);
+    declareExpectedNNCounts1D(m);
+    /*
+    declareCorrFunc1D(m);
+    declareCorrFunc2D(m);
+    declareCorrFunc3D(m);
+    */
 }

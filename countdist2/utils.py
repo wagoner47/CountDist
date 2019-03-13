@@ -79,13 +79,14 @@ def ndigits(x):
     :rtype: scalar or ndarray of `int`
     """
     if not hasattr(x, "__len__"):
-        x = math.fabs(x)
-        if math.isclose(x / 10.0, x):
+        y = math.fabs(x)
+        if math.isclose(y / 10.0, y):
             return 1
-        else:
-            return int(math.floor(math.log10(x)))
-    else:
-        return np.array([ndigits(thisx) for thisx in x])
+        n = int(math.floor(math.log10(y)))
+        if n >= 0:
+            n += 1
+        return n
+    return np.array([ndigits(thisx) for thisx in x])
 
 
 def init_logger(name=None):

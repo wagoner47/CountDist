@@ -3,6 +3,8 @@ from .utils import ndigits, iterable_len
 import re
 import numpy as np
 import math
+import numbers
+import typing
 
 def delatexify(string):
     """This function takes an input string (or iterable of strings) and strips
@@ -19,10 +21,12 @@ def delatexify(string):
 
     :rtype: `str` or list of `str`
     """
+    if not isinstance(string, typing.Iterable):
+        raise TypeError(
+            "Invalid type for 'delatexify': {}".format(type(string).__name__))
     if isinstance(string, str):
         return re.sub(r"[\${}\\]", r"", string)
-    else:
-        return [delatexify(s) for s in string]
+    return [delatexify(s) for s in string]
 
 def strip_dollar_signs(string):
     """This function takes an input string (or iterable of strings) and strips
@@ -38,10 +42,13 @@ def strip_dollar_signs(string):
 
     :rtype: `str` or list of `str`
     """
+    if not isinstance(string, typing.Iterable):
+        raise TypeError(
+            "Invalid type for 'strip_dollar_signs': {}".format(
+                type(string).__name__))
     if isinstance(string, str):
         return re.sub(r"\$", r"", string)
-    else:
-        return [strip_dollar_signs(s) for s in string]
+    return [strip_dollar_signs(s) for s in string]
 
 def double_curly_braces(string):
     """This function takes an input string (or iterable of strings) and doubles
@@ -57,10 +64,13 @@ def double_curly_braces(string):
 
     :rtype: `str` or list of `str`
     """
+    if not isinstance(string, typing.Iterable):
+        raise TypeError(
+            "Invalid type for 'double_curly_braces': {}".format(
+                type(string).__name__))
     if isinstance(string, str):
         return re.sub(r"([{}])", r"\1\1", string)
-    else:
-        return [double_curly_braces(s) for s in string]
+    return [double_curly_braces(s) for s in string]
 
 def strip_dollars_and_double_braces(string):
     """This is a convenience function for chaining
@@ -87,13 +97,20 @@ def numeric(string):
 
     :rtype: scalar or list of `int` or `float`
     """
+    if isinstance(string, numbers.Number):
+        return string
     if isinstance(string, str):
         try:
             return int(string)
         except ValueError:
-            return float(string)
-    else:
-        return [numeric(s) for s in string]
+            try:
+                return float(string)
+            except ValueError:
+                raise ValueError("Non-numeric string: {}".format(string))
+    if not isinstance(string, typing.Iterable):
+        raise TypeError(
+            "Invalid type for 'numeric': {}".format(type(string).__name__))
+    return [numeric(s) for s in string]
 
 def stringify(number):
     """Convert any number to a string with LaTeX formatting
@@ -107,7 +124,13 @@ def stringify(number):
 
     :rtype string: `str` or list of `str`
     """
-    if isinstance(number, (int, float)):
+    if isinstance(number, str):
+        number = numeric(number)
+    if not isinstance(number, typing.Iterable):
+        if not isinstance(number, numbers.Number):
+            raise TypeError(
+                "Invalild type for 'stringify': {}".format(
+                    type(number).__name__))
         raw_string = str(number)
         if "e" in raw_string:
             string = r"${parts[0]} \times 10^{{{parts[1]}}}$".format(
@@ -115,8 +138,7 @@ def stringify(number):
         else:
             string = r"${}$".format(raw_string)
         return string
-    else:
-        return [stringify(n) for n in number]
+    return [stringify(n) for n in number]
 
 def round_to_significant_figures(number, sig_figs=1):
     """Round a number to the specified number of significant figures
@@ -134,27 +156,31 @@ def round_to_significant_figures(number, sig_figs=1):
 
     :rtype: `int` or `float` or list of `int` or `float`
     """
-    if isinstance(number, (int, float)):
-        is_integer = (isinstance(number, int) or
-                      ("e" in str(number) and isinstance(
-                    numeric(str(number).split("e")[0]), int)))
+    if isinstance(number, str):
+        number = numeric(number)
+    if not isinstance(number, typing.Iterable):
+        if not isinstance(number, numbers.Number):
+            raise TypeError(
+                "Invalid type for 'round_to_significant_figures': {}".format(
+                    type(number).__name__))
+        is_int = int(number) == number
         if math.isclose(math.fabs(number), 0):
             return number
-        abs_of_number = math.fabs(number)
-        sign_of_number = number / abs_of_number
-        digits_of_number = ndigits(abs_of_number)
-        if digits_of_number > 0:
-            digits_of_number -= 1
-        rescaled_number = abs_of_number * 10**(-digits_of_number + sig_figs - 1)
-        int_part = int(rescaled_number)
-        if int((rescaled_number - int_part) * 10) >= 5:
-            int_part += 1
-        rounded_number = int_part * 10**(digits_of_number - sig_figs + 1)
-        if is_integer:
-            return sign_of_number * int(rounded_number)
-        return sign_of_number * rounded_number
-    else:
-        return [round_to_significant_figures(n, sig_figs) for n in number]
+        x = math.fabs(number)
+        signum = number / x
+        dignum = ndigits(x)
+        if dignum > 0:
+            dignum -= 1
+        factor = 10**(-dignum + sig_figs - 1)
+        x *= factor
+        x_int = int(x)
+        if int((x - int_x) * 10) >= 5:
+            x_int += 1
+        r = signum * x_int / factor
+        if is_int:
+            return int(r)
+        return r
+    return [round_to_significant_figures(n, sig_figs) for n in number]
 
 def pretty_print_number(number, sig_figs=1):
     """Print a number with LaTeX formatting rounded to some number of digits.
