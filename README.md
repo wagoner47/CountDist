@@ -4,22 +4,26 @@ CountDist is a way to get the separations between pairs of galaxies, including p
 
 ## Installation
 
-The majority of CountDist is written in C++ with python functions for the user interface. Therefore, you must have a C++ compiler installed. Optionally, OpenMP can be used if installed to run in parallel, and this is set by using a non-zero value on the option flag "omp=" for the python install or by either a non-zero value for "OMP=" or an environment variable named "OMP" during the make call if compiling the C++ code directly. However, the setup.py script includes a call to the Makefile, so this will be done using the python install. Additionally, the results are written to a database, which requires [SQLite3](https://www.sqlite.org/index.html) to be installed as well as the SQLite3 C++ libraries.
+Much of the pair processing for CountDist is written in C++ with python wrappers, although there is also pure python functionality. Therefore, a C++ compiler is required, with the C++17 standard available. Optionally, OpenMP can be used to run the pair processing in parallel, with the option set by using a >1 value for the option flag `--omp=` (python) or `-Domp_num_threads=` (CMake). There is also the ability to install older versions of the code (not recommended due to lack of documentation) using the option flag `--vers=` (python) or `-Dvers=` (CMake). The python setup.py script also calls CMake, so everything can be compiled using the python setup script.
 
-To only compile the C++ code, use the Makefile:
+To only compile the C++ code, use CMake (it is recommended to run in a separate build directory):
 
 ```shell
-make VERS=3 OMP=2 all
+cd CountDist
+mkdir build
+cd build
+cmake .. [-Domp_num_threads=0] [-Dvers=4]
+cmake --build
 ```
 
 To install with the python code, the setup.py script can be used with flags:
 
 ```shell
-python setup.py install --version=3 --omp=2
+python setup.py install [--version=4] [--omp=0]
 ```
 
 All other standard setup.py install flags, such as `--prefix=`, are also available.
 
-The setup.py script also includes two additional commands, `uninstall` to completely uninstall the package including from the `PYTHONPATH`, and `clean`, to remove the extra directories created during the python installation.
+The setup.py script also includes a `clean` command to remove the extra directories created during the python installation.
 
 **_Important note:_** The name of the package for importing in python is actually `countdist2` rather than `countdist`. This is due to a previous version which will be removed completely in the future, at which point the name will become `countdist`, but for now be sure to know what to import!
