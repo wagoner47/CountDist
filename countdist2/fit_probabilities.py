@@ -326,20 +326,20 @@ def _perp_mean_scale(rpo, rlo, zbar, sigma_z, cosmo):
 
 def _perp_var_scale(rpo, rlo, zbar, sigma_z, cosmo):
     if hasattr(cosmo, "differential_comoving_distance"):
-        dchi = cosmo.differential_comoving_distance(zbar)
+        dchi = cosmo.differential_comoving_distance(zbar).value
     else:
-        dchi = cosmo.hubble_distance * cosmo.inv_efunc(zbar)
+        dchi = cosmo.hubble_distance.value * cosmo.inv_efunc(zbar)
     return ((np.sqrt(0.5) * rpo * sigma_z * (1 + zbar) * dchi)
-            / cosmo.comoving_distance(zbar))
+            / cosmo.comoving_distance(zbar).value)
 
 def _par_mean_scale(rpo, rlo, zbar, sigma_z, cosmo):
     return rlo
 
 def _par_var_scale(rpo, rlo, zbar, sigma_z, cosmo):
     if hasattr(cosmo, "differential_comoving_distance"):
-        dchi = cosmo.differential_comoving_distance(zbar)
+        dchi = cosmo.differential_comoving_distance(zbar).value
     else:
-        dchi = cosmo.hubble_distance * cosmo.inv_efunc(zbar)
+        dchi = cosmo.hubble_distance.value * cosmo.inv_efunc(zbar)
     return (np.sqrt(2.0) * sigma_z * (1 + zbar) * dchi)
 
 def _add_bin_column(seps, orig_col_name, bin_col_name, bin_size):
@@ -1827,6 +1827,8 @@ class ProbFitter(object):
         d.pop("_mean_y_extents", None)
         d.pop("_var_y_extents", None)
         d.pop("_mean_r_extents", None)
+        # backwards compatability
+        d["cosmo"] = d.pop("cosmo", None)
         self.__dict__.update(d)
 
     @property
@@ -2414,8 +2416,8 @@ class ProbFitter(object):
             rlo = rlo.values
         if isinstance(zbar, pd.Index):
             zbar = zbar.values
-        return (_perp_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_x.model(
-                rpo, rlo, index=index) + rpo)
+        return (_perp_mean_scale(rpo, rlo, zbar, sigma_z, self.cosmo)
+                * self.mean_x.model(rpo, rlo, index=index) + rpo)
 
     def var_rpt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
@@ -2446,8 +2448,8 @@ class ProbFitter(object):
             rlo = rlo.values
         if isinstance(zbar, pd.Index):
             zbar = zbar.values
-        return (_perp_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_x.model(
-                rpo, rlo, index=index))
+        return (_perp_var_scale(rpo, rlo, zbar, sigma_z, self.cosmo)**2
+                * self.var_x.model(rpo, rlo, index=index))
 
     def mean_rlt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
@@ -2475,8 +2477,8 @@ class ProbFitter(object):
             rlo = rlo.values
         if isinstance(zbar, pd.Index):
             zbar = zbar.values
-        return (_par_mean_scale(rpo, rlo, zbar, sigma_z) * self.mean_y.model(
-                rpo, rlo, index=index) + rlo)
+        return (_par_mean_scale(rpo, rlo, zbar, sigma_z, self.cosmo)
+                * self.mean_y.model(rpo, rlo, index=index) + rlo)
 
     def var_rlt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
@@ -2507,8 +2509,8 @@ class ProbFitter(object):
             rlo = rlo.values
         if isinstance(zbar, pd.Index):
             zbar = zbar.values
-        return (_par_var_scale(rpo, rlo, zbar, sigma_z)**2 * self.var_y.model(
-                rpo, rlo, index=index))
+        return (_par_var_scale(rpo, rlo, zbar, sigma_z, self.cosmo)**2
+                * self.var_y.model(rpo, rlo, index=index))
 
     def cov_rpt_rlt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
