@@ -21,7 +21,7 @@ from . import calc_distances
 from .calc_distances import (
     calculate_separations, calculate_separations_from_params,
     get_3d_pair_counts, get_3d_pair_counts_from_params,
-    convolve_pair_counts)
+    make_single_realization, convolve_pair_counts)
 from .string_manip_helpers import (
     delatexify, strip_dollar_signs, numeric, stringify, double_curly_braces,
     strip_dollars_and_double_braces, round_to_significant_figures,
