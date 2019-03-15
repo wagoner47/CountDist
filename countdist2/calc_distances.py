@@ -527,6 +527,7 @@ def make_single_realization(nn_3d, prob, perp_binner, par_binner, sigmaz,
     parallel separations so that they cannot be negative. Default `True`
     :type rlt_mag: `bool`, optional
     """
+    logger = init_logger(__name__)
     if rstate is not None:
         if isinstance(rstate, int):
             np.random.seed(0)
