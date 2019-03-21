@@ -1237,9 +1237,11 @@ class SingleFitter(SingleFitterBase):
             params = np.array([params[key] for key in self.params])
         _params, self._best_fit_params = self._best_fit_params, params
         _samples, self._samples = self._samples, samples
-        yield
-        self._best_fit_params = _params
-        self._samples = _samples
+        try:
+            yield
+        finally:
+            self._best_fit_params = _params
+            self._samples = _samples
 
     def model_with_errors(self, rpo, rlo, index=None, **kwargs):
         if self._samples is None:
@@ -1576,10 +1578,12 @@ class AnalyticSingleFitter(SingleFitterBase):
         _c, self._c = self._c, c
         _c_err, self._c_err = self._c_err, c_err
         _params, self._best_fit_params = self._best_fit_params, c_arr
-        yield
-        self._c = _c
-        self._c_err = _c_err
-        self._best_fit_params = _params
+        try:
+            yield
+        finally:
+            self._c = _c
+            self._c_err = _c_err
+            self._best_fit_params = _params
 
     def _get_const(self):
         """
@@ -2376,6 +2380,7 @@ class ProbFitter(object):
                         fitter = AnalyticSingleFitter()
                         fitter._c = params
                         fitter._c_err = err
+                        fitter._best_fit_params = np.array([params])
                     else:
                         fitter = SingleFitter()
                         fitter._best_fit_params = params
@@ -2386,9 +2391,12 @@ class ProbFitter(object):
                 else:
                     fitter._c = params
                     fitter._c_err = err
+                    fitter._best_fit_params = np.array([params])
                 self._fitters[fit_type] = fitter
-        yield
-        self._fitters = copy.deepcopy(saved_fitters)
+        try:
+            yield
+        finally:
+            self._fitters = copy.deepcopy(saved_fitters)
 
     def mean_rpt(self, rpo, rlo, zbar, sigma_z, *, index=None):
         """
