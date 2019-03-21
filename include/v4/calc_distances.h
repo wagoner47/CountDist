@@ -26,6 +26,7 @@
 constexpr int OMP_NUM_THREADS = omp_num_threads;
 #include <omp.h>
 #else
+constexpr bool _OPENMP = false;
 constexpr int OMP_NUM_THREADS = 1;
 typedef int omp_int_t;
 inline void omp_set_num_threads(int) {}
