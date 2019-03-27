@@ -429,9 +429,19 @@ public:
     double distance_magnitude(const SPos& other) const {
 	if (operator==(other)) return 0.0;
 	auto dist_vec = distance_vector(other);
-	return std::sqrt(math::square(dist_vec[0]) + math::square(dist_vec[1]) + math::square(dist_vec[2]));
+	return std::sqrt(std::inner_product(dist_vec.begin(), dist_vec.end(), dist_vec.begin(), 0.0));
     }
 
+    bool check_box(const SPos& other, double max) const {
+        for (const auto& d : distance_vector(other)) {
+            if (!check_val_in_limits(std::fabs(d), 0.0, max)) { return false; }
+        }
+        return true;
+    }
+
+    bool check_box(const SPos& other, const BinSpecifier& binner) const {
+        return check_box(other, binner.get_bin_max());
+    }
 
     bool check_shell(const SPos& other, double min, double max) const {
 	for (auto d : distance_vector(other)) {
@@ -623,6 +633,34 @@ public:
     double distance_magnitude(const SPos& other, const bool use_true) const { return use_true ? tpos_.distance_magnitude(other) : opos_.distance_magnitude(other); }
 
     double distance_magnitude(const Pos& other, const bool use_true) const { return use_true ? tpos_.distance_magnitude(other.tpos_) : opos_.distance_magnitude(other.opos_); }
+
+    bool check_box(const SPos& other, double max) const {
+        if (!other.is_initialized_ || std::isnan(other.r_))
+            throw std::runtime_error("No distance set in other");
+        if (!has_obs()) {
+            if (!has_true())
+                throw std::runtime_error(
+                        "Neither true nor observed distances set in self");
+            return tpos_.check_box(other, max);
+        }
+        return opos_.check_box(other, max);
+    }
+
+    bool check_box(const SPos& other, const BinSpecifier& binner) {
+        return check_box(other, binner.get_bin_max());
+    }
+
+    bool check_box(const Pos& other, double max) const {
+        if (!(has_obs() && other.has_obs())) {
+            if (!(has_true() && other.has_true())) throw std::runtime_error("Cannot mix true and observed distances");
+            return tpos_.check_box(other.tpos_, max);
+        }
+        return opos_.check_box(other.opos_, max);
+    }
+
+    bool check_box(const Pos& other, const BinSpecifier& binner) const {
+        return check_box(other, binner.get_bin_max());
+    }
 
     bool check_shell(const SPos& other, double min, double max) const {
 	if (!other.is_initialized_ || std::isnan(other.r_)) throw std::runtime_error("No distance set in other");
@@ -1247,7 +1285,8 @@ public:
 
     void process_pair(const SPos& pos1, const SPos& pos2) override {
 	n_tot_++;
-	if (!pos1.check_shell(pos2, r_min, r_max)) return;
+	if (!pos1.check_box(pos2, r_max)) return;
+	if (!check_val_in_limits(pos1.distance_magnitude(pos2), r_min, r_max)) return;
 	int zo_bin = binners_[2].assign_bin(pos1.distance_zbar(pos2));
 	if (zo_bin == -1) return;
 	int rp_bin = binners_[0].assign_bin(pos1.distance_perp(pos2));
@@ -1336,7 +1375,8 @@ public:
 
     void process_pair(const SPos& pos1, const SPos& pos2) override {
 	n_tot_++;
-	if (!pos1.check_shell(pos2, r_min, r_max)) return;
+	if (!pos1.check_box(pos2, r_max)) return;
+	if (!check_val_in_limits(pos1.distance_magnitude(pos2), r_min, r_max)) return;
 	int rp_bin = binners_[0].assign_bin(pos1.distance_perp(pos2));
 	if (rp_bin == -1) return;
 	int rl_bin = binners_[1].assign_bin(pos1.distance_par(pos2));
@@ -1416,8 +1456,8 @@ public:
 
     void process_pair(const SPos& pos1, const SPos& pos2) override {
 	n_tot_++;
-	if (!pos1.check_shell(pos2, r_min, r_max)) return;
-	int bin = binners_[0].assign_bin(std::sqrt(math::square(pos1.distance_perp(pos2)) + math::square(pos1.distance_par(pos2))));
+	if (!pos1.check_box(pos2, r_max)) return;
+	int bin = binners_[0].assign_bin(pos1.distance_magnitude(pos2));
 	if (bin > -1) counts_[bin]++;
     }
 
