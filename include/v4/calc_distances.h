@@ -646,7 +646,7 @@ public:
         return opos_.check_box(other, max);
     }
 
-    bool check_box(const SPos& other, const BinSpecifier& binner) {
+    bool check_box(const SPos& other, const BinSpecifier& binner) const {
         return check_box(other, binner.get_bin_max());
     }
 
