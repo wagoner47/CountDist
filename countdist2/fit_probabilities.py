@@ -2596,22 +2596,9 @@ class ProbFitter(object):
         u, v = np.random.rand(2, np.atleast_1d(rpo).size)
         u = np.sqrt(-2.0 * np.log(u))
         v *= 2.0 * np.pi
-        delta_perp = u * np.cos(v)
-        delta_par = (
-            u + np.sin(
-                v + np.arcsin(
-                    np.sqrt(
-                        self.var_rpt(rpo, rlo, zbar, sigma_z)
-                        * self.var_rlt(rpo, rlo, zbar, sigma_z))
-                    * self._fitters["mean_r"].model(rpo, rlo))))
-        del u, v
-        rpt = (np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z, index=index))
-               * (delta_perp + self.mean_rpt(rpo, rlo, zbar, sigma_z)))
-        del delta_perp
-        rlt = afunc(
-            np.sqrt(self.var_rlt(rpo, rlo, zbar, sigma_z, index=index))
-            * (delta_par + self.mean_rlt(rpo, rlo, zbar, sigma_z)))
-        del delta_par
+        rpt = self.mean_rpt(rpo, rlo, zbar, sigma_z) + np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z)) * u * np.cos(v)
+        rlt = afunc(self.mean_rlt(rpo, rlo, zbar, sigma_z) + np.sqrt(self.var_rlt(rpo, rlo, zbar, sigma_z)) * u * np.sin(
+            v + self._fitters["mean_r"].model(rpo, rlo)))
         return rpt, rlt
 
     def det_cov_matrix(self, rpo, rlo, zbar, sigma_z, *, index=None):
