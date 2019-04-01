@@ -2596,9 +2596,11 @@ class ProbFitter(object):
         u, v = np.random.rand(2, np.atleast_1d(rpo).size)
         u = np.sqrt(-2.0 * np.log(u))
         v *= 2.0 * np.pi
-        rpt = self.mean_rpt(rpo, rlo, zbar, sigma_z) + np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z)) * u * np.cos(v)
-        rlt = afunc(self.mean_rlt(rpo, rlo, zbar, sigma_z) + np.sqrt(self.var_rlt(rpo, rlo, zbar, sigma_z)) * u * np.sin(
-            v + self._fitters["mean_r"].model(rpo, rlo)))
+        rpt = (self.mean_rpt(rpo, rlo, zbar, sigma_z, index=index)
+               + np.sqrt(self.var_rpt(rpo, rlo, zbar, sigma_z, index=index)) * u * np.cos(v))
+        rlt = afunc(self.mean_rlt(rpo, rlo, zbar, sigma_z, index=index)
+                    + np.sqrt(self.var_rlt(rpo, rlo, zbar, sigma_z, index=index)) * u * np.sin(
+                        v + self._fitters["mean_r"].model(rpo, rlo, index=index)))
         return rpt, rlt
 
     def det_cov_matrix(self, rpo, rlo, zbar, sigma_z, *, index=None):
