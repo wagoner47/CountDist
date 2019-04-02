@@ -20,10 +20,6 @@ using namespace pybind11::literals;
 
 #if _OPENMP
 #include <omp.h>
-#else
-typedef int omp_int_t;
-inline void omp_set_num_threads(int) {}
-inline omp_int_t omp_get_num_threads() { return 1; }
 #endif
 
 struct PosCatalog {

@@ -23,20 +23,22 @@
 #include "fast_math.h"
 
 #if defined(_OPENMP) && defined(omp_num_threads)
-constexpr int OMP_NUM_THREADS = omp_num_threads;
 #include <omp.h>
+constexpr omp_int_t OMP_NUM_THREADS = omp_num_threads;
 #else
 constexpr bool _OPENMP = false;
-constexpr int OMP_NUM_THREADS = 1;
 typedef int omp_int_t;
+constexpr omp_int_t OMP_NUM_THREADS = 1;
 inline void omp_set_num_threads(int) {}
 inline omp_int_t omp_get_num_threads() { return 1; }
 #endif
 
-template<typename T>
-inline std::enable_if_t<std::is_arithmetic<T>::value, bool>
-check_val_in_limits(const T& val, const T& min, const T& max) {
-    return std::isfinite(val) && (val >= min) && (val <= max);
+template<typename T, typename std::enable_if_t<
+        std::is_arithmetic_v<T>,
+        int> = 0>
+inline bool check_val_in_limits(const T& val, const T& min, const T& max) {
+    return std::isfinite(val) && (!std::isfinite(min) || val >= min)
+           && (!std::isfinite(max) || val <= max);
 }
 
 template<typename T, std::size_t N>
@@ -46,12 +48,12 @@ std::array<T,N> make_filled_array(const T& value) {
     return arr;
 }
 
-template<typename T, std::size_t N, typename std::enable_if_t<std::is_arithmetic<T>::value, int> = 0>
+template<typename T, std::size_t N, typename std::enable_if_t<std::is_arithmetic_v<T>, int> = 0>
 std::array<T,N> make_filled_array() {
     return make_filled_array<T,N>((T)0);
 }
 
-template<typename T, std::size_t N, typename std::enable_if_t<!std::is_arithmetic<T>::value, int> = 0>
+template<typename T, std::size_t N, typename std::enable_if_t<!std::is_arithmetic_v<T>, int> = 0>
 std::array<T,N> make_filled_array() {
     return make_filled_array<T,N>(T());
 }
@@ -485,7 +487,7 @@ public:
     }
 
 private:
-    void check(double value, double min, double max, std::string&& arg_name) {
+    static void check(double value, double min, double max, std::string&& arg_name) {
 	if (value < min || value > max || std::isnan(value)) throw std::invalid_argument(arg_name + " value " + std::to_string(value) + " outside of allowed range [" + std::to_string(min) + "," + std::to_string(max) + "]");
     }
 
@@ -1119,7 +1121,7 @@ public:
     }
 
     template<typename T>
-    typename std::enable_if_t<std::is_arithmetic<T>::value, NNType>
+    typename std::enable_if_t<std::is_arithmetic_v<T>, NNType>
     operator+=(const T& x) {
 	if (!math::isclose(x, (T)0)) {
 	    throw std::invalid_argument("Only 0 valid for scalar addition with " + class_name());
@@ -1128,11 +1130,11 @@ public:
     }
 
     template<typename T>
-    typename std::enable_if_t<std::is_arithmetic<T>::value, NNType>
+    typename std::enable_if_t<std::is_arithmetic_v<T>, NNType>
     operator+(const T& x) const { return NNType(*this).operator+=(x); }
 
     template<typename T>
-    friend typename std::enable_if_t<std::is_arithmetic<T>::value, NNType>
+    friend typename std::enable_if_t<std::is_arithmetic_v<T>, NNType>
     operator+(const T& x, const NNType& rhs) { return rhs.operator+(x); }
 
     bool operator==(const NNType& other) const { return n_tot_ == other.n_tot_ && std::equal(binners_.begin(), binners_.end(), other.binners_.begin()) && std::equal(counts_.begin(), counts_.end(), other.counts_.begin()); }
@@ -1149,7 +1151,7 @@ public:
 
     std::size_t nbins_nonzero() const { return max_index_ - std::count(counts_.begin(), counts_.end(), 0); }
 
-    int ncounts() const { return std::accumulate(counts_.begin(), counts_.end(), 0); }
+    long long ncounts() const { return std::accumulate(counts_.begin(), counts_.end(), (long long) 0); }
 
     std::string toString() const {
 	std::ostringstream oss;
@@ -1751,7 +1753,7 @@ public:
     }
 
     template<typename T>
-    typename std::enable_if_t<std::is_arithmetic<T>::value, ENNType>
+    typename std::enable_if_t<std::is_arithmetic_v<T>, ENNType>
     operator+=(const T& x) {
 	if (!math::isclose(x, (T)0)) {
 	    throw std::invalid_argument("Only 0 valid for scalar addition with " + this->class_name());
@@ -1760,11 +1762,11 @@ public:
     }
 
     template<typename T>
-    typename std::enable_if_t<std::is_arithmetic<T>::value, ENNType>
+    typename std::enable_if_t<std::is_arithmetic_v<T>, ENNType>
     operator+(const T& x) const { return ENNType(*this).operator+=(x); }
 
     template<typename T>
-    friend typename std::enable_if_t<std::is_arithmetic<T>::value, ENNType>
+    friend typename std::enable_if_t<std::is_arithmetic_v<T>, ENNType>
     operator+(const T& x, const ENNType& rhs) { return rhs.operator+(x); }
 
     bool operator==(const ENNType& other) const { return n_tot_ == other.n_tot_ && n_real_ == other.n_real_ && std::equal(binners_.begin(), binners_.end(), other.binners_.begin()) && math::isclose(mean_, other.mean_) && math::isclose(cov_, other.cov_); }
