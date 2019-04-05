@@ -781,6 +781,7 @@ def make_single_realization(
     logger.debug("Begin loop")
     for (i, j, k), c in np.ndenumerate(nn_3d.counts):
         if c > 0:
+            logger.debug("Draw true separations")
             rpt, rlt = prob.draw_rpt_rlt(
                 nn_3d.rperp_bins.bin_widths[i] * np.random.rand(c)
                 + nn_3d.rperp_bins.lower_bin_edges[i],
@@ -794,8 +795,10 @@ def make_single_realization(
                 args = (np.sqrt(rpt**2 + rlt**2), is_first)
             else:
                 args = (rpt, rlt, is_first)
+            logger.debug("Process separations")
             with multiprocessing.Lock():
                 enn.process_separation(*args)
+            logger.debug("Continue")
             is_first = False
     logger.debug("Calculate mean")
     enn.update()
