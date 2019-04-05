@@ -260,8 +260,7 @@ def calculate_separations(
         use_true: bool,
         use_obs: bool,
         cat1: typing.Union[
-            typing.Type[Table], pd.DataFrame, np.recarray, np.ndarray[
-                structured_dtype]],
+            typing.Type[Table], pd.DataFrame, np.recarray, structured_array],
         cat2: typing.Optional[
             typing.Union[
                 typing.Type[Table],
@@ -269,8 +268,7 @@ def calculate_separations(
                 np.recarray,
                 structured_array]] = None,
         as_type: str = "dataframe") -> typing.Union[pd.DataFrame, Table,
-                                                    np.ndarray[
-                                                        structured_dtype]]:
+                                                    structured_array]:
     """
     Calculate the separations for all pairs within limits.
 
@@ -468,8 +466,7 @@ def get_pair_counts(binners: typing.Sequence[_calculate_distances.BinSpecifier],
                                                            Table],
                                                        pd.DataFrame,
                                                        np.recarray,
-                                                       np.ndarray[
-                                                           structured_dtype]]] =
+                                                       structured_array]] =
                     None,
                     use_true: bool = False) -> typing.Union[
                         _calculate_distances.NNCounts3D,
