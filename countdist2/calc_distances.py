@@ -759,9 +759,11 @@ def make_single_realization(
     if len(binners) == 1:
         logger.debug("case: 1D")
         enn = _calculate_distances.ExpectedNNCounts1D(binners, nn_3d.ntot)
+        in_1d = True
     elif len(binners) == 2:
         logger.debug("case: 2D")
         enn = _calculate_distances.ExpectedNNCounts2D(binners, nn_3d.ntot)
+        in_1d = False
     else:
         logger.debug("Invalid dimensionality")
         raise ValueError("Cannot find expected pair counts in {} "
@@ -786,8 +788,12 @@ def make_single_realization(
                 + nn_3d.zbar_bins.lower_bin_edges[k],
                 sigmaz,
                 rlt_mag)
+            if in_1d:
+                args = (np.sqrt(rpt**2 + rlt**2), is_first)
+            else:
+                args = (rpt, rlt, is_first)
             with multiprocessing.Lock():
-                enn.process_separation(rpt, rlt, is_first)
+                enn.process_separation(*args)
             is_first = False
     logger.debug("Calculate mean")
     enn.update()
