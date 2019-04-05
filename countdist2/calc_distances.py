@@ -704,12 +704,14 @@ def make_single_realization(
         perp_binner: _calculate_distances.BinSpecifier,
         par_binner: _calculate_distances.BinSpecifier,
         sigmaz: float,
+        rlt_mag: bool = True,
         rstate: typing.Optional[
             typing.Union[
                 int,
                 typing.Tuple[
-                    str, np.ndarray[np.uint, 624], int, int, float]]] = None,
-        rlt_mag: bool = True) -> _calculate_distances.ExpectedNNCounts2D:
+                    str, np.ndarray[
+                        np.uint, 624], int, int, float]]] = None) -> \
+        _calculate_distances.ExpectedNNCounts2D:
     """
     Make a single Monte Carlo realization of the true pair counts in bins
     specified by the BinSpecifier objects given the 3D pair counts. A
@@ -731,13 +733,13 @@ def make_single_realization(
     :type par_binner: :class:`BinSpecifier`
     :param sigmaz: The redshift error associated with observed separations
     :type sigmaz: scalar `float`
+    :param rlt_mag: Return the absolute value (if `True`) of the drawn true
+    parallel separations so that they cannot be negative. Default `True`
+    :type rlt_mag: `bool`, optional
     :param rstate: A random seed or state to set, if any. Default `None` will
     not alter the current state
     :type rstate: `int`, `tuple`(`str`, :class:`numpy.ndarray`[`uint`, 624],
     `int`, `int`, `float`) or `NoneType`, optional
-    :param rlt_mag: Return the absolute value (if `True`) of the drawn true
-    parallel separations so that they cannot be negative. Default `True`
-    :type rlt_mag: `bool`, optional
 
     :return nn_2d: The expected pair counts in 2D bins for a single
     realization, with mean calculated
@@ -783,12 +785,14 @@ def convolve_pair_counts(
         sigmaz: float,
         n_real: int = 1,
         n_process: int = 1,
+        rlt_mag: bool = True,
         rstate: typing.Optional[
             typing.Union[
                 int,
                 typing.Tuple[
-                    str, np.ndarray[np.uint, 624], int, int, float]]] = None,
-        rlt_mag: bool = True) -> _calculate_distances.ExpectedNNCounts2D:
+                    str, np.ndarray[
+                        np.uint, 624], int, int, float]]] = None) -> \
+        _calculate_distances.ExpectedNNCounts2D:
     """
     Convolve the pair counts in :param:`nn_3d` with the probability
     :param:`prob_nn` by doing :param:`n_real` realizations of a Monte Carlo
@@ -813,17 +817,17 @@ def convolve_pair_counts(
     :param n_real: The number of realizations of MC simulations to perform.
     Default 1
     :type n_real: `int`, optional
-    :param rstate: An initial random seed or state to set, if any. All random
-    states of the sub-processes will be set from this initial state. Default
-    `None` will not alter the current state
-    :type rstate: `int`, `tuple`(`str`, :class:`numpy.ndarray`[`uint`, 624],
-    `int`, `int`, `float`) or `NoneType`, optional
     :param n_process: Number of processes to use for parallelization. Default
     1
     :type n_process: `int`, optional
     :param rlt_mag: Return the absolute value (if `True`) of the drawn true
     parallel separations so that they cannot be negative. Default `True`
     :type rlt_mag: `bool`, optional
+    :param rstate: An initial random seed or state to set, if any. All random
+    states of the sub-processes will be set from this initial state. Default
+    `None` will not alter the current state
+    :type rstate: `int`, `tuple`(`str`, :class:`numpy.ndarray`[`uint`, 624],
+    `int`, `int`, `float`) or `NoneType`, optional
 
     :return nn_2d: The estimated true pair counts from the MC realizations. If
     doing only one realization, the expected counts will be equal to the counts
@@ -834,13 +838,13 @@ def convolve_pair_counts(
     """
     if n_real == 1:
         return make_single_realization(
-            nn_3d, prob, perp_binner, par_binner, sigmaz, rstate, rlt_mag)
+            nn_3d, prob, perp_binner, par_binner, sigmaz, rlt_mag, rstate)
     nn_2d = _calculate_distances.ExpectedNNCounts2D(perp_binner, par_binner)
     with multiprocessing.Pool(n_process) as pool:
-        nn_2d.append_real(pool.map(functools.partial(nn_3d, prob,
-                                                     perp_binner, par_binner,
-                                                     sigmaz,
-                                                     rlt_mag=rlt_mag),
-                                   range(1, n_real + 1)))
+        nn_2d.append_real(
+            pool.map(
+                functools.partial(
+                    nn_3d, prob, perp_binner, par_binner, sigmaz, rlt_mag),
+                range(1, n_real + 1)))
     nn_2d.update()
     return nn_2d
