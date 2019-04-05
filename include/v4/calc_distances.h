@@ -2004,7 +2004,6 @@ protected:
     std::vector<NNType> nn_list_ = {};
     std::size_t n_real_ = 0, n_tot_ = 0, max_index_ = 0, max_cov_index_ = 0;
     std::vector<double> mean_ = {}, cov_ = {};
-    bool mean_updated_ = true, cov_updated_ = true;
 
 private:
     void on_bin_ntot_update() {
