@@ -126,7 +126,7 @@ def _read_catalog(file_name: typing.Union[str, os.PathLike], has_true: bool,
         if docol not in data.colnames:
             raise ValueError("Missing column {} for observed distances in"
                              " catalog read from file {}".format(
-                                 docol, str(file_name)))
+                docol, str(file_name)))
         if zocol is None:
             zocol = docol.replace("D", "Z")
         if zocol not in data.colnames:
@@ -228,7 +228,7 @@ def _convert_catalog_to_structured_array(cat: typing.Union[pd.DataFrame,
             logger.debug("Have one or more needed columns missing")
             raise ValueError("Input catalog missing required columns"
                              " {}".format(keep_cols[np.isin(
-                                 keep_cols, cat.columns, invert=True)]))
+                keep_cols, cat.columns, invert=True)]))
         logger.debug("Return DataFrame as numpy.recarray with only needed "
                      "columns kept")
         return cat.loc[:, keep_cols].to_records(index=False)
@@ -242,7 +242,8 @@ def _convert_catalog_to_structured_array(cat: typing.Union[pd.DataFrame,
         logger.debug("Have one or more needed columns missing")
         raise ValueError("Input catalog missing required columns"
                          " {}".format(np.array(keep_cols)[
-                             np.isin(keep_cols, cat.dtype.names, invert=True)]))
+                                          np.isin(keep_cols, cat.dtype.names,
+                                                  invert=True)]))
     if np.array_equal(np.sort(cat.dtype.names), np.sort(keep_cols)):
         logger.debug("Don't need to remove any columns")
         return cat.as_array() if isinstance(cat, Table) else cat
@@ -467,7 +468,7 @@ def get_pair_counts(binners: typing.Sequence[_calculate_distances.BinSpecifier],
                     None,
                     use_true: bool = False) -> typing.Union[
     _calculate_distances.NNCounts3D, _calculate_distances.NNCounts2D,
-        _calculate_distances.NNCounts1D]:
+    _calculate_distances.NNCounts1D]:
     """
     Get the pair counts within a catalog or between catalogs in 1, 2,
     or 3 dimensional bins
@@ -593,7 +594,7 @@ def get_3d_pair_counts(rpo_binner: _calculate_distances.BinSpecifier,
 
 
 def get_3d_pair_counts_from_params(params_file: typing.Union[str,
-                                                             os.PathLike]) ->\
+                                                             os.PathLike]) -> \
         _calculate_distances.NNCounts3D:
     """
     Get the pair counts in 3D bins with options given in parameter file
@@ -697,12 +698,20 @@ def get_3d_pair_counts_from_params(params_file: typing.Union[str,
     return get_3d_pair_counts(
         rpo_bins, rlo_bins, zbar_bins, cat1, cat2, use_true)
 
+    # :param perp_binner: The binning specifications in true perpendicular
+    # separation to use
+    # :type perp_binner: :class:`BinSpecifier`
+    # :param par_binner: The binning specifications in true parallel separation
+    # to use
+    # :type par_binner: :class:`BinSpecifier`
+
 
 def make_single_realization(
         nn_3d: _calculate_distances.NNCounts3D,
         prob: ProbFitter,
-        perp_binner: _calculate_distances.BinSpecifier,
-        par_binner: _calculate_distances.BinSpecifier,
+        binners: typing.Sequence[_calculate_distances.BinSpecifier],
+        # perp_binner: _calculate_distances.BinSpecifier,
+        # par_binner: _calculate_distances.BinSpecifier,
         sigmaz: float,
         rlt_mag: bool = True,
         rstate: typing.Optional[
@@ -711,7 +720,8 @@ def make_single_realization(
                 typing.Tuple[
                     str, np.ndarray[
                         np.uint, 624], int, int, float]]] = None) -> \
-        _calculate_distances.ExpectedNNCounts2D:
+        typing.Union[_calculate_distances.ExpectedNNCounts1D,
+                     _calculate_distances.ExpectedNNCounts2D]:
     """
     Make a single Monte Carlo realization of the true pair counts in bins
     specified by the BinSpecifier objects given the 3D pair counts. A
@@ -725,12 +735,9 @@ def make_single_realization(
     with fits already done (or use the context manager when calling this
     function)
     :type prob: :class:`ProbFitter`
-    :param perp_binner: The binning specifications in true perpendicular
-    separation to use
-    :type perp_binner: :class:`BinSpecifier`
-    :param par_binner: The binning specifications in true parallel separation
-    to use
-    :type par_binner: :class:`BinSpecifier`
+    :param binners: BinSpecifier object(s) for the new binning. Can only be
+    length 1 or 2. Output type is determined by the length of this parameter.
+    :type binners: Sequence[:class:`~countdist2.BinSpecifier`] of length 1 or 2
     :param sigmaz: The redshift error associated with observed separations
     :type sigmaz: scalar `float`
     :param rlt_mag: Return the absolute value (if `True`) of the drawn true
@@ -741,14 +748,24 @@ def make_single_realization(
     :type rstate: `int`, `tuple`(`str`, :class:`numpy.ndarray`[`uint`, 624],
     `int`, `int`, `float`) or `NoneType`, optional
 
-    :return nn_2d: The expected pair counts in 2D bins for a single
+    :return enn: The expected pair counts in 1D or 2D bins for a single
     realization, with mean calculated
-    :rtype nn_2d: :class:`~countdist2.ExpectedNNCounts2D`
+    :rtype enn: :class:`~countdist2.ExpectedNNCounts1D` or
+    :class:`~countdist2.ExpectedNNCounts2D`
     """
     logger = init_logger(__name__)
-    logger.debug("Initialize ExpectedNNCounts2D object")
-    nn_2d = _calculate_distances.ExpectedNNCounts2D(
-        perp_binner, par_binner, nn_3d.ntot)
+    binners = list(binners)
+    logger.debug("Initialize ExpectedNNCountsND object")
+    if len(binners) == 1:
+        logger.debug("case: 1D")
+        enn = _calculate_distances.ExpectedNNCounts1D(binners, nn_3d.ntot)
+    elif len(binners) == 2:
+        logger.debug("case: 2D")
+        enn = _calculate_distances.ExpectedNNCounts2D(binners, nn_3d.ntot)
+    else:
+        logger.debug("Invalid dimensionality")
+        raise ValueError("Cannot find expected pair counts in {} "
+                         "dimensionts".format(len(binners)))
     logger.debug("Set random state")
     if rstate is not None:
         if isinstance(rstate, int):
@@ -770,18 +787,17 @@ def make_single_realization(
                 sigmaz,
                 rlt_mag)
             with multiprocessing.Lock():
-                nn_2d.process_separation(rpt, rlt, is_first)
+                enn.process_separation(rpt, rlt, is_first)
             is_first = False
     logger.debug("Calculate mean")
-    nn_2d.update()
-    return nn_2d
+    enn.update()
+    return enn
 
 
 def convolve_pair_counts(
         nn_3d: _calculate_distances.NNCounts3D,
         prob: ProbFitter,
-        perp_binner: _calculate_distances.BinSpecifier,
-        par_binner: _calculate_distances.BinSpecifier,
+        binners: typing.Sequence[_calculate_distances.BinSpecifier],
         sigmaz: float,
         n_real: int = 1,
         n_process: int = 1,
@@ -792,7 +808,8 @@ def convolve_pair_counts(
                 typing.Tuple[
                     str, np.ndarray[
                         np.uint, 624], int, int, float]]] = None) -> \
-        _calculate_distances.ExpectedNNCounts2D:
+        typing.Union[_calculate_distances.ExpectedNNCounts1D,
+                     _calculate_distances.ExpectedNNCounts2D]:
     """
     Convolve the pair counts in :param:`nn_3d` with the probability
     :param:`prob_nn` by doing :param:`n_real` realizations of a Monte Carlo
@@ -806,12 +823,9 @@ def convolve_pair_counts(
     with fits already done (or use the context manager when calling this
     function)
     :type prob: :class:`ProbFitter`
-    :param perp_binner: The binning specifications in true perpendicular
-    separation to use
-    :type perp_binner: :class:`BinSpecifier`
-    :param par_binner: The binning specifications in true parallel separation
-    to use
-    :type par_binner: :class:`BinSpecifier`
+    :param binners: BinSpecifier object(s) for the new binning. Can only be
+    length 1 or 2. Output type is determined by the length of this parameter.
+    :type binners: Sequence[:class:`~countdist2.BinSpecifier`] of length 1 or 2
     :param sigmaz: The redshift error associated with observed separations
     :type sigmaz: scalar `float`
     :param n_real: The number of realizations of MC simulations to perform.
@@ -829,22 +843,30 @@ def convolve_pair_counts(
     :type rstate: `int`, `tuple`(`str`, :class:`numpy.ndarray`[`uint`, 624],
     `int`, `int`, `float`) or `NoneType`, optional
 
-    :return nn_2d: The estimated true pair counts from the MC realizations. If
+    :return enn: The estimated true pair counts from the MC realizations. If
     doing only one realization, the expected counts will be equal to the counts
     from the single realization, and the variance will be `None`. For more than
     one realization, the expected counts are an average of the realizations,
     and the variance is calculated as the variance on the mean
-    :rtype nn_2d: :class:`ExpectedNNCounts2D`
+    :rtype enn: :class:`~countdist2.ExpectedNNCounts1D` or
+    :class:`~countdist2.ExpectedNNCounts2D`
     """
     if n_real == 1:
         return make_single_realization(
-            nn_3d, prob, perp_binner, par_binner, sigmaz, rlt_mag, rstate)
-    nn_2d = _calculate_distances.ExpectedNNCounts2D(perp_binner, par_binner)
+            nn_3d, prob, binners, sigmaz, rlt_mag, rstate)
+    binners = list(binners)
+    if len(binners) == 1:
+        enn = _calculate_distances.ExpectedNNCounts1D(binners, nn_3d.ntot)
+    elif len(binners) == 2:
+        enn = _calculate_distances.ExpectedNNCounts2D(binners, nn_3d.ntot)
+    else:
+        raise ValueError("Cannot get expected pair counts in {} "
+                         "dimensions".format(len(binners)))
     with multiprocessing.Pool(n_process) as pool:
-        nn_2d.append_real(
+        enn.append_real(
             pool.map(
                 functools.partial(
-                    nn_3d, prob, perp_binner, par_binner, sigmaz, rlt_mag),
+                    nn_3d, prob, binners, sigmaz, rlt_mag),
                 range(1, n_real + 1)))
-    nn_2d.update()
-    return nn_2d
+    enn.update()
+    return enn
