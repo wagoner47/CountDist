@@ -665,7 +665,7 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
 		    if (t.size() != 3) {
 			// For backwards compatability for instances pickled
 			// on previous version
-			if (t.size() != 2 + N) throw std::length_error("Invalid state");
+			if (t.size() != 2 + N) throw std::length_error("Invalid state of " + std::to_string(t.size()) + " elements");
 			for (std::size_t i = 0; i < N; i++) {
 			    binners[i] = t[i].cast<BinSpecifier>();
 			}
