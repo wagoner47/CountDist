@@ -1472,14 +1472,6 @@ std::size_t get_1d_indexer_from_nd(const std::array<int, N>& indices,
 }
 
 
-template<class C>
-class CorrFuncBase;
-
-
-template<class C>
-class CorrFunc;
-
-
 template<std::size_t N>
 class CorrFuncNDBase;
 
@@ -2583,6 +2575,229 @@ public:
     }
 };
 
+
+template<std::size_t N>
+class CorrFuncNDBase {
+    using NNType = NNCountsND<N>;
+    using BSType = std::array<BinSpecifier, N>;
+protected:
+    BSType binners_ = arrays::make_filled_array<BinSpecifier, N>();
+    std::size_t max_index_ = 0;
+    NNType dd_, rr_, dr_, rd_;
+
+    NNType& verify_nn(const NNType& nn) const {
+        for (std::size_t i = 0; i < N; i++) {
+            if (binners_[i].is_set() && nn.bin_info()[i] != binners_[i]) {
+                throw std::invalid_argument(NNType::class_name
+                                            + " instance given has different binning scheme in dimension "
+                                            + std::to_string(i));
+            }
+        }
+        return nn;
+    }
+
+    void on_bin_nn_update() {
+        max_index_ = get_max_index(binners_);
+        for (std::size_t i = 0; i < N; i++) {
+            dd_.update_binning(binners_[i], false);
+            dr_.update_binning(binners_[i], false);
+            rd_.update_binning(binners_[i], false);
+            rr_.update_binning(binners_[i], false);
+        }
+    }
+
+public:
+    CorrFuncNDBase() = default;
+
+    CorrFuncNDBase(const CorrFuncNDBase&) = default;
+
+    explicit CorrFuncNDBase(const BSType& binners)
+            : binners_(binners),
+              max_index_(get_max_index(binners_)),
+              dd_(NNType(binners_)),
+              rr_(NNType(binners_)),
+              dr_(NNType(binners_)),
+              rd_(NNType(binners_)) {}
+
+    explicit CorrFuncNDBase(const NNType& dd)
+            : binners_(dd.bin_info()),
+              max_index_(get_max_index(binners_)),
+              dd_(dd),
+              rr_(NNType(binners_)),
+              dr_(NNType(binners_)),
+              rd_(NNType(binners_)) {}
+
+    CorrFuncNDBase(const BSType& binners, const NNType& dd)
+            : binners_(binners),
+              max_index_(get_max_index(binners_)),
+              dd_(verify_nn(dd)),
+              rr_(NNType(binners_)),
+              dr_(NNType(binners_)),
+              rd_(NNType(binners_)) {}
+
+    CorrFuncNDBase(const NNType& dd, const NNType& rr)
+            : binners_(dd.bin_info()),
+              max_index_(get_max_index(binners_)),
+              dd_(dd),
+              rr_(verify_nn(rr)),
+              dr_(NNType(binners_)),
+              rd_(NNType(binners_)) {}
+
+    CorrFuncNDBase(const BSType& binners, const NNType& dd, const NNType& rr)
+            : binners_(binners),
+              max_index_(get_max_index(binners_)),
+              dd_(verify_nn(dd)),
+              rr_(verify_nn(rr)),
+              dr_(NNType(binners_)),
+              rd_(NNType(binners_)) {}
+
+    CorrFuncNDBase(const NNType& dd, const NNType& rr, const NNType& dr)
+            : binners_(dd.bin_info()),
+              max_index_(get_max_index(binners_)),
+              dd_(dd),
+              rr_(verify_nn(rr)),
+              dr_(verify_nn(dr)),
+              rd_(NNType(binners_)) {}
+
+    CorrFuncNDBase(const BSType& binners,
+                   const NNType& dd,
+                   const NNType& rr,
+                   const NNType& dr)
+            : binners_(binners),
+              max_index_(get_max_index(binners_)),
+              dd_(verify_nn(dd)),
+              rr_(verify_nn(rr)),
+              dr_(verify_nn(dr)),
+              rd_(NNType(binners_)) {}
+
+    CorrFuncNDBase(const NNType& dd,
+                   const NNType& rr,
+                   const NNType& dr,
+                   const NNType& rd)
+            : binners_(dd.bin_info()),
+              max_index_(get_max_index(binners_)),
+              dd_(dd),
+              rr_(verify_nn(rr)),
+              dr_(verify_nn(dr)),
+              rd_(verify_nn(rd)) {}
+
+    CorrFuncNDBase(const BSType& binners,
+                   const NNType& dd,
+                   const NNType& rr,
+                   const NNType& dr,
+                   const NNType& rd)
+            : binners_(binners),
+              max_index_(get_max_index(binners_)),
+              dd_(verify_nn(dd)),
+              rr_(verify_nn(rr)),
+              dr_(verify_nn(dr)),
+              rd_(verify_nn(rd)) {}
+
+    const NNType& dd() const {
+        return dd_;
+    }
+
+    void dd(const NNType& dd) {
+        dd_ = verify_nn(dd);
+        on_bin_nn_update();
+    }
+
+    const NNType& rr() const {
+        return rr_;
+    }
+
+    void rr(const NNType& rr) {
+        rr_ = verify_nn(rr);
+        on_bin_nn_update();
+    }
+
+    const NNType& dr() const {
+        return dr_;
+    }
+
+    void dr(const NNType& dr) {
+        dr_ = verify_nn(dr);
+        on_bin_nn_update();
+    }
+
+    const NNType& rd() const {
+        return rd_;
+    }
+
+    void rd(const NNType& rd) {
+        rd_ = verify_nn(rd);
+        on_bin_nn_update();
+    }
+
+    std::size_t max_index() const {
+        return max_index_;
+    }
+
+    const BSType& bin_info() const {
+        return binners_;
+    }
+
+    void update_binning(const BinSpecifier& new_binning,
+                        std::size_t dim,
+                        bool prefer_old = true) {
+        if (dim >= N) {
+            throw std::invalid_argument("Index "
+                                        + std::to_string(dim)
+                                        + " out of bounds for binning in "
+                                        + std::to_string(N)
+                                        + " dimensions");
+        }
+        if (prefer_old) { binners_[dim].fill(new_binning); }
+        else { binners_[dim].update(new_binning); }
+        on_bin_nn_update();
+    }
+
+    std::vector<double> calculate_xi() const {
+        if (dd_.n_tot() == 0 || rr_.n_tot() == 0) {
+            throw std::runtime_error(
+                    "Cannot calculate correlation function without at least DD and RR run");
+        }
+        std::vector<double> xi = dd_.normed_counts(), nrr = rr_.normed_counts();
+        if (dr_.n_tot() != 0 || rd_.n_tot() != 0) {
+            std::transform(xi.begin(),
+                           xi.end(),
+                           nrr.begin(),
+                           xi.begin(),
+                           std::plus<>());
+            std::vector<double>
+                    ndr = dr_.n_tot() != 0
+                          ? dr_.normed_counts()
+                          : rd_.normed_counts();
+            std::vector<double>
+                    nrd = rd_.n_tot() != 0
+                          ? rd_.normed_counts()
+                          : dr_.normed_counts();
+            std::transform(ndr.begin(),
+                           ndr.end(),
+                           nrd.begin(),
+                           ndr.begin(),
+                           std::plus<>());
+            std::transform(xi.begin(),
+                           xi.end(),
+                           ndr.begin(),
+                           xi.begin(),
+                           std::minus<>());
+        }
+        else {
+            std::transform(xi.begin(),
+                           xi.end(),
+                           nrr.begin(),
+                           xi.begin(),
+                           std::minus<>());
+        }
+        std::transform(xi.begin(),
+                       xi.end(),
+                       nrr.begin(),
+                       xi.begin(),
+                       std::divides<>());
+        return xi;
+    }
+};
 
 // template<class C>
 // class CorrFuncBase {
