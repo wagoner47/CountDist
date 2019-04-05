@@ -721,7 +721,7 @@ def make_single_realization(
             typing.Union[
                 int,
                 typing.Tuple[
-                    str, typing.List[np.uint, 624], int, int, float]]] = None) -> \
+                    str, typing.List[np.uint], int, int, float]]] = None) -> \
         typing.Union[_calculate_distances.ExpectedNNCounts1D,
                      _calculate_distances.ExpectedNNCounts2D]:
     """
@@ -814,8 +814,7 @@ def convolve_pair_counts(
             typing.Union[
                 int,
                 typing.Tuple[
-                    str, typing.List[
-                        np.uint, 624], int, int, float]]] = None) -> \
+                    str, typing.List[np.uint], int, int, float]]] = None) -> \
         typing.Union[_calculate_distances.ExpectedNNCounts1D,
                      _calculate_distances.ExpectedNNCounts2D]:
     """
