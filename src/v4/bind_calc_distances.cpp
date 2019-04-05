@@ -113,37 +113,6 @@ std::vector<int> convert_3d_array(const py::array_t<int>& counts_in) {
     return out;
 }
 
-std::vector<int> convert_2d_array(const py::array_t<int>& counts_in) {
-    std::vector<int> out;
-    auto in = counts_in.unchecked<2>();
-    for (ssize_t i = 0; i < in.shape(0); i++) {
-	for (ssize_t j = 0; j < in.shape(1); j++) {
-	    out.push_back(in(i,j));
-	}
-    }
-    return out;
-}
-
-std::vector<int> convert_1d_array(const py::array_t<int>& counts_in) {
-    auto in = counts_in.unchecked<1>();
-    std::vector<int> out(in.size());
-    for (ssize_t i = 0; i < in.size(); i++) {
-	out[i] = in(i);
-    }
-    return out;
-}
-
-template<typename T, std::size_t N>
-auto convert_pyarray_to_stdarray(const py::array_t<T>& input_arr) {
-    auto uarr = input_arr.template unchecked<1>();
-    if ((std::size_t)uarr.size() != N) throw std::length_error("Invalid input py::array size " + std::to_string(uarr.size()) + " for conversion to std::array of size " + std::to_string(N));
-    std::array<T,N> output_arr;
-    for (std::size_t i = 0; i < N; i++) {
-	output_arr[i] = uarr(i);
-    }
-    return output_arr;
-}
-
 template<typename T, std::size_t N>
 auto convert_pyarray_to_vec_stdarray(const py::array_t<T>& input_arr) {
     auto uarr = input_arr.template unchecked<2>();
@@ -171,8 +140,8 @@ py::array_t<std::size_t> get_1d_index_from_nd(const py::array_t<int>& indices, c
 
 template<std::size_t N>
 static void bind_get_1d_indices(py::module& mod) {
-    mod.def(("get_1d_index_from_" + std::to_string(N) + "d").c_str(), py::overload_cast<const std::array<int,N>, const std::array<BinSpecifier,N>>(&get_1d_indexer_from_nd<N>), ("Get the 1-dimensional index corresponding to the given index for " + std::to_string(N) + "-dimensional data with shape specified by the BinSpecifier objects in 'bins'").c_str(), "index"_a, "bins"_a);
-    mod.def(("get_1d_index_from_" + std::to_string(N) + "d").c_str(), py::overload_cast<const py::array_t<int>, const std::array<BinSpecifier,N>>(&get_1d_index_from_nd<N>), ("Get the 1-dimensional indices corresponding to each given ND index for " + std::to_string(N) + "-dimensional data with shape specified by the BinSpecifier objects in 'bins'").c_str(), "index"_a, "bins"_a);
+    mod.def(("get_1d_index_from_" + std::to_string(N) + "d").c_str(), py::overload_cast<const std::array<int,N>&, const std::array<BinSpecifier,N>&>(&get_1d_indexer_from_nd<N>), ("Get the 1-dimensional index corresponding to the given index for " + std::to_string(N) + "-dimensional data with shape specified by the BinSpecifier objects in 'bins'").c_str(), "index"_a, "bins"_a);
+    mod.def(("get_1d_index_from_" + std::to_string(N) + "d").c_str(), py::overload_cast<const py::array_t<int>&, const std::array<BinSpecifier,N>&>(&get_1d_index_from_nd<N>), ("Get the 1-dimensional indices corresponding to each given ND index for " + std::to_string(N) + "-dimensional data with shape specified by the BinSpecifier objects in 'bins'").c_str(), "index"_a, "bins"_a);
 }
 
 void set_separations(SepDType& to, const Separation& from) {
@@ -358,7 +327,7 @@ void process_auto(NNCountsND<3>& self, const py::array_t<SPosCatalog>& cat, int 
 #endif
     for (std::size_t i = 0; i < n - 1; i++) {
 	for (std::size_t j = 0; j < n; j++) {
-	    if (!(j > i)) continue;
+	    if (i >= j) continue;
 	    temp.process_pair(vcat[i], vcat[j]);
 	}
     }
@@ -379,7 +348,7 @@ void process_auto(NNCountsND<2>& self, const py::array_t<SPosCatalog>& cat, int 
 #endif
     for (std::size_t i = 0; i < n - 1; i++) {
 	for (std::size_t j = 0; j < n; j++) {
-	    if (!(j > i)) continue;
+	    if (i >= j) continue;
 	    temp.process_pair(vcat[i], vcat[j]);
 	}
     }
@@ -400,7 +369,7 @@ void process_auto(NNCountsND<1>& self, const py::array_t<SPosCatalog>& cat, int 
 #endif
     for (std::size_t i = 0; i < n; i++) {
 	for (std::size_t j = 0; j < n; j++) {
-	    if (!(j > i)) continue;
+	    if (i >= j) continue;
 	    temp.process_pair(vcat[i], vcat[j]);
 	}
     }
@@ -666,7 +635,7 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
     cls.def("process", py::overload_cast<Class&, const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, bool, bool, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process pairs between catalogs of positions, specifying whether this is an auto or cross correlation and whether to use true or observed separations", "cat1"_a, "cat2"_a, "use_true"_a, "is_auto"_a, "num_threads"_a=OMP_NUM_THREADS);
     cls.def("process", py::overload_cast<Class&, const py::array_t<SPosCatalog>&, const py::array_t<SPosCatalog>&, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process pairs between catalogs of single positions, allowing for automatic deduction on whether this is an auto or cross correlation based on equivalence of the catalogs", "cat1"_a, "cat2"_a, "num_threads"_a=OMP_NUM_THREADS);
     cls.def("process", py::overload_cast<Class&, const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, bool, int>(&process<N>), py::call_guard<py::gil_scoped_release>(), "Process pairs between catalogs of positions, allowing for automatic deduction of auto or cross correlation based on equivalence of the catalogs, but still specifying whether to use true or observed separations", "cat1"_a, "cat2"_a, "use_true"_a, "num_threads"_a=OMP_NUM_THREADS);
-    cls.def("__getitem__", py::vectorize(py::overload_cast<std::size_t>(&Class::operator[], py::const_)), py::is_operator());
+    cls.def("__getitem__", py::vectorize(&Class::operator[]), py::is_operator());
     cls.def_property_readonly("ntot", &Class::n_tot, "Total number of processed pairs");
     cls.def_property_readonly("counts", [](const Class& self) { return convert_counts_vec(self); }, ("Counts of pairs in " + std::to_string(N) + "D bins").c_str());
     cls.def_property_readonly("normed_counts", [](const Class& self) { return convert_normed_counts_vec(self); }, ("Normalized counts of pairs in " + std::to_string(N) + "D bins").c_str());
@@ -677,8 +646,8 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
     cls.def(py::self + int());
     cls.def(float() + py::self);
     cls.def(int() + py::self);
-    cls.def("__eq__", &Class::operator==, py::is_operator());
-    cls.def("__neq__", &Class::operator!=, py::is_operator());
+    cls.def("__eq__", [](const Class& lhs, const Class& rhs) { return lhs == rhs; }, py::is_operator());
+    cls.def("__neq__", [](const Class& lhs, const Class& rhs) { return lhs != rhs; }, py::is_operator());
     cls.def_property_readonly("size", &Class::size, "Total size of data array");
     cls.def_property_readonly("nbins_nonzero", &Class::nbins_nonzero, "Number of bins with non-zero counts");
     cls.def_property_readonly("ncounts", &Class::ncounts, "Sum of all counts");
@@ -711,6 +680,9 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
 		    Class c(binners, counts, n_tot);
 		    return c;
 		}));
+    cls.def("update_binning", &Class::update_binning, "Update the binning in direction 'binner_index'", "binner_index"_a, "new_binner"_a, "prefer_old"_a=true);
+    cls.def_readonly_static("class_name", &Class::class_name);
+    cls.def("reset", &Class::reset, "Reset the counting");
     return cls;
 }
 
@@ -944,6 +916,9 @@ static py::class_<ExpectedNNCountsND<N>> declareExpectedNNCountsND(py::module& m
 		    Class c(binners, nn_list, n_real, n_tot);
 		    return c;
 		}));
+    cls.def("update_binning", &Class::update_binning, "Update the binning in direction 'binner_index'", "binner_index"_a, "new_binner"_a, "prefer_old"_a=true);
+    cls.def_readonly_static("class_name", &Class::class_name);
+    cls.def("reset", &Class::reset, "Reset the counting");
     return cls;
 }
 
@@ -1152,8 +1127,10 @@ PYBIND11_MODULE(calculate_distances, m) {
     m.def("get_separations", py::overload_cast<const py::array_t<PosCatalog>&, const py::array_t<PosCatalog>&, const BinSpecifier&, const BinSpecifier&, bool, int>(&get_separations_arr), py::return_value_policy::take_ownership, py::call_guard<py::gil_scoped_release>(), "Get the separations limited in the observed perpendiculare and parallel directions by the binners, specifying whether this is an auto or cross correlation", "cat1"_a, "cat2"_a, "perp_binner"_a, "par_binner"_a, "is_auto"_a, "num_threads"_a=OMP_NUM_THREADS);
     py::class_<BinSpecifier>(m, "BinSpecifier", "Structure for the needed attributes for binning in a variable")
 	.def(py::init<double, double, double, bool>(), "Construct from min, max, and bin size. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "bin_width"_a, "use_log_bins"_a)
+    .def(py::init<double, double, double, bool, std::string>(), "Construct from min, max, and bin size, and give a name. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "bin_width"_a, "use_log_bins"_a, "name"_a)
 	.def(py::init<double, double, std::size_t, bool>(), "Construct from min, max, and number of bins. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "num_bins"_a, "use_log_bins"_a)
-	.def(py::init<const BinSpecifier&>(), "Copy constructor: make a copy of 'other'", "other"_a)
+    .def(py::init<double, double, std::size_t, bool, std::string>(), "Construct from min, max, and number of bins, and give a name. Set 'use_log_bins' to True for logarithmic binning", "bin_min"_a, "bin_max"_a, "num_bins"_a, "use_log_bins"_a, "name"_a)
+    .def(py::init<const BinSpecifier&>(), "Copy constructor: make a copy of 'other'", "other"_a)
 	.def(py::init<>(), "Empty initialization")
 	.def("update", &BinSpecifier::update, "Update the values of this instance with the values of 'other', preferring 'other'", "other"_a)
 	.def("fill", &BinSpecifier::fill, "Update the values of this instance with the values of 'other', preferring the current values", "other"_a)
@@ -1162,13 +1139,14 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def_property("bin_size", &BinSpecifier::get_bin_size, &BinSpecifier::set_bin_size, "Size of bins. Note that this may be different than input to make 'nbins' an integer")
 	.def_property("nbins", &BinSpecifier::get_nbins, &BinSpecifier::set_nbins, "Number of bins")
 	.def_property("log_binning", &BinSpecifier::get_log_binning, &BinSpecifier::set_log_binning, "Whether to use logarithmic binning (True) or not (False)")
+	.def_property("name", &BinSpecifier::get_name, &BinSpecifier::set_name, "Name of this instance")
 	.def("__repr__", &BinSpecifier::toString)
 	.def(py::pickle(
 		 [](const BinSpecifier &bs) { // __getstate__
-		     return py::make_tuple(bs.get_bin_min(), bs.get_bin_max(), bs.get_bin_size(), bs.get_nbins(), bs.get_log_binning());
+		     return py::make_tuple(bs.get_bin_min(), bs.get_bin_max(), bs.get_bin_size(), bs.get_nbins(), bs.get_log_binning(), bs.get_name());
 		 },
 		 [](py::tuple t) { // __setstate__
-		     if (t.size() != 5) { throw std::runtime_error("Invalid state"); }
+		     if (t.size() != 5 || t.size() != 6) { throw std::runtime_error("Invalid state"); }
 
 		     BinSpecifier bs;
 		     bs.set_bin_min(t[0].cast<double>());
@@ -1176,6 +1154,9 @@ PYBIND11_MODULE(calculate_distances, m) {
 		     bs.set_bin_size(t[2].cast<double>());
 		     bs.set_nbins(t[3].cast<std::size_t>());
 		     bs.set_log_binning(t[4].cast<bool>());
+		     if (t.size() == 6) {
+		         bs.set_name(t[5].cast<std::string>());
+		     }
 		     return bs;
 		 }
 		 ))
@@ -1194,6 +1175,10 @@ PYBIND11_MODULE(calculate_distances, m) {
     declareExpectedNNCounts3D(m);
     declareExpectedNNCounts2D(m);
     declareExpectedNNCounts1D(m);
+    bind_get_1d_indices<6>(m);
+    bind_get_1d_indices<3>(m);
+    bind_get_1d_indices<4>(m);
+    bind_get_1d_indices<2>(m);
     /*
     declareCorrFunc1D(m);
     declareCorrFunc2D(m);

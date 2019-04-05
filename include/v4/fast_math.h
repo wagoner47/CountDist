@@ -11,120 +11,185 @@
 #include <array> // std::array
 #include <string> // std::string
 #include <cctype> // std::tolower
-
-using size_t = decltype(sizeof(int));
+#include <utility>  // std::index_sequence, std::make_index_sequence
+#include <numeric>  // std::iota
+#include <functional>  // std::function
 
 inline bool lazy_string_equals(std::string_view a, std::string_view b) {
-    return a.size() != b.size() ? false : std::equal(a.begin(), a.end(), b.begin(), [](char a, char b) { return std::tolower(a) == std::tolower(b); });
+    return a.size() != b.size() ? false : std::equal(a.begin(),
+                                                     a.end(),
+                                                     b.begin(),
+                                                     [](char a, char b) {
+                                                       return std::tolower(a)
+                                                              == std::tolower(b);
+                                                     });
 }
 
-template<size_t... Is> struct seq{};
+namespace arrays {
+    namespace details {
+        template<class>
+        struct is_ref_wrapper : std::false_type {};
+        template<class T>
+        struct is_ref_wrapper<std::reference_wrapper<T>> : std::true_type {};
 
-template<size_t N, size_t... Is>
-struct gen_seq : gen_seq<N-1, N, Is...> {};
+        template<class T>
+        using not_ref_wrapper = std::negation<is_ref_wrapper<std::decay_t<T>>>;
 
-template<size_t... Is>
-struct gen_seq<0, Is...> : seq<Is...> {};
+        template<class D, class...>
+        struct return_type_helper { using type = D; };
+        template<class... Ts>
+        struct return_type_helper<void, Ts...> : std::common_type<Ts...> {
+          static_assert(std::conjunction_v<not_ref_wrapper<Ts>...>,
+                        "Types cannot contain reference_wrappers when D is void");
+        };
+
+        template<class D, class... Ts>
+        using return_type = std::array<
+                typename return_type_helper<
+                        D,
+                        Ts...>::type,
+                sizeof...(Ts)>;
+
+        template<typename T, typename dcy = std::decay_t<T>, std::size_t... Is>
+        std::array<dcy, sizeof...(Is)>
+        make_filled_array_helper(T&& t, std::index_sequence<Is...>) {
+            return {{(static_cast<void>(Is), t)...}};
+        }
+    }
+
+    template<class D = void, class... Ts>
+    constexpr details::return_type<D, Ts...> make_array(Ts&& ... t) {
+        return {std::forward<Ts>(t)...};
+    }
+
+    template<std::size_t N, typename T, typename dcy = std::decay_t<T>>
+    std::array<dcy, N> make_filled_array(T&& t) {
+        return details::make_filled_array_helper(t,
+                                                 std::make_index_sequence<N>{});
+    }
+
+    template<typename T, std::size_t N, typename std::enable_if_t<
+            std::is_arithmetic_v<
+                    T>, int> = 0>
+    std::array<T, N> make_filled_array() {
+        return make_filled_array<N>((T) 0);
+    }
+
+    template<typename T, std::size_t N, typename std::enable_if_t<
+            !std::is_arithmetic_v<
+                    T>, int> = 0>
+    std::array<T, N> make_filled_array() {
+        return make_filled_array<N>(T());
+    }
+
+    template<typename T,
+             typename U,
+             typename R = decltype(std::declval<std::decay_t<T>>()
+                                   * std::declval<std::decay_t<U>>()),
+            std::size_t N>
+    std::array<R, N>
+    multiply_array_by_constant(const std::array<T, N>& arr, U&& x) {
+        std::array<R, N> ret = make_filled_array<R, N>();
+        std::transform(arr.begin(),
+                       arr.end(),
+                       ret.begin(),
+                       [=](T el) { return x * el; });
+        return ret;
+    }
+
+    template<std::size_t R, typename T, std::size_t N>
+    std::array<T, R * N> repeat_array(const std::array<T, N>& arr) {
+        std::array<T, R * N> ret = make_filled_array<T, R * N>();
+        for (std::size_t i = 0; i < N; i++) {
+            for (std::size_t j = 0; j < R; j++) {
+                ret[i + (j * N)] = arr[i];
+            }
+        }
+        return ret;
+    }
+}
 
 namespace math {
     using namespace std::string_view_literals;
 
-    template<typename T, typename std::enable_if_t<std::is_arithmetic<T>::value, int> = 0>
-    struct dummy_type {
-	typedef typename std::conditional_t<std::is_floating_point<T>::value, std::decay_t<T>, double> value;
-    };
+    template<typename T, typename std::enable_if_t<
+            std::is_unsigned_v<T>,
+            int> = 0>
+    constexpr int signof(T x) { return T(0) < x; }
 
-    template<typename T>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value, int>
-    signof(T x, std::false_type) { return T(0) < x; }
+    template<typename T, typename std::enable_if_t<
+            std::is_signed_v<T>,
+            int> = 0>
+    constexpr int signof(T x) { return (T(0) < x) - (x < T(0)); }
 
-    template<typename T>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value, int>
-    signof(T x, std::true_type) { return (T(0) < x) - (x < T(0)); }
-
-    template<typename T>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value, int>
-    signof(T x) { return signof(x, std::is_signed<T>()); }
-
-    template<typename T, typename U>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value && std::is_arithmetic<U>::value, bool>
-     isclose(T a, U b, std::false_type, std::true_type, int ulp=10) {
+    template<typename T, typename U, typename std::enable_if_t<
+            std::is_floating_point_v<T> || std::is_floating_point_v<U>,
+            int> = 0>
+    constexpr bool isclose(T a, U b, int ulp = 10) {
         // isclose for non-integer numbers
-	return std::abs(a - b) <= std::numeric_limits<T>::epsilon() * std::abs(a + b) * ulp || std::abs(a - b) < std::numeric_limits<T>::min();
+        using R = decltype(std::declval<T>() - std::declval<U>());
+        return std::abs(a - b)
+               <= std::numeric_limits<R>::epsilon() * std::abs(a + b) * ulp
+               || std::abs(a - b) < std::numeric_limits<R>::min();
     }
 
-    template<typename T, typename U>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value && std::is_arithmetic<U>::value, bool>
-     isclose(T a, U b, std::true_type, std::false_type, int ulp=10) {
-        // isclose for non-integer numbers
-	return std::abs(a - b) <= std::numeric_limits<U>::epsilon() * std::abs(a + b) * ulp || std::abs(a - b) < std::numeric_limits<U>::min();
-    }
-
-    template<typename T, typename U>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value && std::is_arithmetic<U>::value, bool>
-     isclose(T a, U b, std::false_type, std::false_type, int ulp=10) {
-        // isclose for non-integer numbers
-        return (std::abs(a-b) <= std::min(std::numeric_limits<T>::epsilon(), std::numeric_limits<U>::epsilon()) * std::abs(a+b) * ulp || std::abs(a-b) < std::min(std::numeric_limits<T>::min(), std::numeric_limits<U>::min()));
-    }
-
-    template<typename T, typename U>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value && std::is_arithmetic<U>::value, bool>
-	isclose(T a, U b, std::true_type, std::true_type, int ulp=10) {
+    template<typename T, typename U, typename std::enable_if_t<
+            std::is_integral_v<T> && std::is_integral_v<U>, int> = 0>
+    constexpr bool isclose(T a, U b, int= 10) {
         // isclose for integers: exact equality
-	// Must also make sure we aren't comparing signed to unsigned
-	return std::is_signed<T>::value == std::is_signed<U>::value ? a == b : std::is_signed<T>::value ? a == (T)b : (U)a == b;
+        return signof(a) * a == signof(b) * b;
     }
 
-    template<typename T, typename U>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value && std::is_arithmetic<U>::value, bool>
-    isclose(T a, U b, int ulp=10) {
-        // isclose wrapper for any numerical types, including mixed types
-	// We check if both are floating_point
-        return isclose(a, b, std::is_integral<T>{}, std::is_integral<U>{}, ulp);
+    template<typename T, typename U, typename std::enable_if_t<
+            std::is_arithmetic_v<T> && std::is_arithmetic_v<U>, int> = 0>
+    inline bool isclose(std::vector<T> a, std::vector<U> b, int ulp = 10) {
+        if (a.size() != b.size()) { return false; }
+        return std::equal(a.begin(),
+                          a.end(),
+                          b.begin(),
+                          [=](T x, U y) { return isclose(x, y, ulp); });
     }
 
-    inline bool isclose(std::vector<double> a, std::vector<double> b, int ulp=10) {
-	if (a.size() != b.size()) return false;
-	auto i = a.begin();
-	auto j = b.begin();
-	for (; i != a.end(), j != b.end(); i++, j++) {
-	    if (!isclose(*i, *j, ulp)) return false;
-	}
-	return true;
+    template<std::size_t N, std::size_t M, typename T,
+                                           typename U, typename std::enable_if_t<
+                    N != M,
+                    int> = 0>
+    constexpr bool isclose(const std::array<T, N>&,
+                           const std::array<U, M>&,
+                           int= 10) { return false; }
+
+    template<std::size_t N, std::size_t M, typename T,
+                                           typename U, typename std::enable_if_t<
+                    N == M && std::is_arithmetic_v<T>
+                    && std::is_arithmetic_v<U>,
+                    int> = 0>
+    inline bool isclose(const std::array<T, N>& a,
+                        const std::array<U, M>& b,
+                        int ulp = 10) {
+        return std::equal(a.begin(),
+                          a.end(),
+                          b.begin(),
+                          [=](T x, U y) { return isclose(x, y, ulp); });
     }
 
-    template<std::size_t N1, std::size_t N2, typename T1, typename T2>
-    inline std::enable_if_t<std::is_arithmetic<T1>::value && std::is_arithmetic<T2>::value, bool>
-	isclose(std::array<T1,N1>, std::array<T2,N2>, std::false_type, int = 10) {
-	// sizes are not the same, so false
-	return false;
-    }
-
-    template<std::size_t N1, std::size_t N2, typename T1, typename T2>
-    inline std::enable_if_t<std::is_arithmetic<T1>::value && std::is_arithmetic<T2>::value, bool>
-	isclose(std::array<T1,N1> a, std::array<T2,N2> b, std::true_type, int ulp = 10) {
-	auto ait = a.begin();
-	auto bit = b.begin();
-	for (; ait != a.end() && bit != b.end(); ++ait, ++bit) {
-	    if (!isclose(*ait, *bit, ulp)) return false;
-	}
-	return true;
-    }
-
-    template<std::size_t N1, std::size_t N2, typename T1, typename T2>
-    inline std::enable_if_t<std::is_arithmetic<T1>::value && std::is_arithmetic<T2>::value, bool>
-	isclose(std::array<T1,N1> a, std::array<T2,N2> b, int ulp = 10) {
-	return isclose(a, b, std::integral_constant<bool, N1 == N2> {}, ulp);
-    }
-
-    template<typename T> constexpr T pi = 3.141592653589793238462643383279502884L;
-    template<typename T> constexpr T sqrt2 = 1.414213562373095048801688724209698079L;
-    template<typename T> constexpr T sqrt_2 = 0.7071067811865475244008443621048490392L;
-    template<typename T> constexpr T rad2deg = 57.29577951308232087679815481410517033L;
-    template<typename T> constexpr T deg2rad = 0.01745329251994329576923690768488612713L;
-    template<typename T> constexpr T pi2 = 6.283185307179586476925286766559005768L;
-    template<typename T> constexpr T pi_2 = 1.570796326794896619231321691639751442L;
-    template<typename T> constexpr T nan = std::numeric_limits<T>::has_quiet_NaN ? std::numeric_limits<T>::quiet_NaN() : std::numeric_limits<T>::max();
+    template<typename T> constexpr T
+            pi = 3.141592653589793238462643383279502884L;
+    template<typename T> constexpr T
+            sqrt2 = 1.414213562373095048801688724209698079L;
+    template<typename T> constexpr T
+            sqrt_2 = 0.7071067811865475244008443621048490392L;
+    template<typename T> constexpr T
+            rad2deg = 57.29577951308232087679815481410517033L;
+    template<typename T> constexpr T
+            deg2rad = 0.01745329251994329576923690768488612713L;
+    template<typename T> constexpr T
+            pi2 = 6.283185307179586476925286766559005768L;
+    template<typename T> constexpr T
+            pi_2 = 1.570796326794896619231321691639751442L;
+    template<typename T> constexpr T
+            nan = std::numeric_limits<T>::has_quiet_NaN
+                  ? std::numeric_limits<T>::quiet_NaN()
+                  : std::numeric_limits<T>::max();
 
     constexpr static double dpi = pi<double>;
     constexpr static double dsqrt2 = sqrt2<double>;
@@ -136,195 +201,178 @@ namespace math {
     constexpr static double dnan = nan<double>;
     constexpr static std::string_view snan = "NaN"sv;
 
-    template<typename T>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value, bool>
-    isnan(T x, std::false_type) {
-	// isnan function for floating types: x is not close to itself
-	return !isclose(x, x);
+    template<typename T, typename std::enable_if_t<
+            std::is_floating_point_v<T>,
+            int> = 0>
+    constexpr bool isnan(T x) { return !isclose(x, x); }
+
+    template<typename T, typename std::enable_if_t<
+            std::is_integral_v<T>,
+            int> = 0>
+    constexpr bool isnan(T x) { return isclose(x, nan<T>); }
+
+    template<typename T,
+             typename dcy = std::decay_t<T>, typename std::enable_if_t<
+                    std::is_floating_point_v<
+                            T>, int> = 0>
+    constexpr dcy inverse(T x) {
+        return isclose(x, (T) 0) ? nan<dcy> : (dcy) (1.0 / x);
     }
 
-    template<typename T>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value, bool>
-    isnan(T x, std::true_type) {
-	// isnan for integer types: x is equal to nan<T>
-	return isclose(x, nan<T>);
+    template<typename T,
+             typename dcy = std::decay_t<T>, typename std::enable_if_t<
+                    std::is_integral_v<
+                            T>, int> = 0>
+    constexpr dcy inverse(T x) {
+        return isclose(x, (T) 0) ? (dcy) 0 : (dcy) (1 / x);
     }
 
-    template<typename T>
-    constexpr std::enable_if_t<std::is_arithmetic<T>::value, bool>
-    isnan(T x) {
-	// wrapper for any numerical x
-	return isnan(x, std::is_integral<T>{});
-    }
+    template<std::size_t P, typename T,
+                            typename dcy = std::decay_t<T>, std::enable_if_t<
+                    std::is_arithmetic_v<
+                            T>, int> = 0>
+    constexpr dcy power(T x) { return P == 0 ? 1 : x * power<P - 1>(x); }
 
-    template<typename T>
-    constexpr std::enable_if_t<!std::is_arithmetic<T>::value, bool>
-    isnan(T x) {
-	// For general non-numerical x
-	return false;
-    }
-
-    template<>
-    inline bool isnan<std::string>(std::string x) {
-	// string x: cannot be constexpr!
-	return lazy_string_equals(x, snan);
-    }
-
-    template<>
-    inline bool isnan<std::string_view>(std::string_view x) {
-	// string_view x: cannot be constexpr!
-	return lazy_string_equals(x, snan);
-    }
-
-    template<typename T, typename dcy = typename dummy_type<T>::value, typename std::enable_if_t<std::is_arithmetic<T>::value, int> = 0>
-    constexpr dcy inverse(T x) { return isclose(x, (T)0) ? (dcy)0 : (dcy)(1.0 / x); }
-
-    template<typename T, typename dcy = std::decay_t<T>, typename std::enable_if_t<std::is_arithmetic<T>::value, int> = 0>
+    template<typename T,
+             typename dcy = std::decay_t<T>, typename std::enable_if_t<
+                    std::is_arithmetic_v<
+                            T>, int> = 0>
     constexpr dcy square(T x) { return x * x; }
 
-    /*
-    template<class T, class dcy = std::decay_t<T> >
-    constexpr std::enable_if_t<std::is_floating_point<T>::value,dcy>
-    inverse(T value) { return isclose(value, (T)0) ? 0.0 : 1.0 / value; }
-    */
-
-    constexpr long double factorial(const std::intmax_t& n) { return n <= 1 ? 1 : n * factorial(n - 1); }
-
-    inline size_t max_factorial() {
-        size_t i = 2;
-        while (factorial(i) < std::numeric_limits<long double>::max()) { ++i; }
-        return i;
+    constexpr long double factorial(const std::intmax_t& n) {
+        return n <= 1
+               ? 1
+               : n * factorial(n - 1);
     }
 
-    template<class base, size_t N>
+
+    template<class Base, std::size_t N>
     class trig_coeffs {
-        using T = typename base::value_type;
-        using array_type = std::array<T,N>;
+        using T = typename Base::value_type;
+        using array_type = std::array<T, N>;
 
-        template<size_t... NS>
-        constexpr static inline array_type _coeffs(seq<NS...>) { return {{base::coeff(NS)...}}; }
+        template<std::size_t... NS>
+        constexpr static inline array_type _coeffs(std::index_sequence<NS...>) {
+            return arrays::make_array(Base::coeff(NS)...);
+        }
 
-        public:
-        constexpr static array_type coeffs() noexcept { return _coeffs(gen_seq<N>{}); }
+    public:
+        constexpr static array_type
+                coeffs = _coeffs(std::make_index_sequence<N>{});
     };
 
-    template<class base, size_t N, class dcy=std::decay_t<typename base::value_type> >
-    inline std::enable_if_t<std::is_floating_point<dcy>::value,dcy>
-    _sincos(typename base::value_type x) noexcept {
-        using c = trig_coeffs<base,N>;
-        if (std::isnan(x) && std::numeric_limits<dcy>::has_quiet_NaN) { return static_cast<dcy>(std::numeric_limits<dcy>::quiet_NaN()); }
-        else if (std::isinf(x) && std::numeric_limits<dcy>::has_infinity) { return static_cast<dcy>(std::numeric_limits<dcy>::infinity()); }
-        else {
-            dcy result = 0.0;
-            dcy _x = base::range_reduce(x);
-            {
-                const dcy x_2 = _x * _x;
-                dcy pow = base::initial_condition(_x);
-                for (auto&& cf : c::coeffs()) {
-                    result += cf * pow;
-                    pow *= x_2;
-                }
-            }
-            return result;
-	    }
-    }
 
-    template<class base, size_t N, class dcy=std::decay_t<typename base::value_type> >
-    inline std::enable_if_t<std::is_floating_point<dcy>::value,dcy>
-    _atan(typename base::value_type x) noexcept {
-        using c = trig_coeffs<base,N>;
-        if (std::isnan(x) && std::numeric_limits<dcy>::has_quiet_NaN) { return static_cast<dcy>(std::numeric_limits<dcy>::quiet_NaN()); }
-        else if (std::isinf(x) && std::numeric_limits<dcy>::has_infinity) { return static_cast<dcy>(std::numeric_limits<dcy>::infinity()); }
+    template<class Base, std::size_t N,
+             class dcy = std::decay_t<typename Base::value_type>, typename std::enable_if_t<
+                    std::is_floating_point_v<dcy>,
+                    int> = 0>
+    inline dcy _trig(typename Base::value_type x) noexcept {
+        using c = trig_coeffs<Base, N>;
+        if (std::isnan(x) && std::numeric_limits<dcy>::has_quiet_NaN) {
+            return static_cast<dcy>(std::numeric_limits<
+                    dcy>::quiet_NaN());
+        }
+        else if (std::isinf(x) && std::numeric_limits<dcy>::has_infinity) {
+            return static_cast<dcy>(std::numeric_limits<
+                    dcy>::infinity());
+        }
         else {
+            dcy _x = Base::range_reduce(x);
             dcy result = 0.0;
-            {
-                const dcy increment = base::interval(x);
-                dcy pow = base::initial_condition(x);
-                for (auto&& cf : c::coeffs()) {
-                    result += cf * pow;
-                    pow *= increment;
-                }
+            const dcy step = Base::pow_step(_x);
+            dcy pow = Base::initial_condition(_x);
+            for (const auto& cf : c::coeffs) {
+                result += cf * pow;
+                pow *= step;
             }
             return result;
         }
     }
 
     namespace detail {
-        template<class T>
+        template<typename T, typename std::enable_if_t<
+                std::is_arithmetic_v<T>,
+                int> = 0>
         struct _sin {
-            using value_type = T;
-            constexpr static T coeff(size_t n) noexcept { return (n % 2 ? 1 : -1) * inverse(factorial((2 * n) - 1)); }
-            static inline T range_reduce(T x) noexcept {
-                T _x = x;
-                _x += math::pi<T>;
-                _x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
-                _x -= math::pi<T>;
-                return _x;
-            }
-            constexpr static T initial_condition(T x) noexcept { return x; }
-            constexpr static size_t default_N() noexcept { return 20; }
+          using value_type = T;
+
+          constexpr static T coeff(std::size_t n) noexcept {
+              return (n % 2 == 0 ? 1 : -1) * inverse(factorial((2 * n) + 1));
+          }
+
+          static inline T range_reduce(T x) noexcept {
+              T _x = x;
+              _x += math::pi<T>;
+              _x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
+              _x -= math::pi<T>;
+              return _x;
+          }
+
+          constexpr static T initial_condition(T x) noexcept { return x; }
+
+          constexpr static T pow_step(T x) noexcept { return square(x); }
+
+          constexpr static std::size_t default_N = 20;
         };
 
-        template<class T>
+
+        template<typename T, typename std::enable_if_t<
+                std::is_arithmetic_v<T>,
+                int> = 0>
         struct _cos {
-            using value_type = T;
-            constexpr static T coeff(size_t n) noexcept { return (n % 2 ? 1 : -1) * inverse(factorial(2 * n)); }
-            static inline T range_reduce(T x) noexcept {
-                T _x = x;
-                x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
-                return _x;
-            }
-            constexpr static T initial_condition(T x) noexcept { return x * x; }
-            constexpr static size_t default_N() noexcept { return 20; }
-        };
+          using value_type = T;
 
-        template<class T>
-        struct _atan {
-            using value_type = T;
-            constexpr static T coeff(size_t n) noexcept { return (n % 2 ? 1 : -1) * inverse((T)((2 * n) + 1)); }
-            constexpr static T initial_condition(T x) noexcept { return std::abs(x) > 1 ? inverse(x) : x; }
-            constexpr static T interval(T x) noexcept { return std::abs(x) > 1 ? inverse(x * x) : x * x; }
-            constexpr static size_t default_N() noexcept { return 25; }
+          constexpr static T coeff(std::size_t n) noexcept {
+              return (n % 2 == 0 ? 1 : -1) * inverse(factorial(2 * n));
+          }
+
+          static inline T range_reduce(T x) noexcept {
+              T _x = x;
+              _x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
+              return _x;
+          }
+
+          constexpr static T initial_condition(T) noexcept { return (T) 1; }
+
+          constexpr static T pow_step(T x) noexcept { return square(x); }
+
+          constexpr static size_t default_N = 20;
         };
 
     }
 
-    template<class T, size_t N=detail::_sin<T>::default_N()>
-    constexpr static std::decay_t<T> sin(T x) noexcept { return _sincos<detail::_sin<T>,N>(x); }
+    template<class T, size_t N = detail::_sin<T>::default_N>
+    constexpr static std::decay_t<T>
+    sin(T x) noexcept { return _trig<detail::_sin<T>, N>(x); }
 
-    template<class T, size_t N=detail::_cos<T>::default_N()>
-    constexpr static std::decay_t<T> cos(T x) noexcept { return 1 - _sincos<detail::_cos<T>,N>(x); }
+    template<class T, size_t N = detail::_cos<T>::default_N>
+    constexpr static std::decay_t<T> cos(T x) noexcept {
+        return 1 - _trig<
+                detail::_cos<T>, N>(x);
+    }
 
-    template<class T, size_t N=detail::_atan<T>::default_N()>
-    constexpr static std::decay_t<T> atan(T x) noexcept { return std::abs(x) > 1 ? signof(x) * pi_2<T> - _atan<detail::_atan<T>,N>(x) : _atan<detail::_atan<T>,N>(x); }
+}
 
-    template<class T, size_t N=detail::_atan<T>::default_N()>
-    inline std::decay_t<T> atan2(T x, T y) noexcept {
-        auto at = atan(y / x);
-        if (signof(x) < 0) {
-            if (signof(at) >= 0) { at -= pi<T>; }
-            else { at += pi<T>; }
-        }
-        return at;
+namespace arrays {
+    template<typename T>
+    std::vector<T> fill_vector_from_func(std::size_t n_el,
+                                         std::function<T(int)> gen_func,
+                                         int min_index = 0) {
+        std::vector<int> indices(n_el);
+        std::iota(indices.begin(), indices.end(), min_index);
+        std::vector<T> vec;
+        std::transform(indices.begin(), indices.end(), vec.begin(), gen_func);
+        return vec;
     }
 }
 
 template<typename T>
-inline std::vector<T> get_nxyz(T ra, T dec) {
-    return std::vector<T>({math::cos(math::deg2rad<T> * ra) * math::cos(math::deg2rad<T> * dec), math::sin(math::deg2rad<T> * ra) * math::cos(math::deg2rad<T> * dec), math::sin(math::deg2rad<T> * dec)});
-}
-
-template<typename T>
-inline std::array<T,3> get_nxyz_array(T ra, T dec) {
-    return {{math::cos(math::deg2rad<T> * ra) * math::cos(math::deg2rad<T> * dec), math::sin(math::deg2rad<T> * ra) * math::cos(math::deg2rad<T> * dec), math::sin(math::deg2rad<T> * dec)}};
-}
-
-template<typename T>
-inline std::vector<T> get_radec(T nx, T ny, T nz) {
-    T ra = math::atan2(ny, nx) * math::rad2deg<T>;
-    ra += (ra < 0.0) ? 360.0 : 0.0;
-    T dec = math::atan2(nz, std::sqrt(math::square(nx) + math::square(ny))) * math::rad2deg<T>;
-    return std::vector<T>({ra, dec});
+inline std::array<T, 3> get_nxyz_array(T ra, T dec) {
+    return arrays::make_array(math::cos(math::deg2rad<T> * ra)
+                              * math::cos(math::deg2rad<T> * dec),
+                              math::sin(math::deg2rad<T> * ra)
+                              * math::cos(math::deg2rad<T> * dec),
+                              math::sin(math::deg2rad<T> * dec));
 }
 
 #endif

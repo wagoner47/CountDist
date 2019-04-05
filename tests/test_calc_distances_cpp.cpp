@@ -43,7 +43,7 @@ struct CompareMatcher
 	: m_comparator(comparator), m_compare(compare), m_margin(margin) {}
 
     CompareMatcher(const std::array<T,N>& comparator, const Compare& compare, T margin)
-	: m_comparator(comparator), m_compare(compare), m_margin(make_filled_array<T,N>(margin)) {}
+	: m_comparator(comparator), m_compare(compare), m_margin(arrays::make_filled_array<N>(margin)) {}
 
     bool match(const std::array<T,N>& arr) const override {
 	for (size_t i = 0; i < N; i++) {
