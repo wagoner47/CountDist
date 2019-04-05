@@ -2580,12 +2580,23 @@ template<std::size_t N>
 class CorrFuncNDBase {
     using NNType = NNCountsND<N>;
     using BSType = std::array<BinSpecifier, N>;
+
+    void on_bin_nn_update() {
+        max_index_ = get_max_index(binners_);
+        for (std::size_t i = 0; i < N; i++) {
+            dd_.update_binning(i, binners_[i], false);
+            dr_.update_binning(i, binners_[i], false);
+            rd_.update_binning(i, binners_[i], false);
+            rr_.update_binning(i, binners_[i], false);
+        }
+    }
+
 protected:
     BSType binners_ = arrays::make_filled_array<BinSpecifier, N>();
     std::size_t max_index_ = 0;
     NNType dd_, rr_, dr_, rd_;
 
-    NNType& verify_nn(const NNType& nn) const {
+    const NNType& verify_nn(const NNType& nn) const {
         for (std::size_t i = 0; i < N; i++) {
             if (binners_[i].is_set() && nn.bin_info()[i] != binners_[i]) {
                 throw std::invalid_argument(NNType::class_name
@@ -2594,16 +2605,6 @@ protected:
             }
         }
         return nn;
-    }
-
-    void on_bin_nn_update() {
-        max_index_ = get_max_index(binners_);
-        for (std::size_t i = 0; i < N; i++) {
-            dd_.update_binning(binners_[i], false);
-            dr_.update_binning(binners_[i], false);
-            rd_.update_binning(binners_[i], false);
-            rr_.update_binning(binners_[i], false);
-        }
     }
 
 public:
@@ -2693,6 +2694,9 @@ public:
               dr_(verify_nn(dr)),
               rd_(verify_nn(rd)) {}
 
+    inline static const std::string
+            class_name = "CorrFunc" + std::to_string(N) + "D";
+
     const NNType& dd() const {
         return dd_;
     }
@@ -2729,8 +2733,14 @@ public:
         on_bin_nn_update();
     }
 
-    std::size_t max_index() const {
+    std::size_t size() const {
         return max_index_;
+    }
+
+    std::vector<std::size_t> shape_vec() const {
+        std::vector<std::size_t> shape;
+        for (const auto& b : binners_) { shape.push_back(b.get_nbins()); }
+        return shape;
     }
 
     const BSType& bin_info() const {
@@ -2796,6 +2806,175 @@ public:
                        xi.begin(),
                        std::divides<>());
         return xi;
+    }
+
+    std::string toString() const {
+        std::ostringstream oss;
+        std::string pad;
+        for (std::size_t i = 0; i <= class_name.size(); i++) {
+            pad += " ";
+        }
+        oss << class_name << "(" << std::endl;
+        if (dd_.n_tot() != 0
+            || rr_.n_tot() != 0
+            || dr_.n_tot() != 0
+            || rd_.n_tot() != 0) {
+            if (dd_.n_tot() != 0) {
+                oss << pad << "dd=" << dd_ << std::endl;
+            }
+            if (rr_.n_tot() != 0) {
+                oss << pad << "rr=" << rr_ << std::endl;
+            }
+            if (dr_.n_tot() != 0) {
+                oss << pad << "dr=" << dr_ << std::endl;
+            }
+            if (rd_.n_tot() != 0) {
+                oss << pad << "rd=" << rd_ << std::endl;
+            }
+        }
+        else {
+            for (const auto& b : binners_) {
+                oss << pad << b.get_name() << "=" << b << std::endl;
+            }
+        }
+        oss << ")";
+        return oss.str();
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const CorrFuncNDBase& cf) {
+        os << cf.toString();
+        return os;
+    }
+};
+
+
+template<std::size_t N>
+class CorrFuncND : public CorrFuncNDBase<N> {
+    using Base = CorrFuncNDBase<N>;
+public:
+    using Base::Base;
+
+    CorrFuncND(const Base& b)
+            : Base(b) {}
+};
+
+
+template<>
+class CorrFuncND<2> : public CorrFuncNDBase<2> {
+    using Base = CorrFuncNDBase<2>;
+    using NNType = NNCountsND<2>;
+public:
+    using Base::Base;
+
+    CorrFuncND(const Base& b)
+            : Base(b) {}
+
+    CorrFuncND(const BinSpecifier& perp_binner, const BinSpecifier& par_binner)
+            : Base(arrays::make_array(perp_binner, par_binner)) {}
+
+    CorrFuncND(const BinSpecifier& perp_binner,
+               const BinSpecifier& par_binner,
+               const NNType& dd)
+            : Base(arrays::make_array(perp_binner, par_binner), dd) {}
+
+    CorrFuncND(const BinSpecifier& perp_binner,
+               const BinSpecifier& par_binner,
+               const NNType& dd,
+               const NNType& rr)
+            : Base(arrays::make_array(perp_binner, par_binner), dd, rr) {}
+
+    CorrFuncND(const BinSpecifier& perp_binner,
+               const BinSpecifier& par_binner,
+               const NNType& dd,
+               const NNType& rr,
+               const NNType& dr)
+            : Base(arrays::make_array(perp_binner, par_binner), dd, rr, dr) {}
+
+    CorrFuncND(const BinSpecifier& perp_binner,
+               const BinSpecifier& par_binner,
+               const NNType& dd,
+               const NNType& rr,
+               const NNType& dr,
+               const NNType& rd)
+            : Base(arrays::make_array(perp_binner, par_binner),
+                   dd,
+                   rr,
+                   dr,
+                   rd) {}
+
+    const BinSpecifier& rperp_bins() const {
+        return binners_[0];
+    }
+
+    void rperp_bins(const BinSpecifier& new_binning, bool prefer_old = true) {
+        update_binning(new_binning, 0, prefer_old);
+    }
+
+    const BinSpecifier& rpar_bins() const {
+        return binners_[1];
+    }
+
+    void rpar_bins(const BinSpecifier& new_binning, bool prefer_old = true) {
+        update_binning(new_binning, 1, prefer_old);
+    }
+
+    std::tuple<std::size_t, std::size_t> shape() const {
+        return std::make_tuple(binners_[0].get_nbins(),
+                               binners_[1].get_nbins());
+    }
+};
+
+
+template<>
+class CorrFuncND<1> : public CorrFuncNDBase<1> {
+    using Base = CorrFuncNDBase<1>;
+    using NNType = NNCountsND<1>;
+public:
+    using Base::Base;
+
+    CorrFuncND(const Base& b)
+            : Base(b) {}
+
+    explicit CorrFuncND(const BinSpecifier& binner)
+            : Base(arrays::make_array(binner)) {}
+
+    CorrFuncND(const BinSpecifier& binner,
+               const NNType& dd)
+            : Base(arrays::make_array(binner), dd) {}
+
+    CorrFuncND(const BinSpecifier& binner,
+               const NNType& dd,
+               const NNType& rr)
+            : Base(arrays::make_array(binner), dd, rr) {}
+
+    CorrFuncND(const BinSpecifier& binner,
+               const NNType& dd,
+               const NNType& rr,
+               const NNType& dr)
+            : Base(arrays::make_array(binner), dd, rr, dr) {}
+
+    CorrFuncND(const BinSpecifier& binner,
+               const NNType& dd,
+               const NNType& rr,
+               const NNType& dr,
+               const NNType& rd)
+            : Base(arrays::make_array(binner),
+                   dd,
+                   rr,
+                   dr,
+                   rd) {}
+
+    const BinSpecifier& r_bins() const {
+        return binners_[0];
+    }
+
+    void r_bins(const BinSpecifier& new_binning, bool prefer_old = true) {
+        update_binning(new_binning, 0, prefer_old);
+    }
+
+    std::tuple<std::size_t> shape() const {
+        return std::make_tuple(max_index_);
     }
 };
 

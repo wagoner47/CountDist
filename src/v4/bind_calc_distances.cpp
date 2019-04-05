@@ -964,56 +964,72 @@ static void declareExpectedNNCounts1D(py::module& mod) {
     cls.def_property_readonly("cov_shape", &Class::cov_shape, "Shape tuple for the covariance of the counts");
 }
 
-/*
-template<class C>
-static py::class_<CorrFunc<C>> declareCorrFunc(py::module& mod, const std::string& suffix) {
-    using Class = CorrFunc<C>;
-    py::class_<Class> cls(mod, ("CorrFunc" + suffix).c_str(), ("Container for correlation function from NNCounts" + suffix + " objects").c_str());
-
+template<std::size_t N>
+py::class_<CorrFuncND<N>> declareCorrFuncND(py::module& mod) {
+    using Class = CorrFuncND<N>;
+    using BSType = std::array<BinSpecifier, N>;
+    using NNType = NNCountsND<N>;
+    py::class_<CorrFuncND<N>> cls(mod, Class::class_name.c_str());
     cls.def(py::init<>(), "Empty constructor");
-    cls.def(py::init<const Class&>(), "Copy constructor", "other"_a);
-    cls.def(py::init<const C&>(), "Construct from DD pair counts", "dd"_a);
-    cls.def("assign_dd", &Class::assign_dd, "Assign new DD pair counts", "dd"_a);
-    cls.def("assign_rr", &Class::assign_rr, "Assign new RR pair counts", "rr"_a);
-    cls.def("assign_dr", &Class::assign_dr, "Assign new DR pair counts", "dr"_a);
-    cls.def("assign_rd", &Class::assign_rd, "Assign new RD pair counts", "rd"_a);
-    cls.def("calculate_xi", &Class::calculate_xi, "Calculate the correlation function with the current pair counts");
-    cls.def_property_readonly("xi", [](const Class& self) { return mkarray_from_vec(self.xi(), self.shape_vec()); }, "The correlation function values");
-    cls.def_property_readonly("shape", &Class::shape, "The shape of the data");
-    cls.def_property_readonly("size", &Class::size, "The size of the data");
-    cls.def("__eq__", &Class::operator==, py::is_operator());
-    cls.def("__neq__", &Class::operator!=, py::is_operator());
+    cls.def(py::init<const Class&>(), "Copy constructor: create a copy of 'other'", "other"_a);
+    cls.def(py::init<const BSType&>(), "Initialize from binning", "binners"_a);
+    cls.def(py::init<const NNType&>(), "Initialize with only DD", "dd"_a);
+    cls.def(py::init<const BSType&, const NNType&>(), "Initialize binning and DD", "binners"_a, "dd"_a);
+    cls.def(py::init<const NNType&, const NNType&>(), "Initialize with DD and RR", "dd"_a, "rr"_a);
+    cls.def(py::init<const BSType&, const NNType&, const NNType&>(), "Initialziae with binning, DD, and RR", "binners"_a, "dd"_a, "rr"_a);
+    cls.def(py::init<const NNType&, const NNType&, const NNType&>(), "Initialize with DD, RR, and DR", "dd"_a, "dr"_a, "rr"_a);
+    cls.def(py::init<const BSType&, const NNType&, const NNType&, const NNType&>(), "Initialize with binning, DD, RR, and DR", "binners"_a, "dd"_a, "rr"_a, "dr"_a);
+    cls.def(py::init<const NNType&, const NNType&, const NNType&, const NNType&>(), "Initialize with DD, RR, DR, and RD", "dd"_a, "rr"_a, "dr"_a, "rd"_a);
+    cls.def(py::init<const BSType&, const NNType&, const NNType&, const NNType&, const NNType&>(), "Initialize with binning, DD, RR, DR, and RD", "binners"_a, "dd"_a, "rr"_a, "dr"_a, "rd"_a);
+    cls.def_readonly_static("class_name", &Class::class_name);
+    cls.def_property_readonly("bin_info", &Class::bin_info, "Binning specifications");
+    cls.def_property_readonly("size", &Class::size, "Flattened size of correlation function");
+    cls.def_property_readonly("shape_vec", &Class::shape_vec, "Shape of correlation function as a list");
+    cls.def_property("dd", py::overload_cast<>(&Class::dd, py::const_), py::overload_cast<const NNType&>(&Class::dd), "Data-data pair counts holder");
+    cls.def_property("rr", py::overload_cast<>(&Class::rr, py::const_), py::overload_cast<const NNType&>(&Class::rr), "Random-random pair counts holder");
+    cls.def_property("dr", py::overload_cast<>(&Class::dr, py::const_), py::overload_cast<const NNType&>(&Class::dr), "Data-random pair counts holder");
+    cls.def_property("rd", py::overload_cast<>(&Class::rd, py::const_), py::overload_cast<const NNType&>(&Class::rd), "Random-data pair counts holder");
+    cls.def("update_binning", &Class::update_binning, "Update the binning in the specified dimension", "dim"_a, "new_binning"_a, "prefer_old"_a=true);
+    cls.def("calculate_xi", [](const Class& self) { return mkarray_from_vec(self.calculate_xi(), self.shape_vec()); }, ("Calculate the correlation function in " + std::to_string(N) + "D").c_str());
     cls.def("__repr__", &Class::toString);
+    cls.def(py::pickle(
+            [](const Class& c) { // __getstate__
+                return py::make_tuple(c.bin_info(), c.dd(), c.rr(), c.dr(), c.rd());
+            },
+            [](py::tuple t) { // __setstate__
+                if (t.size() != 5) throw std::length_error("Invalid state");
+                return Class(t[0].cast<BSType>(), t[1].cast<NNType>(), t[2].cast<NNType>(), t[3].cast<NNType>(), t[4].cast<NNType>());
+            }
+            ));
     return cls;
 }
 
-static void declareCorrFunc1D(py::module& mod) {
-    using Class = CorrFunc<NNCounts1D>;
-    py::class_<Class> cls = declareCorrFunc<NNCounts1D>(mod, "1D");
-    cls.def_property_readonly("bin_info", &Class::bin_info, "Binning information");
-    cls.def_property_readonly("bins", &Class::bins, "Bin centers");
-}
-
 static void declareCorrFunc2D(py::module& mod) {
-    using Class = CorrFunc<NNCounts2D>;
-    py::class_<Class> cls = declareCorrFunc<NNCounts2D>(mod, "2D");
-    cls.def_property_readonly("perp_bin_info", &Class::perp_bin_info, "Perpendicular binning info");
-    cls.def_property_readonly("par_bin_info", &Class::par_bin_info, "Parallel binning info");
-    cls.def_property_readonly("perp_bins", &Class::perp_bins, "Bin centers of perpendicular bins");
-    cls.def_property_readonly("par_bins", &Class::par_bins, "Bin centers of parallel bins");
+    using Class = CorrFuncND<2>;
+    using NNType = NNCountsND<2>;
+    auto cls = declareCorrFuncND<2>(mod);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&>(), "Initialize from perpendicular and parallel binners", "perp_binner"_a, "par_binner"_a);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&, const NNType&>(), "Initialize with individual binners and DD", "perp_binner"_a, "par_binner"_a, "dd"_a);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&, const NNType&, const NNType&>(), "Initialziae from individual binners, DD, and RR", "perp_binner"_a, "par_binner"_a, "dd"_a, "rr"_a);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&, const NNType&, const NNType&, const NNType&>(), "Initialize from individual binners, DD, RR, and DR", "perp_binner"_a, "par_binner"_a, "dd"_a, "rr"_a, "dr"_a);
+    cls.def(py::init<const BinSpecifier&, const BinSpecifier&, const NNType&, const NNType&, const NNType&, const NNType&>(), "Initialize from individual binners, DD, RR, DR, and RD", "perp_binner"_a, "par_binner"_a, "dd"_a, "rr"_a, "dr"_a, "rd"_a);
+    cls.def_property("rperp_bins", py::overload_cast<>(&Class::rperp_bins, py::const_), [](Class& self, const py::tuple& t) { self.rperp_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>()); }, "Perpendicular binning. Second element in tuple for setter should be boolean for whether original values should be preferred or not");
+    cls.def_property("rpar_bins", py::overload_cast<>(&Class::rpar_bins, py::const_), [](Class& self, const py::tuple& t) { self.rpar_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>()); }, "Parallel binning. Second element in tuple for setter should be boolean for whether original values should be preferred or not");
+    cls.def_property_readonly("shape", &Class::shape);
 }
 
-static void declareCorrFunc3D(py::module& mod) {
-    using Class = CorrFunc<NNCounts3D>;
-    py::class_<Class> cls = declareCorrFunc<NNCounts3D>(mod, "3D");
-    cls.def_property_readonly("perp_bin_info", &Class::perp_bin_info, "Perpendicular binning info");
-    cls.def_property_readonly("par_bin_info", &Class::par_bin_info, "Parallel binning info");
-    cls.def_property_readonly("zbar_bin_info", &Class::zbar_bin_info, "Redshift binning info");
-    cls.def_property_readonly("perp_bins", &Class::perp_bins, "Bin centers of perpendicular bins");
-    cls.def_property_readonly("par_bins", &Class::par_bins, "Bin centers of parallel bins");
-    cls.def_property_readonly("zbar_bins", &Class::zbar_bins, "Bin centers of redshift bins");
+static void declareCorrFunc1D(py::module& mod) {
+    using Class = CorrFuncND<1>;
+    using NNType = NNCountsND<1>;
+    auto cls = declareCorrFuncND<1>(mod);
+    cls.def(py::init<const BinSpecifier&>(), "Initialize from binner object", "binner"_a);
+    cls.def(py::init<const BinSpecifier&, const NNType&>(), "Initialize with individual binner and DD", "binner"_a, "dd"_a);
+    cls.def(py::init<const BinSpecifier&, const NNType&, const NNType&>(), "Initialziae from individual binner, DD, and RR", "binner"_a, "dd"_a, "rr"_a);
+    cls.def(py::init<const BinSpecifier&, const NNType&, const NNType&, const NNType&>(), "Initialize from individual binner, DD, RR, and DR", "binner"_a, "dd"_a, "rr"_a, "dr"_a);
+    cls.def(py::init<const BinSpecifier&, const NNType&, const NNType&, const NNType&, const NNType&>(), "Initialize from individual binner, DD, RR, DR, and RD", "binner"_a, "dd"_a, "rr"_a, "dr"_a, "rd"_a);
+    cls.def_property("r_bins", py::overload_cast<>(&Class::r_bins, py::const_), [](Class& self, const py::tuple& t) { self.r_bins(t[0].cast<BinSpecifier>(), t[1].cast<bool>()); }, "Separation binning. Second element in tuple for setter should be boolean for whether original values should be preferred or not");
+    cls.def_property_readonly("shape", &Class::shape);
 }
-*/
 
 PYBIND11_MODULE(calculate_distances, m) {
     py::add_ostream_redirect(m);
@@ -1179,9 +1195,6 @@ PYBIND11_MODULE(calculate_distances, m) {
     bind_get_1d_indices<3>(m);
     bind_get_1d_indices<4>(m);
     bind_get_1d_indices<2>(m);
-    /*
     declareCorrFunc1D(m);
     declareCorrFunc2D(m);
-    declareCorrFunc3D(m);
-    */
 }
