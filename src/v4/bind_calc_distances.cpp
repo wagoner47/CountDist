@@ -1162,7 +1162,7 @@ PYBIND11_MODULE(calculate_distances, m) {
 		     return py::make_tuple(bs.get_bin_min(), bs.get_bin_max(), bs.get_bin_size(), bs.get_nbins(), bs.get_log_binning(), bs.get_name());
 		 },
 		 [](py::tuple t) { // __setstate__
-		     if (t.size() != 5 || t.size() != 6) { throw std::runtime_error("Invalid state"); }
+		     if (t.size() != 5 || t.size() != 6) { throw std::runtime_error("Invalid state with " + std::to_string(t.size()) + " elements"); }
 
 		     BinSpecifier bs;
 		     bs.set_bin_min(t[0].cast<double>());
