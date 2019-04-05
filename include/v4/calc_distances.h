@@ -181,7 +181,7 @@ public:
               bin_max(max),
               log_binning(log_bins),
               nbins(num_bins),
-              name(name_in) {
+              name(std::move(name_in)) {
         on_update();
     }
 
@@ -361,6 +361,7 @@ public:
 
     std::vector<double> lower_bin_edges() const {
         if (!_is_set) { return {}; }
+        std::cout << "Creating generating function" << std::endl;
         auto
                 gen_func = log_binning
                            ? std::function<double(int)>([this](int i) {
@@ -371,11 +372,13 @@ public:
                   return bin_min
                          + (i * bin_size);
                 });
+        std::cout << "Calling fill_vector_from_func" << std::endl;
         return arrays::fill_vector_from_func(nbins, gen_func);
     }
 
     std::vector<double> upper_bin_edges() const {
         if (!_is_set) { return {}; }
+        std::cout << "Creating generating function" << std::endl;
         auto
                 gen_func = log_binning
                            ? std::function<double(int)>([this](int i) {
@@ -386,11 +389,13 @@ public:
                   return bin_min
                          + (i * bin_size);
                 });
+        std::cout << "Calling fill_vector_from_func" << std::endl;
         return arrays::fill_vector_from_func(nbins, gen_func, 1);
     }
 
     std::vector<double> bin_edges() const {
         if (!_is_set) { return {}; }
+        std::cout << "Creating generating function" << std::endl;
         auto
                 gen_func = log_binning
                            ? std::function<double(int)>([this](int i) {
@@ -401,11 +406,13 @@ public:
                   return bin_min
                          + (i * bin_size);
                 });
+        std::cout << "Calling fill_vector_from_func" << std::endl;
         return arrays::fill_vector_from_func(nbins + 1, gen_func);
     }
 
     std::vector<double> bin_centers() const {
         if (!_is_set) { return {}; }
+        std::cout << "Creating generating function" << std::endl;
         auto
                 gen_func = log_binning
                            ? std::function<double(int)>([this](int i) {
@@ -416,11 +423,13 @@ public:
                   return bin_min
                          + ((i + 0.5) * bin_size);
                 });
+        std::cout << "Calling fill_vector_from_func" << std::endl;
         return arrays::fill_vector_from_func(nbins, gen_func);
     }
 
     std::vector<double> bin_widths() const {
         if (!_is_set) { return {}; }
+        std::cout << "Creating generating function" << std::endl;
         auto
                 gen_func = log_binning
                            ? std::function<double(int)>([this](int i) {
@@ -431,6 +440,7 @@ public:
                            : std::function<double(int)>([this](int) {
                   return bin_size;
                 });
+        std::cout << "Calling fill_vector_from_func" << std::endl;
         return arrays::fill_vector_from_func(nbins, gen_func);
     }
 

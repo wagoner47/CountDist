@@ -14,6 +14,7 @@
 #include <utility>  // std::index_sequence, std::make_index_sequence
 #include <numeric>  // std::iota
 #include <functional>  // std::function
+#include <iostream>  // temporarily, for std::cout
 
 inline bool lazy_string_equals(std::string_view a, std::string_view b) {
     return a.size() != b.size() ? false : std::equal(a.begin(),
@@ -358,10 +359,14 @@ namespace arrays {
     std::vector<T> fill_vector_from_func(std::size_t n_el,
                                          std::function<T(int)> gen_func,
                                          int min_index = 0) {
+        std::cout << "In fill_vector_from_func" << std::endl;
         std::vector<int> indices(n_el);
+        std::cout << "Fill indices" << std::endl;
         std::iota(indices.begin(), indices.end(), min_index);
         std::vector<T> vec;
+        std::cout << "Transform indices" << std::endl;
         std::transform(indices.begin(), indices.end(), vec.begin(), gen_func);
+        std::cout << "Returning" << std::endl;
         return vec;
     }
 }
