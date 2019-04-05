@@ -781,16 +781,15 @@ def make_single_realization(
     logger.debug("Begin loop")
     for (i, j, k), c in np.ndenumerate(nn_3d.counts):
         if c > 0:
+            logger.debug("Draw observed separations")
+            rpo = nn_3d.rperp_bins.bin_widths[i] * np.random.rand(c) + \
+                  nn_3d.rperp_bins.lower_bin_edges[i]
+            rlo = nn_3d.rpar_bins.bin_widths[j] * np.random.rand(c) + \
+                  nn_3d.rpar_bins.lower_bin_edges[j]
+            zbo = nn_3d.zbar_bins.bin_widths[k] * np.random.rand(c) + \
+                  nn_3d.zbar_bins.lower_bin_edges[k]
             logger.debug("Draw true separations")
-            rpt, rlt = prob.draw_rpt_rlt(
-                nn_3d.rperp_bins.bin_widths[i] * np.random.rand(c)
-                + nn_3d.rperp_bins.lower_bin_edges[i],
-                nn_3d.rpar_bins.bin_widths[j] * np.random.rand(c)
-                + nn_3d.rpar_bins.lower_bin_edges[j],
-                nn_3d.zbar_bins.bin_widths[k] * np.random.rand(c)
-                + nn_3d.zbar_bins.lower_bin_edges[k],
-                sigmaz,
-                rlt_mag)
+            rpt, rlt = prob.draw_rpt_rlt(rpo, rlo, zbo, sigmaz, rlt_mag)
             if in_1d:
                 args = (np.sqrt(rpt**2 + rlt**2), is_first)
             else:
