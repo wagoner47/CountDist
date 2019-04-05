@@ -14,8 +14,11 @@ from astropy.table import Table
 from .fit_probabilities import ProbFitter
 from .utils import MyConfigObj, init_logger
 
-structured_dtype = typing.Mapping[typing.Any, typing.Tuple[
-    np.dtype, typing.Union[int, typing.Tuple[int, ...]]]]
+structured_array = typing.NewType("numpy structured array", typing.List[
+    typing.Mapping[
+        typing.Any,
+        typing.Tuple[
+            np.dtype, typing.Union[int, typing.Tuple[int, ...]]]]])
 
 
 def _read_catalog(file_name: typing.Union[str, os.PathLike], has_true: bool,
@@ -25,8 +28,7 @@ def _read_catalog(file_name: typing.Union[str, os.PathLike], has_true: bool,
                   ztcol: typing.Optional[str] = None,
                   zocol: typing.Optional[str] = None,
                   read_col_names: typing.Optional[
-                      typing.Sequence[str]] = None) -> np.ndarray[
-                            structured_dtype]:
+                      typing.Sequence[str]] = None) -> structured_array:
     """
     Read a catalog from a file, and only keep needed columns
 
@@ -145,9 +147,9 @@ def _read_catalog(file_name: typing.Union[str, os.PathLike], has_true: bool,
 
 
 def _keep_fields_structured_array(
-        struc_arr: typing.Union[np.recarray, np.ndarray[structured_dtype]],
+        struc_arr: typing.Union[np.recarray, structured_array],
         fieldnames_to_keep: typing.Sequence[str]) -> \
-        typing.Union[np.recarray, np.ndarray[structured_dtype]]:
+        typing.Union[np.recarray, structured_array]:
     """
     Remove extra columns from a structured array or recarray
 
@@ -169,13 +171,13 @@ def _keep_fields_structured_array(
 def _convert_catalog_to_structured_array(cat: typing.Union[pd.DataFrame,
                                                            Table,
                                                            np.recarray,
-                                                          np.ndarray[structured_dtype]],
+                                                          structured_array],
                                          use_true: bool, use_obs: bool,
                                          dtcol: str = "D_TRUE",
                                          docol: str = "D_OBS",
                                          ztcol: str = "Z_TRUE",
                                          zocol: str = "Z_OBS") -> \
-        typing.Union[np.recarray, np.ndarray[structured_dtype]]:
+        typing.Union[np.recarray, structured_array]:
     """
     Convert a catalog of any type to a structured or recarray with columns
     not needed removed. The kept columns include 'RA' and 'DEC', as well as
@@ -265,7 +267,7 @@ def calculate_separations(
                 typing.Type[Table],
                 pd.DataFrame,
                 np.recarray,
-                np.ndarray[structured_dtype]]] = None,
+                structured_array]] = None,
         as_type: str = "dataframe") -> typing.Union[pd.DataFrame, Table,
                                                     np.ndarray[
                                                         structured_dtype]]:
@@ -373,7 +375,7 @@ def _get_distance_redshift_colnames(params_in, *, dtkey, dokey, ztkey, zokey):
 def calculate_separations_from_params(
         params_file: typing.Union[str, os.PathLike],
         as_type: str = "dataframe") -> \
-        typing.Union[pd.DataFrame, Table, np.ndarray[structured_dtype]]:
+        typing.Union[pd.DataFrame, Table, structured_array]:
     """
     Calculate the separations with parameters given in a parameter file.
 
@@ -461,7 +463,7 @@ def calculate_separations_from_params(
 def get_pair_counts(binners: typing.Sequence[_calculate_distances.BinSpecifier],
                     cat1: typing.Union[typing.Type[Table],
                                        pd.DataFrame, np.recarray,
-                                       np.ndarray[structured_dtype]],
+                                       structured_array],
                     cat2: typing.Optional[typing.Union[typing.Type[
                                                            Table],
                                                        pd.DataFrame,
@@ -545,13 +547,13 @@ def get_3d_pair_counts(rpo_binner: _calculate_distances.BinSpecifier,
                        _calculate_distances.BinSpecifier,
                        cat1: typing.Union[typing.Type[Table],
                                           pd.DataFrame, np.recarray,
-                                          np.ndarray[structured_dtype]],
+                                          structured_array],
                        cat2: typing.Optional[
                            typing.Union[
                                typing.Type[Table],
                                pd.DataFrame,
                                np.recarray,
-                               np.ndarray[structured_dtype]]] = None,
+                               structured_array]] = None,
                        use_true: bool = False) -> \
         _calculate_distances.NNCounts3D:
     """
