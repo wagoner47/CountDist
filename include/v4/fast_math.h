@@ -392,7 +392,7 @@ namespace arrays {
         std::transform(indices.begin(),
                        indices.end(),
                        vec.begin(),
-                       [](int i) { return gen_func(i); });
+                       [=](int i) { return gen_func(i); });
         std::cout << "Returning" << std::endl;
         return vec;
     }
