@@ -478,7 +478,7 @@ public:
                            });
         }
         else {
-            vec.assign(bin_size);
+            std::fill(vec.begin(), vec.end(), bin_size);
         }
         return vec;
     }
