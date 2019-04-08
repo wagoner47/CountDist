@@ -1164,7 +1164,7 @@ PYBIND11_MODULE(calculate_distances, m) {
 		 [](py::tuple t) { // __setstate__
 		     if (t.size() != 5 && t.size() != 6) { throw std::runtime_error("Invalid state with " + std::to_string(t.size()) + " elements"); }
 
-		     BinSpecifier bs;
+		     BinSpecifier bs();
 		     bs.set_bin_min(t[0].cast<double>());
 		     bs.set_bin_max(t[1].cast<double>());
 		     bs.set_bin_size(t[2].cast<double>());

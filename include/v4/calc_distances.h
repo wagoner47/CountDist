@@ -38,8 +38,9 @@ inline int omp_get_num_threads() { return 1; }
 #endif
 
 template<typename T, typename std::enable_if_t<
-        std::is_arithmetic_v<T>,
+        std::is_arithmetic_v < T>,
         int> = 0>
+
 inline bool check_val_in_limits(const T& val, const T& min, const T& max) {
     return std::isfinite(val) && (!std::isfinite(min) || val >= min)
            && (!std::isfinite(max) || val <= max);
@@ -384,16 +385,22 @@ public:
 
     std::vector<double> lower_bin_edges() const {
         if (!_is_set) { return {}; }
-        return arrays::fill_vector_from_func(nbins,
-                                             log_binning
-                                             ? std::function<double(int)>([this](
-                                                     int i) {
-                                               return log_step_func(i);
-                                             })
-                                             : std::function<double(int)>([this](
-                                                     int i) {
-                                               return lin_step_func(i);
-                                             }));
+        std::vector<int> indices(nbins);
+        std::iota(indices.begin(), indices.end(), 0);
+        std::vector<double> vec(nbins);
+        if (log_binning) {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return log_step_func(i); });
+        }
+        else {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return lin_step_func(i); });
+        }
+        return vec;
         // std::cout << "Creating generating function" << std::endl;
         // auto
         //         gen_func = log_binning
@@ -1658,8 +1665,9 @@ public:
     }
 
     template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
+            std::is_arithmetic_v < T>,
             int> = 0>
+
     NNType operator+=(const T& x) {
         if (!math::isclose(x, (T) 0)) {
             throw std::invalid_argument(
@@ -1669,15 +1677,17 @@ public:
     }
 
     template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
+            std::is_arithmetic_v < T>,
             int> = 0>
+
     NNType operator+(const T& x) const {
         return NNType(*this).operator+=(x);
     }
 
     template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
+            std::is_arithmetic_v < T>,
             int> = 0>
+
     friend NNType operator+(const T& x, const NNType& rhs) {
         return rhs.operator+(x);
     }
@@ -2302,7 +2312,8 @@ public:
     }
 
     template<typename T>
-    typename std::enable_if_t<std::is_arithmetic_v<T>, ENNType>
+    typename std::enable_if_t<std::is_arithmetic_v < T>, ENNType>
+
     operator+=(const T& x) {
         if (!math::isclose(x, (T) 0)) {
             throw std::invalid_argument("Only 0 valid for scalar addition with "
@@ -2312,11 +2323,13 @@ public:
     }
 
     template<typename T>
-    typename std::enable_if_t<std::is_arithmetic_v<T>, ENNType>
+    typename std::enable_if_t<std::is_arithmetic_v < T>, ENNType>
+
     operator+(const T& x) const { return ENNType(*this).operator+=(x); }
 
     template<typename T>
-    friend typename std::enable_if_t<std::is_arithmetic_v<T>, ENNType>
+    friend typename std::enable_if_t<std::is_arithmetic_v < T>, ENNType>
+
     operator+(const T& x, const ENNType& rhs) { return rhs.operator+(x); }
 
     bool operator==(const ENNType& other) const {
