@@ -359,21 +359,58 @@ public:
         return (int) floor(get_diff(value) / bin_size);
     }
 
+    double log_step_func(int index) const {
+        return bin_min
+               * std::exp(index * bin_size);
+    }
+
+    double lin_step_func(int index) const {
+        return bin_min
+               + (index * bin_size);
+    }
+
+    double log_step_func_center(int index) const {
+        return bin_min
+               * std::exp((index
+                           + 0.5)
+                          * bin_size);
+    }
+
+    double lin_step_func_center(int index) const {
+        return bin_min
+               + ((index + 0.5)
+                  * bin_size);
+    }
+
     std::vector<double> lower_bin_edges() const {
         if (!_is_set) { return {}; }
-        std::cout << "Creating generating function" << std::endl;
-        auto
-                gen_func = log_binning
-                           ? std::function<double(int)>([this](int i) {
-                  return bin_min
-                         * std::exp(i * bin_size);
-                })
-                           : std::function<double(int)>([this](int i) {
-                  return bin_min
-                         + (i * bin_size);
-                });
-        std::cout << "Calling fill_vector_from_func" << std::endl;
-        return arrays::fill_vector_from_func(nbins, gen_func);
+        return arrays::fill_vector_from_func(nbins,
+                                             log_binning
+                                             ? std::function<double(int)>([this](
+                                                     int i) {
+                                               return log_step_func(i);
+                                             })
+                                             : std::function<double(int)>([this](
+                                                     int i) {
+                                               return lin_step_func(i);
+                                             }));
+        // std::cout << "Creating generating function" << std::endl;
+        // auto
+        //         gen_func = log_binning
+        //                    ? std::function<double(int)>([this](int i) {
+        //                        std::cout << "bin_min = " << bin_min << std::endl;
+        //           return bin_min
+        //                  * std::exp(i * bin_size);
+        //         })
+        //                    : std::function<double(int)>([this](int i) {
+        //           std::cout << "bin_min = " << bin_min << std::endl;
+        //           std::cout << "i = " << i << std::endl;
+        //           return bin_min
+        //                  + (i * bin_size);c
+        //         });
+        // std::cout << "gen_func(0) = " << gen_func(0) << std::endl;
+        // std::cout << "Calling fill_vector_from_func" << std::endl;
+        // return arrays::fill_vector_from_func(nbins, gen_func);
     }
 
     std::vector<double> upper_bin_edges() const {
@@ -389,6 +426,7 @@ public:
                   return bin_min
                          + (i * bin_size);
                 });
+        std::cout << "gen_func(0) = " << gen_func(0) << std::endl;
         std::cout << "Calling fill_vector_from_func" << std::endl;
         return arrays::fill_vector_from_func(nbins, gen_func, 1);
     }

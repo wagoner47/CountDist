@@ -1179,10 +1179,14 @@ PYBIND11_MODULE(calculate_distances, m) {
 	.def("__eq__", &BinSpecifier::operator==, py::is_operator())
 	.def("__neq__", &BinSpecifier::operator!=, py::is_operator())
 	.def("assign_bin", py::vectorize(&BinSpecifier::assign_bin), "Get the bin index/indices corresponding to the given value(s)", "value"_a)
+	.def("log_step_func", py::vectorize(&BinSpecifier::log_step_func), "Finds the bin edge with index 'i' assuming logarithmic steps", "i"_a)
+	.def("lin_step_func", py::vectorize(&BinSpecifier::lin_step_func), "Finds the bin edge with index 'i' assuming linear steps", "i"_a)
+    .def("log_step_func_center", py::vectorize(&BinSpecifier::log_step_func_center), "Finds the bin center with index 'i' assuming logarithmic steps", "i"_a)
+    .def("lin_step_func_center", py::vectorize(&BinSpecifier::lin_step_func_center), "Finds the bin center with index 'i' assuming linear steps", "i"_a)
 	.def_property_readonly("lower_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec(self.lower_bin_edges()); }, "Get the lower edges of all bins")
 	.def_property_readonly("upper_bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec(self.upper_bin_edges()); }, "Get the upper edges of all bins")
 	.def_property_readonly("bin_edges", [](const BinSpecifier &self) { return mkarray_from_vec(self.bin_edges()); }, "Get the nbins+1 bin edges")
-	.def_property_readonly("bin_centers", [](const BinSpecifier &self) { return mkarray_from_vec(self.bin_centers()); }, "Get the centers of all bins. May not be centered in linear space if log binning is used")
+	.def_property_readonly("bin_ sucenters", [](const BinSpecifier &self) { return mkarray_from_vec(self.bin_centers()); }, "Get the centers of all bins. May not be centered in linear space if log binning is used")
 	.def_property_readonly("bin_widths", [](const BinSpecifier &self) { return mkarray_from_vec(self.bin_widths()); }, "Get the difference between linear space bin edges. Note that these will all be the same value for linear binning, but not for log binning")
 	.def_property_readonly("is_set", &BinSpecifier::is_set, "Flag to specify whether the values have actually been set (True) or not (False) yet");
     declareNNCounts3D(m);
