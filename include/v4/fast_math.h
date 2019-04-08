@@ -381,7 +381,7 @@ namespace math {
 namespace arrays {
     template<typename T>
     std::vector<T> fill_vector_from_func(std::size_t n_el,
-                                         std::function<T(int)> gen_func,
+                                         std::function<T(int)>& gen_func,
                                          int min_index = 0) {
         std::cout << "In fill_vector_from_func" << std::endl;
         std::vector<int> indices(n_el);
@@ -392,7 +392,7 @@ namespace arrays {
         std::transform(indices.begin(),
                        indices.end(),
                        vec.begin(),
-                       [=](int i) { return gen_func(i); });
+                       gen_func);
         std::cout << "Returning" << std::endl;
         return vec;
     }
