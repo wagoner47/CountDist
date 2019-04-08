@@ -401,92 +401,86 @@ public:
                            [this](int i) { return lin_step_func(i); });
         }
         return vec;
-        // std::cout << "Creating generating function" << std::endl;
-        // auto
-        //         gen_func = log_binning
-        //                    ? std::function<double(int)>([this](int i) {
-        //                        std::cout << "bin_min = " << bin_min << std::endl;
-        //           return bin_min
-        //                  * std::exp(i * bin_size);
-        //         })
-        //                    : std::function<double(int)>([this](int i) {
-        //           std::cout << "bin_min = " << bin_min << std::endl;
-        //           std::cout << "i = " << i << std::endl;
-        //           return bin_min
-        //                  + (i * bin_size);c
-        //         });
-        // std::cout << "gen_func(0) = " << gen_func(0) << std::endl;
-        // std::cout << "Calling fill_vector_from_func" << std::endl;
-        // return arrays::fill_vector_from_func(nbins, gen_func);
     }
 
     std::vector<double> upper_bin_edges() const {
         if (!_is_set) { return {}; }
-        std::cout << "Creating generating function" << std::endl;
-        auto
-                gen_func = log_binning
-                           ? std::function<double(int)>([this](int i) {
-                  return bin_min
-                         * std::exp(i * bin_size);
-                })
-                           : std::function<double(int)>([this](int i) {
-                  return bin_min
-                         + (i * bin_size);
-                });
-        std::cout << "gen_func(0) = " << gen_func(0) << std::endl;
-        std::cout << "Calling fill_vector_from_func" << std::endl;
-        return arrays::fill_vector_from_func(nbins, gen_func, 1);
+        std::vector<int> indices(nbins);
+        std::iota(indices.begin(), indices.end(), 1);
+        std::vector<double> vec(nbins);
+        if (log_binning) {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return log_step_func(i); });
+        }
+        else {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return lin_step_func(i); });
+        }
+        return vec;
     }
 
     std::vector<double> bin_edges() const {
         if (!_is_set) { return {}; }
-        std::cout << "Creating generating function" << std::endl;
-        auto
-                gen_func = log_binning
-                           ? std::function<double(int)>([this](int i) {
-                  return bin_min
-                         * std::exp(i * bin_size);
-                })
-                           : std::function<double(int)>([this](int i) {
-                  return bin_min
-                         + (i * bin_size);
-                });
-        std::cout << "Calling fill_vector_from_func" << std::endl;
-        return arrays::fill_vector_from_func(nbins + 1, gen_func);
+        std::vector<int> indices(nbins + 1);
+        std::iota(indices.begin(), indices.end(), 0);
+        std::vector<double> vec(nbins + 1);
+        if (log_binning) {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return log_step_func(i); });
+        }
+        else {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return lin_step_func(i); });
+        }
+        return vec;
     }
 
     std::vector<double> bin_centers() const {
         if (!_is_set) { return {}; }
-        std::cout << "Creating generating function" << std::endl;
-        auto
-                gen_func = log_binning
-                           ? std::function<double(int)>([this](int i) {
-                  return bin_min
-                         * std::exp((i + 0.5) * bin_size);
-                })
-                           : std::function<double(int)>([this](int i) {
-                  return bin_min
-                         + ((i + 0.5) * bin_size);
-                });
-        std::cout << "Calling fill_vector_from_func" << std::endl;
-        return arrays::fill_vector_from_func(nbins, gen_func);
+        std::vector<int> indices(nbins);
+        std::iota(indices.begin(), indices.end(), 0);
+        std::vector<double> vec(nbins);
+        if (log_binning) {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return log_step_func_center(i); });
+        }
+        else {
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) { return lin_step_func_center(i); });
+        }
+        return vec;
     }
 
     std::vector<double> bin_widths() const {
         if (!_is_set) { return {}; }
-        std::cout << "Creating generating function" << std::endl;
-        auto
-                gen_func = log_binning
-                           ? std::function<double(int)>([this](int i) {
-                  return bin_min
-                         * std::exp(i * bin_size)
-                         * (std::exp(bin_size) - 1);
-                })
-                           : std::function<double(int)>([this](int) {
-                  return bin_size;
-                });
-        std::cout << "Calling fill_vector_from_func" << std::endl;
-        return arrays::fill_vector_from_func(nbins, gen_func);
+        std::vector<double> vec(nbins);
+        if (log_binning) {
+            std::vector<int> indices(nbins);
+            std::iota(indices.begin(), indices.end(), 0);
+            std::transform(indices.begin(),
+                           indices.end(),
+                           vec.begin(),
+                           [this](int i) {
+                             return (std::exp(bin_size) - 1)
+                                    * log_step_func(i);
+                           });
+        }
+        else {
+            vec.assign(bin_size);
+        }
+        return vec;
     }
 
 private:
