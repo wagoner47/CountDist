@@ -38,7 +38,7 @@ inline int omp_get_num_threads() { return 1; }
 #endif
 
 template<typename T, typename std::enable_if_t<
-        std::is_arithmetic_v < T>,
+        std::is_arithmetic_v<T>,
         int> = 0>
 
 inline bool check_val_in_limits(const T& val, const T& min, const T& max) {
@@ -1659,7 +1659,7 @@ public:
     }
 
     template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v < T>,
+            std::is_arithmetic_v<T>,
             int> = 0>
 
     NNType operator+=(const T& x) {
@@ -1671,7 +1671,7 @@ public:
     }
 
     template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v < T>,
+            std::is_arithmetic_v<T>,
             int> = 0>
 
     NNType operator+(const T& x) const {
@@ -1679,7 +1679,7 @@ public:
     }
 
     template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v < T>,
+            std::is_arithmetic_v<T>,
             int> = 0>
 
     friend NNType operator+(const T& x, const NNType& rhs) {
@@ -2036,6 +2036,10 @@ private:
 
 
 template<std::size_t N>
+class ExpectedCorrFuncND;
+
+
+template<std::size_t N>
 class ExpectedNNCountsNDBase {
     using NNBaseType = NNCountsNDBase<N>;
     using NNType = NNCountsND<N>;
@@ -2060,13 +2064,21 @@ private:
         cov_ = calculate_cov();
     }
 
-    static std::vector<NNType>
-    remove_empty_realizations(const ExpectedNNCountsNDBase& enn) {
+    ENNType& downcast() { return static_cast<ENNType>(*this); }
+
+    ENNType& remove_empty_realizations() {
         std::vector<NNType> non_empty;
-        for (const auto& nn : enn.nn_list_) {
+        for (const auto& nn : nn_list_) {
             if (nn.n_tot_ > 0) { non_empty.push_back(nn); }
         }
-        return non_empty;
+        nn_list_.swap(non_empty);
+        n_real_ = nn_list_.size();
+        return downcast();
+    }
+
+    static ENNType
+    remove_empty_realizations(const ExpectedNNCountsNDBase& enn) {
+        return ENNType(enn).remove_empty_realizations();
     }
 
     static std::vector<NNType>
@@ -2260,7 +2272,7 @@ public:
 
     std::vector<double> cov() const { return cov_; }
 
-    ENNType operator+=(const NNType& other) {
+    ENNType& operator+=(const NNType& other) {
         for (std::size_t i = 0; i < N; i++) {
             if (binners_[i] != other.binners_[i]) {
                 std::cerr << "Attempted to combine " << class_name
@@ -2279,7 +2291,7 @@ public:
                                          + " instance with different binning schemes");
             }
         }
-        nn_list_ = remove_empty_realizations(nn_list_);
+        remove_empty_realizations();
         if (n_real_ == 0) {
             nn_list_.push_back(other);
             n_real_++;
@@ -2291,42 +2303,45 @@ public:
             mean_ = calculate_mean();
             cov_ = calculate_cov();
         }
-        return ENNType(*this);
+        return downcast();
     }
 
-    ENNType operator+=(const ENNType& other) {
+    ENNType& operator+=(const ExpectedNNCountsNDBase& other) {
         if (n_tot_ != other.n_tot_) {
             throw std::runtime_error("Cannot combine " + class_name
                                      + " instances with different n_tot");
         }
         std::vector<NNType>
                 onn_list = remove_empty_realizations(other.nn_list_);
-        if (onn_list.size() == 0) { return ENNType(*this); }
+        if (onn_list.size() == 0) { return downcast(); }
         return operator+=(onn_list[onn_list.size() - 1]);
     }
 
-    template<typename T>
-    typename std::enable_if_t<std::is_arithmetic_v < T>, ENNType>
-
-    operator+=(const T& x) {
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v<T>,
+            int> = 0>
+    ENNType& operator+=(const T& x) {
         if (!math::isclose(x, (T) 0)) {
             throw std::invalid_argument("Only 0 valid for scalar addition with "
                                         + class_name);
         }
-        return ENNType(*this);
+        return downcast();
     }
 
-    template<typename T>
-    typename std::enable_if_t<std::is_arithmetic_v < T>, ENNType>
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v<T>,
+            int> = 0>
+    ENNType operator+(const T& x) const { return ENNType(*this).operator+=(x); }
 
-    operator+(const T& x) const { return ENNType(*this).operator+=(x); }
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v<T>,
+            int> = 0>
+    friend ENNType operator+(const T& x,
+                             const ExpectedNNCountsNDBase& rhs) {
+        return rhs.operator+(x);
+    }
 
-    template<typename T>
-    friend typename std::enable_if_t<std::is_arithmetic_v < T>, ENNType>
-
-    operator+(const T& x, const ENNType& rhs) { return rhs.operator+(x); }
-
-    bool operator==(const ENNType& other) const {
+    bool operator==(const ExpectedNNCountsNDBase& other) const {
         return n_tot_ == other.n_tot_
                && n_real_ == other.n_real_
                && std::equal(binners_.begin(),
@@ -2336,7 +2351,22 @@ public:
                && math::isclose(cov_, other.cov_);
     }
 
-    bool operator!=(const ENNType& other) const { return !operator==(other); }
+    bool operator!=(const ExpectedNNCountsNDBase& other) const {
+        return !operator==(other);
+    }
+
+    std::vector<std::vector<double>> normed_counts() const {
+        std::vector<std::vector<double>> norm;
+        for (const auto& nn : nn_list_) {
+            std::vector<double> normi(nn.counts_.begin(), nn.counts_.end());
+            std::transform(normi.begin(),
+                           normi.end(),
+                           normi.begin(),
+                           [this](double x) { return x / n_tot_; });
+            norm.push_back(normi);
+        }
+        return norm;
+    }
 
     void append_real(const NNType& other) {
         nn_list_ = remove_empty_realizations(nn_list_);
@@ -2347,13 +2377,14 @@ public:
         cov_ = calculate_cov();
     }
 
-    void append_real(const ENNType& other) {
-        std::vector<NNType> onn_list = remove_empty_realizations(other);
-        nn_list_ = remove_empty_realizations(nn_list_);
+    void append_real(const ExpectedNNCountsNDBase& other) {
+        remove_empty_realizations();
+        std::vector<NNType>
+                onn_list = remove_empty_realizations(other.nn_list_);
         nn_list_.insert(nn_list_.end(),
                         onn_list.begin(),
                         onn_list.end());
-        n_real_ = nn_list_.size();
+        n_real_ += onn_list.size();
         mean_ = calculate_mean();
         cov_ = calculate_cov();
     }
@@ -2386,6 +2417,9 @@ public:
         os << nn.toString();
         return os;
     }
+
+private:
+    friend class ExpectedCorrFuncNDBase<N>;
 };
 
 
@@ -2670,42 +2704,42 @@ public:
     explicit CorrFuncNDBase(const BSType& binners)
             : binners_(binners),
               max_index_(get_max_index(binners_)),
-              dd_(NNType(binners_)),
-              rr_(NNType(binners_)),
-              dr_(NNType(binners_)),
-              rd_(NNType(binners_)) {}
+              dd_(binners_),
+              rr_(binners_),
+              dr_(binners_),
+              rd_(binners_) {}
 
     explicit CorrFuncNDBase(const NNType& dd)
             : binners_(dd.bin_info()),
               max_index_(get_max_index(binners_)),
               dd_(dd),
-              rr_(NNType(binners_)),
-              dr_(NNType(binners_)),
-              rd_(NNType(binners_)) {}
+              rr_(binners_),
+              dr_(binners_),
+              rd_(binners_) {}
 
     CorrFuncNDBase(const BSType& binners, const NNType& dd)
             : binners_(binners),
               max_index_(get_max_index(binners_)),
               dd_(verify_nn(dd)),
-              rr_(NNType(binners_)),
-              dr_(NNType(binners_)),
-              rd_(NNType(binners_)) {}
+              rr_(binners_),
+              dr_(binners_),
+              rd_(binners_) {}
 
     CorrFuncNDBase(const NNType& dd, const NNType& rr)
             : binners_(dd.bin_info()),
               max_index_(get_max_index(binners_)),
               dd_(dd),
               rr_(verify_nn(rr)),
-              dr_(NNType(binners_)),
-              rd_(NNType(binners_)) {}
+              dr_(binners_),
+              rd_(binners_) {}
 
     CorrFuncNDBase(const BSType& binners, const NNType& dd, const NNType& rr)
             : binners_(binners),
               max_index_(get_max_index(binners_)),
               dd_(verify_nn(dd)),
               rr_(verify_nn(rr)),
-              dr_(NNType(binners_)),
-              rd_(NNType(binners_)) {}
+              dr_(binners_),
+              rd_(binners_) {}
 
     CorrFuncNDBase(const NNType& dd, const NNType& rr, const NNType& dr)
             : binners_(dd.bin_info()),
@@ -2713,7 +2747,7 @@ public:
               dd_(dd),
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)),
-              rd_(NNType(binners_)) {}
+              rd_(binners_) {}
 
     CorrFuncNDBase(const BSType& binners,
                    const NNType& dd,
@@ -2724,7 +2758,7 @@ public:
               dd_(verify_nn(dd)),
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)),
-              rd_(NNType(binners_)) {}
+              rd_(binners_) {}
 
     CorrFuncNDBase(const NNType& dd,
                    const NNType& rr,
@@ -3030,6 +3064,336 @@ public:
 
     std::tuple<std::size_t> shape() const {
         return std::make_tuple(max_index_);
+    }
+};
+
+
+template<std::size_t N>
+class ExpectedCorrFuncND {
+    using ENNType = ExpectedNNCountsND<N>;
+    using BSType = std::array<BinSpecifier, N>;
+    using BBSType = std::array<BinSpecifier, 2 * N>;
+
+    std::vector<std::vector<double>> calculate_xi_i() const {
+        if (dd_.n_real_ == 0 || rr_.n_real_ == 0) {
+            throw std::runtime_error(
+                    "Cannot calculate correlation function without at least DD and RR");
+        }
+        if (n_real_ == 0) {
+            return std::vector<std::vector<double>>(n_real_,
+                                                    std::vector<
+                                                            double>(max_index_,
+                                                                    0.0));
+        }
+        std::vector<std::vector<double>>
+                xi(n_real_, std::vector<double>(max_index_, 1));
+        std::vector<std::vector<double>>
+                dd_norm = dd_.normed_counts(),
+                rr_norm = rr_.normed_counts();
+        if (dr_.n_real_ == 0 && rd_.n_real_ == 0) {
+            for (std::size_t i = 0; i < n_real_; i++) {
+                std::vector<double> xi_i(max_index_);
+                std::transform(dd_norm.at(i).begin(),
+                               dd_norm.at(i).end(),
+                               rr_norm.at(i).begin(),
+                               xi_i.begin(),
+                               std::divides<>());
+                std::transform(xi_i.begin(),
+                               xi_i.end(),
+                               xi.at(i).begin(),
+                               xi.at(i).begin(),
+                               std::minus<>());
+            }
+        }
+        else {
+            std::vector<std::vector<double>>
+                    dr_norm = dr_.n_real_ != 0
+                              ? dr_.normed_counts()
+                              : rd_.normed_counts();
+            std::vector<std::vector<double>>
+                    rd_norm = rd_.n_real_ != 0
+                              ? rd_.normed_counts()
+                              : dr_.normed_counts();
+            for (std::size_t i = 0; i < n_real_; i++) {
+                std::vector<double> xi_i = dd_norm.at(i);
+                std::transform(xi_i.begin(),
+                               xi_i.end(),
+                               dr_norm.at(i).begin(),
+                               xi_i.begin(),
+                               std::minus<>());
+                std::transform(xi_i.begin(),
+                               xi_i.end(),
+                               rd_norm.at(i).begin(),
+                               xi_i.begin(),
+                               std::minus<>());
+                std::transform(xi_i.begin(),
+                               xi_i.end(),
+                               rr_norm.at(i).begin(),
+                               xi_i.begin(),
+                               std::divides<>());
+                std::transform(xi_i.begin(),
+                               xi_i.end(),
+                               xi.at(i).begin(),
+                               xi.at(i).begin(),
+                               std::plus<>());
+            }
+        }
+        return xi;
+    }
+
+protected:
+    BSType binners_ = arrays::make_filled_array<BinSpecifier, N>();
+    BBSType cov_binners_ = arrays::make_filled_array<BinSpecifier, 2 * N>();
+    std::size_t max_index_ = 0, max_cov_index_ = 0;
+    ENNType dd_;
+    std::size_t n_real_ = 0;
+    ENNType rr_, dr_, rd_;
+
+    ENNType verify_nn(const ENNType& nn) const {
+        ENNType out = ENNType::remove_empty_realizations(nn);
+        if (n_real_ > 0) {
+            if (out.n_real_ != n_real_) {
+                throw std::invalid_argument(out.class_name
+                                            + " instance given has different number of realizations");
+            }
+        }
+        else { n_real_ = out.n_real_; }
+        for (std::size_t i = 0; i < N; i++) {
+            if (binners_[i].is_set()) {
+                if (out.binners_[i] != binners_[i]) {
+                    throw std::invalid_argument(out.class_name
+                                                + " instance given has different binning scheme in dimension "
+                                                + std::to_string(i));
+                }
+            }
+            else { binners_[i] = out.binners_[i]; }
+        }
+
+        return out;
+    }
+
+public:
+    ExpectedCorrFuncND() = default;
+
+    ExpectedCorrFuncND(const ExpectedCorrFuncND&) = default;
+
+    explicit ExpectedCorrFuncND(const BSType& binners)
+            : binners_(binners),
+              cov_binners_(arrays::repeat_array<2>(binners_)),
+              max_index_(get_max_index(binners_)),
+              max_cov_index_(get_max_index(cov_binners_)) {}
+
+    explicit ExpectedCorrFuncND(const ENNType& dd)
+            : binners_(dd.binners_),
+              cov_binners_(arrays::repeat_array<2>(binners_)),
+              max_index_(get_max_index(binners_)),
+              max_cov_index_(get_max_index(cov_binners_)),
+              dd_(ENNType::remove_empty_realizations(dd)),
+              n_real_(dd_.n_real_) {}
+
+    ExpectedCorrFuncND(const ENNType& dd, const ENNType& rr)
+            : binners_(dd.binners_),
+              cov_binners_(arrays::repeat_array<2>(binners_)),
+              max_index_(get_max_index(binners_)),
+              max_cov_index_(get_max_index(cov_binners_)),
+              dd_(ENNType::remove_empty_realizations(dd)),
+              n_real_(dd_.n_real_),
+              rr_(verify_nn(rr)) {}
+
+    ExpectedCorrFuncND(const ENNType& dd,
+                           const ENNType& rr,
+                           const ENNType& dr)
+            : binners_(dd.binners_),
+              cov_binners_(arrays::repeat_array<2>(binners_)),
+              max_index_(get_max_index(binners_)),
+              max_cov_index_(get_max_index(cov_binners_)),
+              dd_(ENNType::remove_empty_realizations(dd)),
+              n_real_(dd_.n_real_),
+              rr_(verify_nn(rr)),
+              dr_(verify_nn(dr)) {}
+
+    ExpectedCorrFuncND(const ENNType& dd,
+                           const ENNType& rr,
+                           const ENNType& dr,
+                           const ENNType& rd)
+            : binners_(dd.binners_),
+              cov_binners_(arrays::repeat_array<2>(binners_)),
+              max_index_(get_max_index(binners_)),
+              max_cov_index_(get_max_index(cov_binners_)),
+              dd_(ENNType::remove_empty_realizations(dd)),
+              n_real_(dd_.n_real_),
+              rr_(verify_nn(rr)),
+              dr_(verify_nn(dr)),
+              rd_(verify_nn(rd)) {}
+
+    inline static const std::string
+            class_name = "ExpectedCorrFunc" + std::to_string(N) + "D";
+
+    std::size_t n_real() const {
+        return n_real_;
+    }
+
+    std::size_t mean_size() const {
+        return max_index_;
+    }
+
+    std::vector<std::size_t> mean_shape() const {
+        std::vector<std::size_t> shape;
+        for (const auto& b : binners_) { shape.push_back(b.get_nbins()); }
+        return shape;
+    }
+
+    std::size_t cov_size() const {
+        return max_cov_index_;
+    }
+
+    std::vector<std::size_t> cov_shape() const {
+        std::vector<std::size_t> shape;
+        for (const auto& b : cov_binners_) { shape.push_back(b.get_nbins()); }
+        return shape;
+    }
+
+    BSType bin_info() const { return binners_; }
+
+    void update_binning(std::size_t index,
+                        const BinSpecifier& new_binner,
+                        bool prefer_old = true) {
+        dd_.update_binning(index, new_binner, prefer_old);
+        dr_.update_binning(index, new_binner, prefer_old);
+        rd_.update_binning(index, new_binner, prefer_old);
+        rr_.update_binning(index, new_binner, prefer_old);
+        binners_ = dd_.binners_;
+        cov_binners_ = arrays::repeat_array<2>(binners_);
+        max_index_ = get_max_index(binners_);
+        max_cov_index_ = get_max_index(cov_binners_);
+        n_real_ = 0;
+    }
+
+    const ENNType& dd() const {
+        return dd_;
+    }
+
+    void dd(const ENNType& dd) {
+        dd_ = verify_nn(dd);
+    }
+
+    const ENNType& rr() const {
+        return rr_;
+    }
+
+    void rr(const ENNType& rr) {
+        rr_ = verify_nn(rr);
+    }
+
+    const ENNType& dr() const {
+        return dr_;
+    }
+
+    void dr(const ENNType& dr) {
+        dr_ = verify_nn(dr);
+    }
+
+    const ENNType& rd() const {
+        return rd_;
+    }
+
+    void rd(const ENNType& rd) {
+        rd_ = verify_nn(rd);
+    }
+
+    std::vector<double> calculate_xi() const {
+        if (dd_.n_real_ == 0 || rr_.n_real_ == 0) {
+            throw std::runtime_error(
+                    "Cannot calculate correlation function without at least DD and RR");
+        }
+        if (n_real_ == 0) { return std::vector<double>(max_index_, 0.0); }
+        std::vector<std::vector<double>> xi_i = calculate_xi_i();
+        std::vector<double> xi(max_index_, 0.0);
+        for (std::size_t i = 0; i < n_real_; i++) {
+            std::transform(xi.begin(),
+                           xi.end(),
+                           xi_i.at(i).begin(),
+                           xi.begin(),
+                           std::plus<>());
+        }
+        std::transform(xi.begin(),
+                       xi.end(),
+                       xi.begin(),
+                       [this](double el) { return el / n_real_; });
+        return xi;
+    }
+
+    std::vector<double> calculate_xi_cov() const {
+        if (dd_.n_real_ == 0 || rr_.n_real_ == 0) {
+            throw std::runtime_error(
+                    "Cannot calculate correlation function without at least DD and RR");
+        }
+        if (n_real_ < 2) { return std::vector<double>(max_cov_index_, 0.0); }
+        std::vector<std::vector<double>>
+                xi_i = transpose_vector(calculate_xi_i());
+        std::vector<double> xi_mean = calculate_xi();
+        std::vector<double> xi_cov(max_cov_index_, 0.0);
+        for (std::size_t i = 0; i < max_index_; i++) {
+            for (std::size_t j = 0; j < max_index_; j++) {
+                std::vector<double> tempi = xi_i.at(i), tempj = xi_i.at(j);
+                std::transform(tempi.begin(),
+                               tempi.end(),
+                               tempi.begin(),
+                               [&](double el) { return el / xi_mean.at(i); });
+                std::transform(tempj.begin(),
+                               tempj.end(),
+                               tempj.begin(),
+                               [&](double el) { return el / xi_mean.at(j); });
+                std::transform(tempi.begin(),
+                               tempi.end(),
+                               tempj.begin(),
+                               tempi.begin(),
+                               std::multiplies<>());
+                xi_cov[i + max_index_ * j] = std::accumulate(tempi.begin(),
+                                                             tempi.end(),
+                                                             0.0);
+            }
+        }
+        return xi_cov;
+    }
+
+    std::string toString() const {
+        std::ostringstream oss;
+        std::string pad;
+        for (std::size_t i = 0; i <= class_name.size(); i++) {
+            pad += " ";
+        }
+        oss << class_name << "(" << std::endl;
+        if (dd_.n_real_ != 0
+            || rr_.n_real_ != 0
+            || dr_.n_real_ != 0
+            || rd_.n_real_ != 0) {
+            if (dd_.n_real_ != 0) {
+                oss << pad << "dd=" << dd_ << std::endl;
+            }
+            if (rr_.n_real_ != 0) {
+                oss << pad << "rr=" << rr_ << std::endl;
+            }
+            if (dr_.n_real_ != 0) {
+                oss << pad << "dr=" << dr_ << std::endl;
+            }
+            if (rd_.n_real_ != 0) {
+                oss << pad << "rd=" << rd_ << std::endl;
+            }
+        }
+        else {
+            for (const auto& b : binners_) {
+                oss << pad << b.get_name() << "=" << b << std::endl;
+            }
+        }
+        oss << ")";
+        return oss.str();
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const ExpectedCorrFuncND& cf) {
+        os << cf.toString();
+        return os;
     }
 };
 
