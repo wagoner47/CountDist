@@ -138,19 +138,6 @@ py::array_t<int, 0> convert_counts_vec(const C& c) {
     return mkarray_from_vec(c.counts(), c.shape_vec());
 }
 
-std::vector<int> convert_3d_array(const py::array_t<int>& counts_in) {
-    std::vector<int> out;
-    auto in = counts_in.unchecked<3>();
-    for (ssize_t i = 0; i < in.shape(0); i++) {
-        for (ssize_t j = 0; j < in.shape(1); j++) {
-            for (ssize_t k = 0; k < in.shape(2); k++) {
-                out.push_back(in(i, j, k));
-            }
-        }
-    }
-    return out;
-}
-
 template<typename T, std::size_t N>
 auto convert_pyarray_to_vec_stdarray(const py::array_t<T>& input_arr) {
     auto uarr = input_arr.template unchecked<2>();
