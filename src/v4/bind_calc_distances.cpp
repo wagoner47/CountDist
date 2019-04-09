@@ -2727,8 +2727,8 @@ static void declare1D(py::module& mod) {
     ecfcls.def_property("r_bins",
                         [](const ECFClass& self) { return self.bin_info()[0]; },
                         [](ECFClass& self, const py::tuple& t) {
-                          self.update_binning(0,
-                                              t[0].cast<BinSpecifier>(),
+                          self.update_binning(t[0].cast<BinSpecifier>(),
+                                              0,
                                               t[1].cast<bool>());
                         },
                         "Separation magnitude binning. Second element in tuple for setter should be boolean for whether original values should be preferred or not");
