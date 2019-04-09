@@ -2419,7 +2419,7 @@ public:
     }
 
 private:
-    friend class ExpectedCorrFuncNDBase<N>;
+    friend class ExpectedCorrFuncND<N>;
 };
 
 
@@ -3255,13 +3255,13 @@ public:
 
     BSType bin_info() const { return binners_; }
 
-    void update_binning(std::size_t index,
-                        const BinSpecifier& new_binner,
+    void update_binning(const BinSpecifier& new_binner,
+                        std::size_t index,
                         bool prefer_old = true) {
-        dd_.update_binning(index, new_binner, prefer_old);
-        dr_.update_binning(index, new_binner, prefer_old);
-        rd_.update_binning(index, new_binner, prefer_old);
-        rr_.update_binning(index, new_binner, prefer_old);
+        dd_.update_binning(new_binner, index, prefer_old);
+        dr_.update_binning(new_binner, index, prefer_old);
+        rd_.update_binning(new_binner, index, prefer_old);
+        rr_.update_binning(new_binner, index, prefer_old);
         binners_ = dd_.binners_;
         cov_binners_ = arrays::repeat_array<2>(binners_);
         max_index_ = get_max_index(binners_);

@@ -2053,8 +2053,11 @@ py::class_<ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
             "Initialize from DD pair counts",
             "dd"_a);
     cls.def(py::init<
-    const ENNType& m
-    const ENNType&>(), "Initialize from DD and RR pair counts", "dd"_a, "rr"_a);
+                    const ENNType&,
+                    const ENNType&>(),
+            "Initialize from DD and RR pair counts",
+            "dd"_a,
+            "rr"_a);
     cls.def(py::init<const ENNType&, const ENNType&, const ENNType&>(),
             "Initialize from DD, RR, and DR pair counts",
             "dd"_a,
@@ -2094,7 +2097,7 @@ py::class_<ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
             "Update binning in a given dimension",
             "index"_a,
             "new_binner"_a,
-            "prefer_old" = true);
+            "prefer_old"_a = true);
     cls.def_property("dd",
                      py::overload_cast<>(&Class::dd, py::const_),
                      py::overload_cast<const ENNType&>(&Class::dd),
@@ -2535,7 +2538,7 @@ static void declare2D(py::module& mod) {
     cfcls.def_property_readonly("shape", &CFClass::shape);
 
     using ECFClass = ExpectedCorrFuncND<2>;
-    auto ecfclass = declareExpectedCorrFuncND<2>(mod);
+    auto ecfcls = declareExpectedCorrFuncND<2>(mod);
     ecfcls.def(py::init([](const BinSpecifier& a,
                            const BinSpecifier& b) {
                  return ECFClass(arrays::make_array(a,
@@ -2547,8 +2550,8 @@ static void declare2D(py::module& mod) {
     ecfcls.def_property("rperp_bins",
                         [](const ECFClass& self) { return self.bin_info()[0]; },
                         [](ECFClass& self, const py::tuple& t) {
-                          self.update_binning(0,
-                                              t[0].cast<BinSpecifier>(),
+                          self.update_binning(t[0].cast<BinSpecifier>(),
+                                              0,
                                               t[1].cast<bool>());
                         },
                         "Perpendicular binning. Second element in tuple for setter should be boolean for whether original values should be preferred or not");
@@ -2556,8 +2559,9 @@ static void declare2D(py::module& mod) {
                         [](const ECFClass& self) { return self.bin_info()[1]; },
                         [](CFClass& self,
                            const py::tuple& t) {
-                          self.update_binning(1, t[0].cast<
-                                  BinSpecifier>(), t[1].cast<bool>());
+                          self.update_binning(t[0].cast<BinSpecifier>(),
+                                              1,
+                                              t[1].cast<bool>());
                         },
                         "Parallel binning. Second element in tuple for setter should be boolean for whether original values should be preferred or not");
     ecfcls.def_property_readonly("mean_shape",
@@ -2714,7 +2718,7 @@ static void declare1D(py::module& mod) {
     cfcls.def_property_readonly("shape", &CFClass::shape);
 
     using ECFClass = ExpectedCorrFuncND<1>;
-    auto ecfclass = declareExpectedCorrFuncND<1>(mod);
+    auto ecfcls = declareExpectedCorrFuncND<1>(mod);
     ecfcls.def(py::init([](const BinSpecifier& a) {
                  return ECFClass(arrays::make_array(a));
                }),
