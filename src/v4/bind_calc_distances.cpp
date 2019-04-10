@@ -1888,8 +1888,8 @@ declareExpectedNNCountsND(py::module& mod) {
     cls.def("update_binning",
             &Class::update_binning,
             "Update the binning in direction 'binner_index'",
-            "binner_index"_a,
             "new_binner"_a,
+            "binner_index"_a,
             "prefer_old"_a = true);
     cls.def_readonly_static("class_name", &Class::class_name);
     cls.def("reset", &Class::reset, "Reset the counting");
