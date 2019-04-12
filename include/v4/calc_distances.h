@@ -1,5 +1,3 @@
-#include <utility>
-
 // -*-c++-*-
 #ifndef CALC_DISTANCES_H
 #define CALC_DISTANCES_H
@@ -22,6 +20,7 @@
 #include <utility>
 #include <iterator>
 #include <atomic>
+#include <utility>
 #include "fast_math.h"
 
 #if defined(_OPENMP) && defined(omp_num_threads)
@@ -1552,7 +1551,7 @@ protected:
 
 protected:
     // empty constructor
-    NNCountsNDBase() {}
+    NNCountsNDBase() = default;
 
     // copy constructor
     NNCountsNDBase(const NNCountsNDBase&) = default;
@@ -1591,8 +1590,9 @@ public:
         on_bin_update();
     }
 
-    inline static const std::string
-            class_name = "NNCounts" + std::to_string(N) + "D";
+    inline static const std::string class_name = "NNCounts" // NOLINT(cert-err58-cpp)
+                                                 + std::to_string(N)
+                                                 + "D";
 
     BSType bin_info() const { return binners_; }
 
@@ -1765,16 +1765,17 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-    NNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
     explicit NNCountsND(BSType binners)
             : Base(std::move(binners)) {}
 
     NNCountsND(BSType bins,
-               std::vector<int> counts,
+               const std::vector<int>& counts,
                std::size_t n_tot)
-            : Base(std::move(bins), std::move(counts), n_tot) {}
+            : Base(std::move(bins), counts, n_tot) {}
 
     void process_pair(const SPos&, const SPos&) override {
         this->n_tot_++;
@@ -1803,7 +1804,8 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-    NNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
     explicit NNCountsND(BSType binners)
@@ -1899,7 +1901,8 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-    NNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
     explicit NNCountsND(BSType binners)
@@ -1983,11 +1986,9 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-    NNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
-
-    NNCountsND(Base&& b)
-            : Base(std::move(b)) {}
 
     explicit NNCountsND(BSType binners)
             : Base(std::move(binners)) {}
@@ -2166,8 +2167,8 @@ public:
               cov_(calculate_cov()) {}
 
     // no data to start, but binners and n_tot specified
-    explicit ExpectedNNCountsNDBase(const BSType& binners, std::size_t n_tot)
-            : binners_(binners),
+    explicit ExpectedNNCountsNDBase(BSType binners, std::size_t n_tot)
+            : binners_(std::move(binners)),
               cov_binners_(arrays::repeat_array<2>(binners_)),
               nn_list_({}),
               n_real_(0),
@@ -2182,8 +2183,9 @@ public:
     //     return std::make_tuple(binners_, nn_list_, n_real_, n_tot_);
     // }
 
-    inline static const std::string
-            class_name = "ExpectedNNCounts" + std::to_string(N) + "D";
+    inline static const std::string class_name = "ExpectedNNCounts" // NOLINT(cert-err58-cpp)
+                                                 + std::to_string(N)
+                                                 + "D";
 
     BSType bin_info() const { return binners_; }
 
@@ -2429,11 +2431,9 @@ class ExpectedNNCountsND : public ExpectedNNCountsNDBase<N> {
 public:
     using Base::Base;
 
-    ExpectedNNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    ExpectedNNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
-
-    ExpectedNNCountsND(Base&& b)
-            : Base(std::move(b)) {}
 };
 
 
@@ -2445,7 +2445,8 @@ class ExpectedNNCountsND<3> : public ExpectedNNCountsNDBase<3> {
 public:
     using Base::Base;
 
-    ExpectedNNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    ExpectedNNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
     ExpectedNNCountsND(const BinSpecifier& rperp_bins,
@@ -2459,8 +2460,8 @@ public:
 
     void rperp_bins(const BinSpecifier& new_binner,
                     bool prefer_old = true) {
-        update_binning(0,
-                       new_binner,
+        update_binning(new_binner,
+                       0,
                        prefer_old);
     }
 
@@ -2468,8 +2469,8 @@ public:
 
     void rpar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
-        update_binning(1,
-                       new_binner,
+        update_binning(new_binner,
+                       1,
                        prefer_old);
     }
 
@@ -2477,8 +2478,8 @@ public:
 
     void zbar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
-        update_binning(2,
-                       new_binner,
+        update_binning(new_binner,
+                       2,
                        prefer_old);
     }
 
@@ -2542,7 +2543,8 @@ class ExpectedNNCountsND<2> : public ExpectedNNCountsNDBase<2> {
 public:
     using Base::Base;
 
-    ExpectedNNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    ExpectedNNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
     ExpectedNNCountsND(const BinSpecifier& rperp_bins,
@@ -2554,8 +2556,8 @@ public:
 
     void rperp_bins(const BinSpecifier& new_binner,
                     bool prefer_old = true) {
-        update_binning(0,
-                       new_binner,
+        update_binning(new_binner,
+                       0,
                        prefer_old);
     }
 
@@ -2563,8 +2565,8 @@ public:
 
     void rpar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
-        update_binning(1,
-                       new_binner,
+        update_binning(new_binner,
+                       1,
                        prefer_old);
     }
 
@@ -2618,7 +2620,8 @@ class ExpectedNNCountsND<1> : public ExpectedNNCountsNDBase<1> {
 public:
     using Base::Base;
 
-    ExpectedNNCountsND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-conversions)
+    ExpectedNNCountsND(const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
             : Base(b) {}
 
     ExpectedNNCountsND(const BinSpecifier& r_bins, std::size_t n_tot)
@@ -2628,8 +2631,8 @@ public:
 
     void r_bins(const BinSpecifier& new_binner,
                 bool prefer_old = true) {
-        update_binning(0,
-                       new_binner,
+        update_binning(new_binner,
+                       0,
                        prefer_old);
     }
 
@@ -2701,8 +2704,8 @@ public:
 
     CorrFuncNDBase(const CorrFuncNDBase&) = default;
 
-    explicit CorrFuncNDBase(const BSType& binners)
-            : binners_(binners),
+    explicit CorrFuncNDBase(BSType binners)
+            : binners_(std::move(binners)),
               max_index_(get_max_index(binners_)),
               dd_(binners_),
               rr_(binners_),
@@ -2717,8 +2720,8 @@ public:
               dr_(binners_),
               rd_(binners_) {}
 
-    CorrFuncNDBase(const BSType& binners, const NNType& dd)
-            : binners_(binners),
+    CorrFuncNDBase(BSType binners, const NNType& dd)
+            : binners_(std::move(binners)),
               max_index_(get_max_index(binners_)),
               dd_(verify_nn(dd)),
               rr_(binners_),
@@ -2733,8 +2736,8 @@ public:
               dr_(binners_),
               rd_(binners_) {}
 
-    CorrFuncNDBase(const BSType& binners, const NNType& dd, const NNType& rr)
-            : binners_(binners),
+    CorrFuncNDBase(BSType binners, const NNType& dd, const NNType& rr)
+            : binners_(std::move(binners)),
               max_index_(get_max_index(binners_)),
               dd_(verify_nn(dd)),
               rr_(verify_nn(rr)),
@@ -2749,11 +2752,11 @@ public:
               dr_(verify_nn(dr)),
               rd_(binners_) {}
 
-    CorrFuncNDBase(const BSType& binners,
+    CorrFuncNDBase(BSType binners,
                    const NNType& dd,
                    const NNType& rr,
                    const NNType& dr)
-            : binners_(binners),
+            : binners_(std::move(binners)),
               max_index_(get_max_index(binners_)),
               dd_(verify_nn(dd)),
               rr_(verify_nn(rr)),
@@ -2771,20 +2774,21 @@ public:
               dr_(verify_nn(dr)),
               rd_(verify_nn(rd)) {}
 
-    CorrFuncNDBase(const BSType& binners,
+    CorrFuncNDBase(BSType binners,
                    const NNType& dd,
                    const NNType& rr,
                    const NNType& dr,
                    const NNType& rd)
-            : binners_(binners),
+            : binners_(std::move(binners)),
               max_index_(get_max_index(binners_)),
               dd_(verify_nn(dd)),
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)),
               rd_(verify_nn(rd)) {}
 
-    inline static const std::string
-            class_name = "CorrFunc" + std::to_string(N) + "D";
+    inline static const std::string class_name = "CorrFunc" // NOLINT(cert-err58-cpp)
+                                                 + std::to_string(N)
+                                                 + "D";
 
     const NNType& dd() const {
         return dd_;
@@ -2944,7 +2948,8 @@ class CorrFuncND : public CorrFuncNDBase<N> {
 public:
     using Base::Base;
 
-    CorrFuncND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-conversions)
+    CorrFuncND(const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
             : Base(b) {}
 };
 
@@ -2956,7 +2961,8 @@ class CorrFuncND<2> : public CorrFuncNDBase<2> {
 public:
     using Base::Base;
 
-    CorrFuncND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    CorrFuncND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
     CorrFuncND(const BinSpecifier& perp_binner, const BinSpecifier& par_binner)
@@ -3022,7 +3028,8 @@ class CorrFuncND<1> : public CorrFuncNDBase<1> {
 public:
     using Base::Base;
 
-    CorrFuncND(const Base& b)
+// NOLINTNEXTLINE(google-explicit-constructor)
+    CorrFuncND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
     explicit CorrFuncND(const BinSpecifier& binner)
@@ -3201,8 +3208,8 @@ public:
               rr_(verify_nn(rr)) {}
 
     ExpectedCorrFuncND(const ENNType& dd,
-                           const ENNType& rr,
-                           const ENNType& dr)
+                       const ENNType& rr,
+                       const ENNType& dr)
             : binners_(dd.binners_),
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
@@ -3213,9 +3220,9 @@ public:
               dr_(verify_nn(dr)) {}
 
     ExpectedCorrFuncND(const ENNType& dd,
-                           const ENNType& rr,
-                           const ENNType& dr,
-                           const ENNType& rd)
+                       const ENNType& rr,
+                       const ENNType& dr,
+                       const ENNType& rd)
             : binners_(dd.binners_),
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
@@ -3226,8 +3233,9 @@ public:
               dr_(verify_nn(dr)),
               rd_(verify_nn(rd)) {}
 
-    inline static const std::string
-            class_name = "ExpectedCorrFunc" + std::to_string(N) + "D";
+    inline static const std::string class_name = "ExpectedCorrFunc" // NOLINT(cert-err58-cpp)
+                                                 + std::to_string(N)
+                                                 + "D";
 
     std::size_t n_real() const {
         return n_real_;
@@ -3397,4 +3405,6 @@ public:
     }
 };
 
+
 #endif
+

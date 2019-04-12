@@ -73,7 +73,6 @@ namespace arrays {
     template<typename T, std::size_t N, typename std::enable_if_t<
             std::is_arithmetic_v<
                     T>, int> = 0>
-
     std::array<T, N> make_filled_array() {
         return make_filled_array<N>((T) 0);
     }
@@ -81,7 +80,6 @@ namespace arrays {
     template<typename T, std::size_t N, typename std::enable_if_t<
             !std::is_arithmetic_v<
                     T>, int> = 0>
-
     std::array<T, N> make_filled_array() {
         return make_filled_array<N>(T());
     }
