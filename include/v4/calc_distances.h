@@ -357,7 +357,7 @@ public:
                                      + "): Cannot assign bin if values are not set");
         }
         int bin = (int) floor(get_diff(value) / bin_size);
-        return bin < 0 || bin > (int) nbins ? -1 : bin;
+        return bin < 0 || bin >= (int) nbins ? -1 : bin;
     }
 
     double log_step_func(int index) const {
