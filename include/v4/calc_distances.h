@@ -1758,8 +1758,7 @@ public:
 
     void reset() {
         n_tot_ = 0;
-        std::vector<int> temp(max_index_, 0);
-        counts_.swap(temp);
+        counts_ = vec_counts_type(max_index_, 0);
     }
 
 private:
