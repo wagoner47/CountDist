@@ -124,18 +124,13 @@ py::array_t<T, 0> mkarray_from_array(const std::array<T, N>& arr) {
 }
 
 template<std::size_t N>
-py::array_t<int, 0> convert_counts_vec(const NNCountsND<N>& nn) {
+py::array_t<count_type, 0> convert_counts_vec(const NNCountsND<N>& nn) {
     return mkarray_from_vec(nn.counts(), nn.shape_vec());
 }
 
 template<std::size_t N>
 py::array_t<double, 0> convert_normed_counts_vec(const NNCountsND<N>& nn) {
     return mkarray_from_vec(nn.normed_counts(), nn.shape_vec());
-}
-
-template<class C>
-py::array_t<int, 0> convert_counts_vec(const C& c) {
-    return mkarray_from_vec(c.counts(), c.shape_vec());
 }
 
 template<typename T, std::size_t N>
@@ -149,7 +144,7 @@ auto convert_pyarray_to_vec_stdarray(const py::array_t<T>& input_arr) {
                                 + "): last dimension must have length "
                                 + std::to_string(N));
     }
-    std::array<T, N> temp;
+    std::array<T, N> temp{};
     std::vector<std::array<T, N>> output_arr;
     for (ssize_t i = 0; i < uarr.shape(0); i++) {
         for (ssize_t j = 0; j < uarr.shape(1); j++) {
@@ -265,7 +260,7 @@ convert_vector_separations(const std::vector<TOSeparation>& vs) {
 
 std::vector<Pos> convert_catalog(const py::array_t<PosCatalog>& arr) {
     auto uarr = arr.unchecked<1>();
-    std::size_t n = (std::size_t) uarr.size();
+    auto n = (std::size_t) uarr.size();
     std::vector<Pos> vec;
     for (std::size_t i = 0; i < n; i++) {
         auto row = uarr(i);
@@ -277,7 +272,7 @@ std::vector<Pos> convert_catalog(const py::array_t<PosCatalog>& arr) {
 
 std::vector<SPos> convert_catalog(const py::array_t<SPosCatalog>& arr) {
     auto uarr = arr.unchecked<1>();
-    std::size_t n = (std::size_t) uarr.size();
+    auto n = (std::size_t) uarr.size();
     std::vector<SPos> vec(n);
     for (std::size_t i = 0; i < n; i++) {
         auto row = uarr(i);
@@ -453,7 +448,7 @@ get_bin(const NNCountsND<N>& self, const py::array_t<double>& values) {
 template<std::size_t N>
 void process_auto(NNCountsND<N>&,
                   const py::array_t<SPosCatalog>&,
-                  int= OMP_NUM_THREADS) { return; }
+                  int= OMP_NUM_THREADS) {}
 
 template<>
 void process_auto(NNCountsND<3>& self,
@@ -528,7 +523,7 @@ template<std::size_t N>
 void process_auto(NNCountsND<N>&,
                   const py::array_t<PosCatalog>&,
                   bool,
-                  int= OMP_NUM_THREADS) { return; }
+                  int= OMP_NUM_THREADS) {}
 
 template<>
 void process_auto(NNCountsND<3>& self,
@@ -606,7 +601,7 @@ template<std::size_t N>
 void process_cross(NNCountsND<N>&,
                    const py::array_t<SPosCatalog>&,
                    const py::array_t<SPosCatalog>&,
-                   int= OMP_NUM_THREADS) { return; }
+                   int= OMP_NUM_THREADS) {}
 
 template<>
 void process_cross(NNCountsND<3>& self,
@@ -685,7 +680,7 @@ void process_cross(NNCountsND<N>&,
                    const py::array_t<PosCatalog>&,
                    const py::array_t<PosCatalog>&,
                    bool,
-                   int= OMP_NUM_THREADS) { return; }
+                   int= OMP_NUM_THREADS) {}
 
 template<>
 void process_cross(NNCountsND<3>& self,
@@ -1413,10 +1408,10 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
                 ("Pair counts in " + std::to_string(N) + "D").c_str());
     cls.def(py::init<>(), "Empty constructor");
     cls.def(py::init<const Class&>(), "Copy constructor", "other"_a);
-    cls.def(py::init<const BSType&>(),
+    cls.def(py::init<BSType>(),
             "Construct from list of BinSpecifier objects",
             "bins"_a);
-    cls.def(py::init<const BSType&, const std::vector<int>&, std::size_t>(),
+    cls.def(py::init<BSType, vec_counts_type, std::size_t>(),
             "Constructor from pieces, for pickling support",
             "bins"_a,
             "counts"_a,
@@ -1619,7 +1614,7 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
               // For backwards compatability, define a variable to
               // hold the data
               BSType binners;
-              std::vector<int> counts;
+              vec_counts_type counts;
               std::size_t n_tot;
               if (t.size() != 3) {
                   // For backwards compatability for instances pickled
@@ -1632,12 +1627,12 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
                   for (std::size_t i = 0; i < N; i++) {
                       binners[i] = t[i].cast<BinSpecifier>();
                   }
-                  counts = t[N].cast<std::vector<int>>();
+                  counts = t[N].cast<vec_counts_type>();
                   n_tot = t[N + 1].cast<std::size_t>();
               }
               else {
                   binners = t[0].cast<BSType>();
-                  counts = t[1].cast<std::vector<int>>();
+                  counts = t[1].cast<vec_counts_type>();
                   n_tot = t[2].cast<std::size_t>();
               }
               Class c(binners, counts, n_tot);
@@ -1670,7 +1665,7 @@ void process_separation(ExpectedNNCountsND<3>& self,
         throw std::length_error("r_perp, r_par, and zbar must have same length");
     }
     Type temp(self.bin_info(), self.n_tot());
-    std::size_t n = (std::size_t) uperp.size();
+    auto n = (std::size_t) uperp.size();
     omp_set_num_threads(num_threads);
 #if _OPENMP
 #pragma omp declare reduction(+ : Type : omp_out+=omp_in) initializer(omp_priv=omp_orig)
@@ -1696,7 +1691,7 @@ void process_separation(ExpectedNNCountsND<2>& self,
         throw std::length_error("r_perp and r_par must have same length");
     }
     Type temp(self.bin_info(), self.n_tot());
-    std::size_t n = (std::size_t) uperp.size();
+    auto n = (std::size_t) uperp.size();
     omp_set_num_threads(num_threads);
 #if _OPENMP
 #pragma omp declare reduction(+ : Type : omp_out+=omp_in) initializer(omp_priv=omp_orig)
@@ -1717,7 +1712,7 @@ void process_separation(ExpectedNNCountsND<1>& self,
     using Type = ExpectedNNCountsND<1>;
     auto ur = r.unchecked<1>();
     Type temp(self.bin_info(), self.n_tot());
-    std::size_t n = (std::size_t) ur.size();
+    auto n = (std::size_t) ur.size();
     omp_set_num_threads(num_threads);
 #if _OPENMP
 #pragma omp declare reduction(+ : Type : omp_out+=omp_in) initializer(omp_priv=omp_orig)
@@ -1766,7 +1761,6 @@ declareExpectedNNCountsND(py::module& mod) {
             &Class::get_1d_cov_indexer,
             "Get index for flattened covariance array from a list providing the (2*N)D index",
             "index"_a);
-    //cls.def("process_separation", py::overload_cast<const darr&, bool>(&Class::process_separation), "Process the ND separation, optionally starting a new realization with this separation", "separation"_a, "new_real"_a=false);
     cls.def("__getitem__", &Class::operator[], py::is_operator());
     cls.def("__getitem__",
             [](const Class& self, const py::array_t<std::size_t>& idx) {
@@ -1835,7 +1829,7 @@ declareExpectedNNCountsND(py::module& mod) {
             "other"_a);
     cls.def("append_real",
             [](Class& self, const std::vector<NNType>& other) {
-              for (auto nn : other) { self.append_real(nn); }
+              for (const auto& nn : other) { self.append_real(nn); }
             },
             ("Append a list of NNCounts"
              + std::to_string(N)
@@ -1843,7 +1837,7 @@ declareExpectedNNCountsND(py::module& mod) {
             "realizations"_a);
     cls.def("append_real",
             [](Class& self, const std::vector<Class>& other) {
-              for (auto nn : other) { self.append_real(nn); }
+              for (const auto& nn : other) { self.append_real(nn); }
             },
             ("Append realizations from each ExpectedNNCounts"
              + std::to_string(N)
@@ -2151,8 +2145,7 @@ static void declare3D(py::module& mod) {
                              self.rperp_bins(obj.cast<BinSpecifier>());
                          }
                          catch (const py::cast_error&) {
-                             py::tuple
-                                     t = py::reinterpret_steal<py::tuple>(obj);
+                             auto t = py::reinterpret_steal<py::tuple>(obj);
                              if (t.size() < 1
                                  || t.size() > 2) {
                                  throw std::length_error("Invalid tuple size "
@@ -2177,8 +2170,7 @@ static void declare3D(py::module& mod) {
                              self.rpar_bins(obj.cast<BinSpecifier>());
                          }
                          catch (const py::cast_error&) {
-                             py::tuple
-                                     t = py::reinterpret_steal<py::tuple>(obj);
+                             auto t = py::reinterpret_steal<py::tuple>(obj);
                              if (t.size() < 1
                                  || t.size() > 2) {
                                  throw std::length_error("Invalid tuple size "
@@ -2203,8 +2195,7 @@ static void declare3D(py::module& mod) {
                              self.zbar_bins(obj.cast<BinSpecifier>());
                          }
                          catch (const py::cast_error&) {
-                             py::tuple
-                                     t = py::reinterpret_steal<py::tuple>(obj);
+                             auto t = py::reinterpret_steal<py::tuple>(obj);
                              if (t.size() < 1
                                  || t.size() > 2) {
                                  throw std::length_error("Invalid tuple size "
@@ -2331,8 +2322,7 @@ static void declare2D(py::module& mod) {
                              self.rperp_bins(obj.cast<BinSpecifier>());
                          }
                          catch (const py::cast_error&) {
-                             py::tuple
-                                     t = py::reinterpret_steal<py::tuple>(obj);
+                             auto t = py::reinterpret_steal<py::tuple>(obj);
                              if (t.size() < 1
                                  || t.size() > 2) {
                                  throw std::length_error("Invalid tuple size "
@@ -2357,8 +2347,7 @@ static void declare2D(py::module& mod) {
                              self.rpar_bins(obj.cast<BinSpecifier>());
                          }
                          catch (const py::cast_error&) {
-                             py::tuple
-                                     t = py::reinterpret_steal<py::tuple>(obj);
+                             auto t = py::reinterpret_steal<py::tuple>(obj);
                              if (t.size() < 1
                                  || t.size() > 2) {
                                  throw std::length_error("Invalid tuple size "
@@ -2582,8 +2571,7 @@ static void declare1D(py::module& mod) {
                              self.r_bins(obj.cast<BinSpecifier>());
                          }
                          catch (const py::cast_error&) {
-                             py::tuple
-                                     t = py::reinterpret_steal<py::tuple>(obj);
+                             auto t = py::reinterpret_steal<py::tuple>(obj);
                              if (t.size() < 1
                                  || t.size() > 2) {
                                  throw std::length_error("Invalid tuple size "

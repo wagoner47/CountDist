@@ -1525,6 +1525,10 @@ template<std::size_t N>
 class CorrFuncNDBase;
 
 
+typedef long long count_type;
+typedef std::vector<count_type> vec_counts_type;
+
+
 template<std::size_t N>
 class NNCountsNDBase {
     using BSType = std::array<BinSpecifier, N>;
@@ -1532,13 +1536,13 @@ class NNCountsNDBase {
 protected:
     BSType binners_ = arrays::make_filled_array<BinSpecifier, N>();
     std::size_t n_tot_ = 0, max_index_ = 0;
-    std::vector<int> counts_ = {};
+    vec_counts_type counts_ = {};
     double r_min = 0.0, r_max = 0.0;
 
     void on_bin_update() {
         n_tot_ = 0;
         max_index_ = get_max_index(binners_);
-        counts_ = std::vector<int>(max_index_, 0);
+        counts_ = vec_counts_type(max_index_, 0);
         r_min = get_r_min(binners_);
         r_max = get_r_max(binners_);
     }
@@ -1546,8 +1550,9 @@ protected:
     void process_separation(const std::array<double, N>& values) {
         n_tot_++;
         int index = get_bin(values);
-        if (index < 0) { return; }
-        counts_[index]++;
+        if (index >= 0) {
+            counts_[index]++;
+        }
     }
 
 protected:
@@ -1559,7 +1564,7 @@ protected:
 
     // constructor for pickling support
     NNCountsNDBase(BSType bins,
-                   std::vector<int> counts,
+                   vec_counts_type counts,
                    std::size_t n_tot)
             : binners_(std::move(bins)),
               n_tot_(n_tot),
@@ -1821,7 +1826,7 @@ public:
             : Base(std::move(binners)) {}
 
     NNCountsND(BSType bins,
-               std::vector<int> counts,
+               vec_counts_type counts,
                std::size_t n_tot)
             : Base(std::move(bins), std::move(counts), n_tot) {}
 
@@ -1867,19 +1872,27 @@ public:
 
     void process_pair(const SPos& pos1, const SPos& pos2) override {
         n_tot_++;
-        if (!pos1.check_box(pos2, r_max)) { return; }
-        if (!check_val_in_limits(pos1.distance_magnitude(pos2),
-                                 r_min,
-                                 r_max)) {
-            return;
+        if (pos1.check_box(pos2, r_max)) {
+            if (check_val_in_limits(pos1.distance_magnitude(pos2),
+                                    r_min,
+                                    r_max)) {
+                int zo_bin = binners_[2].assign_bin(pos1.distance_zbar(pos2));
+                if (zo_bin != -1) {
+                    int
+                            rp_bin = binners_[0].assign_bin(pos1.distance_perp(
+                            pos2));
+                    if (rp_bin != -1) {
+                        int
+                                rl_bin
+                                = binners_[1].assign_bin(pos1.distance_par(
+                                pos2));
+                        if (rl_bin != -1) {
+                            counts_[get_1d_indexer(rp_bin, rl_bin, zo_bin)]++;
+                        }
+                    }
+                }
+            }
         }
-        int zo_bin = binners_[2].assign_bin(pos1.distance_zbar(pos2));
-        if (zo_bin == -1) { return; }
-        int rp_bin = binners_[0].assign_bin(pos1.distance_perp(pos2));
-        if (rp_bin == -1) { return; }
-        int rl_bin = binners_[1].assign_bin(pos1.distance_par(pos2));
-        if (rl_bin == -1) { return; }
-        counts_[get_1d_indexer(rp_bin, rl_bin, zo_bin)]++;
     }
 
     std::tuple<std::size_t, std::size_t, std::size_t> shape() const {
@@ -1918,7 +1931,7 @@ public:
             : Base(std::move(binners)) {}
 
     NNCountsND(BSType bins,
-               std::vector<int> counts,
+               vec_counts_type counts,
                std::size_t n_tot)
             : Base(std::move(bins), std::move(counts), n_tot) {}
 
@@ -1953,17 +1966,21 @@ public:
 
     void process_pair(const SPos& pos1, const SPos& pos2) override {
         n_tot_++;
-        if (!pos1.check_box(pos2, r_max)) { return; }
-        if (!check_val_in_limits(pos1.distance_magnitude(pos2),
-                                 r_min,
-                                 r_max)) {
-            return;
+        if (pos1.check_box(pos2, r_max)) {
+            if (check_val_in_limits(pos1.distance_magnitude(pos2),
+                                    r_min,
+                                    r_max)) {
+                int rp_bin = binners_[0].assign_bin(pos1.distance_perp(pos2));
+                if (rp_bin != -1) {
+                    int
+                            rl_bin = binners_[1].assign_bin(pos1.distance_par(
+                            pos2));
+                    if (rl_bin != -1) {
+                        counts_[get_1d_indexer(rp_bin, rl_bin)]++;
+                    }
+                }
+            }
         }
-        int rp_bin = binners_[0].assign_bin(pos1.distance_perp(pos2));
-        if (rp_bin == -1) { return; }
-        int rl_bin = binners_[1].assign_bin(pos1.distance_par(pos2));
-        if (rl_bin == -1) { return; }
-        counts_[get_1d_indexer(rp_bin, rl_bin)]++;
     }
 
     std::tuple<std::size_t, std::size_t> shape() const {
@@ -2003,7 +2020,7 @@ public:
             : Base(std::move(binners)) {}
 
     NNCountsND(BSType bins,
-               std::vector<int> counts,
+               vec_counts_type counts,
                std::size_t n_tot)
             : Base(std::move(bins), std::move(counts), n_tot) {}
 
@@ -2029,9 +2046,10 @@ public:
 
     void process_pair(const SPos& pos1, const SPos& pos2) override {
         n_tot_++;
-        if (!pos1.check_box(pos2, r_max)) { return; }
-        int bin = binners_[0].assign_bin(pos1.distance_magnitude(pos2));
-        if (bin > -1) { counts_[bin]++; }
+        if (pos1.check_box(pos2, r_max)) {
+            int bin = binners_[0].assign_bin(pos1.distance_magnitude(pos2));
+            if (bin > -1) { counts_[bin]++; }
+        }
     }
 
     std::tuple<std::size_t> shape() const {
