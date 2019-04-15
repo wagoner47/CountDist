@@ -1637,7 +1637,7 @@ public:
 
     std::size_t n_tot() const { return n_tot_; }
 
-    std::vector<int> counts() const { return counts_; }
+    vec_counts_type counts() const { return counts_; }
 
     std::vector<double> normed_counts() const {
         std::vector<double> normed(counts_.begin(), counts_.end());
