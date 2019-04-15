@@ -2064,7 +2064,7 @@ private:
         cov_ = calculate_cov();
     }
 
-    ENNType& downcast() { return static_cast<ENNType>(*this); }
+    ENNType& downcast() { return static_cast<ENNType&>(*this); }
 
     ENNType& remove_empty_realizations() {
         std::vector<NNType> non_empty;
@@ -3163,18 +3163,6 @@ protected:
                                             + " instance given has different number of realizations");
             }
         }
-        else { n_real_ = out.n_real_; }
-        for (std::size_t i = 0; i < N; i++) {
-            if (binners_[i].is_set()) {
-                if (out.binners_[i] != binners_[i]) {
-                    throw std::invalid_argument(out.class_name
-                                                + " instance given has different binning scheme in dimension "
-                                                + std::to_string(i));
-                }
-            }
-            else { binners_[i] = out.binners_[i]; }
-        }
-
         return out;
     }
 
@@ -3194,7 +3182,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(ENNType::remove_empty_realizations(dd)),
+              dd_(verify_nn(dd)),
               n_real_(dd_.n_real_) {}
 
     ExpectedCorrFuncND(const ENNType& dd, const ENNType& rr)
@@ -3202,7 +3190,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(ENNType::remove_empty_realizations(dd)),
+              dd_(verify_nn(dd)),
               n_real_(dd_.n_real_),
               rr_(verify_nn(rr)) {}
 
@@ -3213,7 +3201,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(ENNType::remove_empty_realizations(dd)),
+              dd_(verify_nn(dd)),
               n_real_(dd_.n_real_),
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)) {}
@@ -3226,7 +3214,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(ENNType::remove_empty_realizations(dd)),
+              dd_(verify_nn(dd)),
               n_real_(dd_.n_real_),
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)),
