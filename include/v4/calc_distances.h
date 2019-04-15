@@ -352,7 +352,9 @@ public:
 
     int assign_bin(double value) const {
         if (!_is_set) {
-            throw std::runtime_error("Cannot assign bin if values are not set");
+            throw std::runtime_error("BinSpecifier("
+                                     + name
+                                     + "): Cannot assign bin if values are not set");
         }
         int bin = (int) floor(get_diff(value) / bin_size);
         return bin < 0 || bin > (int) nbins ? -1 : bin;
@@ -1589,17 +1591,25 @@ public:
         on_bin_update();
     }
 
-    inline static const std::string class_name = "NNCounts" // NOLINT(cert-err58-cpp)
-                                                 + std::to_string(N)
-                                                 + "D";
+    inline static const std::string
+            class_name = "NNCounts" // NOLINT(cert-err58-cpp)
+                         + std::to_string(N)
+                         + "D";
 
     BSType bin_info() const { return binners_; }
 
     std::size_t get_1d_indexer(const std::array<
             int,
             N>& indices) const {
-        return get_1d_indexer_from_nd(indices,
-                                      binners_);
+        try {
+            return get_1d_indexer_from_nd(indices,
+                                          binners_);
+        }
+        catch (std::out_of_range&) {
+            std::cerr << "Out of range error in get_1d_indexer of "
+                      << class_name << std::endl;
+            throw;
+        }
     }
 
     int get_bin(const std::array<double, N>& values) const {
@@ -1764,7 +1774,7 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -1803,7 +1813,7 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -1900,7 +1910,7 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -1985,7 +1995,7 @@ public:
 
     NNCountsND(const NNCountsND&) = default;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     NNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -2182,9 +2192,10 @@ public:
     //     return std::make_tuple(binners_, nn_list_, n_real_, n_tot_);
     // }
 
-    inline static const std::string class_name = "ExpectedNNCounts" // NOLINT(cert-err58-cpp)
-                                                 + std::to_string(N)
-                                                 + "D";
+    inline static const std::string
+            class_name = "ExpectedNNCounts" // NOLINT(cert-err58-cpp)
+                         + std::to_string(N)
+                         + "D";
 
     BSType bin_info() const { return binners_; }
 
@@ -2211,14 +2222,28 @@ public:
     std::size_t get_1d_mean_indexer(const std::array<
             int,
             N>& indices) const {
-        return get_1d_indexer_from_nd(indices,
-                                      binners_);
+        try {
+            return get_1d_indexer_from_nd(indices,
+                                          binners_);
+        }
+        catch (std::out_of_range&) {
+            std::cerr << "Out of range in get_1d_mean_indexer of " << class_name
+                      << std::endl;
+            throw;
+        }
     }
 
     std::size_t
     get_1d_cov_indexer(const std::array<int, 2 * N>& indices) const {
-        return get_1d_indexer_from_nd(indices,
-                                      arrays::repeat_array<2>(binners_));
+        try {
+            return get_1d_indexer_from_nd(indices,
+                                          arrays::repeat_array<2>(binners_));
+        }
+        catch (std::out_of_range&) {
+            std::cerr << "Out of range in get_1d_cov_indexer of " << class_name
+                      << std::endl;
+            throw;
+        }
     }
 
     void process_separation(const std::array<double, N>& values,
@@ -2430,7 +2455,7 @@ class ExpectedNNCountsND : public ExpectedNNCountsNDBase<N> {
 public:
     using Base::Base;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     ExpectedNNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 };
@@ -2444,7 +2469,7 @@ class ExpectedNNCountsND<3> : public ExpectedNNCountsNDBase<3> {
 public:
     using Base::Base;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     ExpectedNNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -2542,7 +2567,7 @@ class ExpectedNNCountsND<2> : public ExpectedNNCountsNDBase<2> {
 public:
     using Base::Base;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     ExpectedNNCountsND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -2619,7 +2644,7 @@ class ExpectedNNCountsND<1> : public ExpectedNNCountsNDBase<1> {
 public:
     using Base::Base;
 
-// NOLINTNEXTLINE(google-explicit-conversions)
+    // NOLINTNEXTLINE(google-explicit-conversions)
     ExpectedNNCountsND(const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -2785,9 +2810,10 @@ public:
               dr_(verify_nn(dr)),
               rd_(verify_nn(rd)) {}
 
-    inline static const std::string class_name = "CorrFunc" // NOLINT(cert-err58-cpp)
-                                                 + std::to_string(N)
-                                                 + "D";
+    inline static const std::string
+            class_name = "CorrFunc" // NOLINT(cert-err58-cpp)
+                         + std::to_string(N)
+                         + "D";
 
     const NNType& dd() const {
         return dd_;
@@ -2947,7 +2973,7 @@ class CorrFuncND : public CorrFuncNDBase<N> {
 public:
     using Base::Base;
 
-// NOLINTNEXTLINE(google-explicit-conversions)
+    // NOLINTNEXTLINE(google-explicit-conversions)
     CorrFuncND(const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
             : Base(b) {}
 };
@@ -2960,7 +2986,7 @@ class CorrFuncND<2> : public CorrFuncNDBase<2> {
 public:
     using Base::Base;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     CorrFuncND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -3027,7 +3053,7 @@ class CorrFuncND<1> : public CorrFuncNDBase<1> {
 public:
     using Base::Base;
 
-// NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor)
     CorrFuncND(const Base& b) // NOLINT(hicpp-explicit-conversions)
             : Base(b) {}
 
@@ -3220,9 +3246,10 @@ public:
               dr_(verify_nn(dr)),
               rd_(verify_nn(rd)) {}
 
-    inline static const std::string class_name = "ExpectedCorrFunc" // NOLINT(cert-err58-cpp)
-                                                 + std::to_string(N)
-                                                 + "D";
+    inline static const std::string
+            class_name = "ExpectedCorrFunc" // NOLINT(cert-err58-cpp)
+                         + std::to_string(N)
+                         + "D";
 
     std::size_t n_real() const {
         return n_real_;
