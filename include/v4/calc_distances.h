@@ -354,9 +354,9 @@ public:
         if (!_is_set) {
             throw std::runtime_error("Cannot assign bin if values are not set");
         }
-        if (operator==(BinSpecifier())) { return -1; }
-        if (!check_val_in_limits(value, bin_min, bin_max)) { return -1; }
-        return (int) floor(get_diff(value) / bin_size);
+        int bin = (int) floor(get_diff(value)) / bin_size;
+        if (bin < 0 || bin > nbins) { return -1; }
+        return bin;
     }
 
     double log_step_func(int index) const {
