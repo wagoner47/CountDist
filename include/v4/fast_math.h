@@ -41,8 +41,8 @@ namespace arrays {
         struct return_type_helper { using type = D; };
         template<class... Ts>
         struct return_type_helper<void, Ts...> : std::common_type<Ts...> {
-          static_assert(std::conjunction_v<not_ref_wrapper<Ts>...>,
-                        "Types cannot contain reference_wrappers when D is void");
+            static_assert(std::conjunction_v<not_ref_wrapper<Ts>...>,
+                          "Types cannot contain reference_wrappers when D is void");
         };
 
         template<class D, class... Ts>
@@ -316,25 +316,25 @@ namespace math {
                 int> = 0>
 
         struct _sin {
-          using value_type = T;
+            using value_type = T;
 
-          constexpr static T coeff(std::size_t n) noexcept {
-              return (n % 2 == 0 ? 1 : -1) * inverse(factorial((2 * n) + 1));
-          }
+            constexpr static T coeff(std::size_t n) noexcept {
+                return (n % 2 == 0 ? 1 : -1) * inverse(factorial((2 * n) + 1));
+            }
 
-          static inline T range_reduce(T x) noexcept {
-              T _x = x;
-              _x += math::pi<T>;
-              _x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
-              _x -= math::pi<T>;
-              return _x;
-          }
+            static inline T range_reduce(T x) noexcept {
+                T _x = x;
+                _x += math::pi<T>;
+                _x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
+                _x -= math::pi<T>;
+                return _x;
+            }
 
-          constexpr static T initial_condition(T x) noexcept { return x; }
+            constexpr static T initial_condition(T x) noexcept { return x; }
 
-          constexpr static T pow_step(T x) noexcept { return square(x); }
+            constexpr static T pow_step(T x) noexcept { return square(x); }
 
-          constexpr static std::size_t default_N = 20;
+            constexpr static std::size_t default_N = 20;
         };
 
 
@@ -343,23 +343,23 @@ namespace math {
                 int> = 0>
 
         struct _cos {
-          using value_type = T;
+            using value_type = T;
 
-          constexpr static T coeff(std::size_t n) noexcept {
-              return (n % 2 == 0 ? 1 : -1) * inverse(factorial(2 * n));
-          }
+            constexpr static T coeff(std::size_t n) noexcept {
+                return (n % 2 == 0 ? 1 : -1) * inverse(factorial(2 * n));
+            }
 
-          static inline T range_reduce(T x) noexcept {
-              T _x = x;
-              _x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
-              return _x;
-          }
+            static inline T range_reduce(T x) noexcept {
+                T _x = x;
+                _x -= static_cast<size_t>(_x / math::pi2<T>) * math::pi2<T>;
+                return _x;
+            }
 
-          constexpr static T initial_condition(T) noexcept { return (T) 1; }
+            constexpr static T initial_condition(T) noexcept { return (T) 1; }
 
-          constexpr static T pow_step(T x) noexcept { return square(x); }
+            constexpr static T pow_step(T x) noexcept { return square(x); }
 
-          constexpr static size_t default_N = 20;
+            constexpr static size_t default_N = 20;
         };
 
     }
@@ -391,13 +391,22 @@ namespace arrays {
     }
 }
 
+// template<typename T>
+// inline std::array<T, 3> get_nxyz_array(T ra, T dec) {
+//     return arrays::make_array(math::cos(math::deg2rad<T> * ra)
+//                               * math::cos(math::deg2rad<T> * dec),
+//                               math::sin(math::deg2rad<T> * ra)
+//                               * math::cos(math::deg2rad<T> * dec),
+//                               math::sin(math::deg2rad<T> * dec));
+// }
+
 template<typename T>
 inline std::array<T, 3> get_nxyz_array(T ra, T dec) {
-    return arrays::make_array(math::cos(math::deg2rad<T> * ra)
-                              * math::cos(math::deg2rad<T> * dec),
-                              math::sin(math::deg2rad<T> * ra)
-                              * math::cos(math::deg2rad<T> * dec),
-                              math::sin(math::deg2rad<T> * dec));
+    return arrays::make_array(std::cos(math::deg2rad<T> * ra)
+                              * std::cos(math::deg2rad<T> * dec),
+                              std::sin(math::deg2rad<T> * ra)
+                              * std::cos(math::deg2rad<T> * dec),
+                              std::sin(math::deg2rad<T> * dec));
 }
 
 #endif
