@@ -1603,7 +1603,7 @@ public:
 
     BSType bin_info() const { return binners_; }
 
-    std::size_t get_1d_indexer(const std::array<
+    int get_1d_indexer(const std::array<
             int,
             N>& indices) const {
         try {
@@ -1613,7 +1613,7 @@ public:
         catch (std::out_of_range&) {
             std::cerr << "Out of range error in get_1d_indexer of "
                       << class_name << std::endl;
-            throw;
+            return -1;
         }
     }
 
