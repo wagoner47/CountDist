@@ -540,20 +540,20 @@ get_r_max(const BinSpecifier& rp_binner, const BinSpecifier& rl_binner) {
 
 template<std::size_t N>
 struct get_r_min_impl {
-  static double call(const std::array<BinSpecifier, N>& binners) {
-      return std::accumulate(binners.begin(),
-                             binners.end(),
-                             0.0,
-                             bin_min_combine);
-  }
+    static double call(const std::array<BinSpecifier, N>& binners) {
+        return std::accumulate(binners.begin(),
+                               binners.end(),
+                               0.0,
+                               bin_min_combine);
+    }
 };
 
 
 template<>
 struct get_r_min_impl<3> {
-  static double call(const std::array<BinSpecifier, 3>& binners) {
-      return get_r_min(binners[0], binners[1]);
-  }
+    static double call(const std::array<BinSpecifier, 3>& binners) {
+        return get_r_min(binners.at(0), binners.at(1));
+    }
 };
 
 
@@ -565,20 +565,20 @@ double get_r_min(const std::array<BinSpecifier, N>& binners) {
 
 template<std::size_t N>
 struct get_r_max_impl {
-  static double call(const std::array<BinSpecifier, N>& binners) {
-      return std::accumulate(binners.begin(),
-                             binners.end(),
-                             0.0,
-                             bin_max_combine);
-  }
+    static double call(const std::array<BinSpecifier, N>& binners) {
+        return std::accumulate(binners.begin(),
+                               binners.end(),
+                               0.0,
+                               bin_max_combine);
+    }
 };
 
 
 template<>
 struct get_r_max_impl<3> {
-  static double call(const std::array<BinSpecifier, 3>& binners) {
-      return get_r_max(binners[0], binners[1]);
-  }
+    static double call(const std::array<BinSpecifier, 3>& binners) {
+        return get_r_max(binners.at(0), binners.at(1));
+    }
 };
 
 
@@ -657,8 +657,9 @@ public:
                : math::isclose(other.uvec_,
                                uvec_)
                  ? 1.0
-                 : (uvec_[0] * other.uvec_[0]) + (uvec_[1] * other.uvec_[1])
-                   + (uvec_[2] * other.uvec_[2]);
+                 : (uvec_.at(0) * other.uvec_.at(0))
+                   + (uvec_.at(1) * other.uvec_.at(1))
+                   + (uvec_.at(2) * other.uvec_.at(2));
     }
 
     double dot_mag(const SPos& other) const {
@@ -693,8 +694,9 @@ public:
                : (std::array<
                         double,
                         3>) {
-                        {rvec_[0] - other.rvec_[0], rvec_[1] - other.rvec_[1],
-                         rvec_[2] - other.rvec_[2]}};
+                        {rvec_.at(0) - other.rvec_.at(0),
+                         rvec_.at(1) - other.rvec_.at(1),
+                         rvec_.at(2) - other.rvec_.at(2)}};
     }
 
     double distance_magnitude(const SPos& other) const {
@@ -1367,82 +1369,85 @@ private:
 
 
 struct TOSeparation {
-  Separation tsep, osep;
+    Separation tsep, osep;
 
-  // empty constructor
-  TOSeparation() = default;
+    // empty constructor
+    TOSeparation() = default;
 
-  // copy constructor
-  TOSeparation(const TOSeparation&) = default;
+    // copy constructor
+    TOSeparation(const TOSeparation&) = default;
 
-  // move constructor
-  TOSeparation(TOSeparation&&) = default;
+    // move constructor
+    TOSeparation(TOSeparation&&) = default;
 
-  TOSeparation(double rpt,
-               double rlt,
-               double zbt,
-               double rpo,
-               double rlo,
-               double zbo,
-               std::size_t i1,
-               std::size_t i2)
-          : tsep(Separation(rpt, rlt, zbt, i1, i2)),
-            osep(Separation(rpo, rlo, zbo, i1, i2)) {}
+    TOSeparation(double rpt,
+                 double rlt,
+                 double zbt,
+                 double rpo,
+                 double rlo,
+                 double zbo,
+                 std::size_t i1,
+                 std::size_t i2)
+            : tsep(Separation(rpt, rlt, zbt, i1, i2)),
+              osep(Separation(rpo, rlo, zbo, i1, i2)) {}
 
-  TOSeparation(const Pos& pos1, const Pos& pos2, std::size_t i1, std::size_t i2)
-          : tsep(Separation(pos1, pos2, i1, i2, true, true)),
-            osep(Separation(pos1, pos2, i1, i2, false)) {}
+    TOSeparation(const Pos& pos1,
+                 const Pos& pos2,
+                 std::size_t i1,
+                 std::size_t i2)
+            : tsep(Separation(pos1, pos2, i1, i2, true, true)),
+              osep(Separation(pos1, pos2, i1, i2, false)) {}
 
-  TOSeparation(const Separation& true_sep, const Separation& obs_sep)
-          : tsep(true_sep), osep(obs_sep) {}
+    TOSeparation(const Separation& true_sep, const Separation& obs_sep)
+            : tsep(true_sep), osep(obs_sep) {}
 
-  bool operator==(const TOSeparation& other) const {
-      return tsep == other.tsep && osep == other.osep;
-  }
+    bool operator==(const TOSeparation& other) const {
+        return tsep == other.tsep && osep == other.osep;
+    }
 
-  bool
-  operator!=(const TOSeparation& other) const { return !operator==(other); }
+    bool
+    operator!=(const TOSeparation& other) const { return !operator==(other); }
 
-  // copy assignment
-  TOSeparation& operator=(const TOSeparation&) = default;
+    // copy assignment
+    TOSeparation& operator=(const TOSeparation&) = default;
 
-  // move assignment
-  TOSeparation& operator=(TOSeparation&&) = default;
+    // move assignment
+    TOSeparation& operator=(TOSeparation&&) = default;
 
-  double r_perp_t() const { return tsep.r_perp; }
+    double r_perp_t() const { return tsep.r_perp; }
 
-  double r_par_t() const { return tsep.r_par; }
+    double r_par_t() const { return tsep.r_par; }
 
-  double zbar_t() const { return tsep.zbar; }
+    double zbar_t() const { return tsep.zbar; }
 
-  double r_perp_o() const { return osep.r_perp; }
+    double r_perp_o() const { return osep.r_perp; }
 
-  double r_par_o() const { return osep.r_par; }
+    double r_par_o() const { return osep.r_par; }
 
-  double zbar_o() const { return osep.zbar; }
+    double zbar_o() const { return osep.zbar; }
 
-  std::size_t id1() const { return tsep.id1; }
+    std::size_t id1() const { return tsep.id1; }
 
-  std::size_t id2() const { return tsep.id2; }
+    std::size_t id2() const { return tsep.id2; }
 
-  std::string toString() const {
-      std::ostringstream oss;
-      oss << "TOSeparation(";
-      std::string pad;
-      for (std::size_t i = 0; i < oss.str().size() - 1; i++) {
-          pad += " ";
-      }
-      oss << std::endl;
-      oss << pad << " true = " << tsep << std::endl;
-      oss << pad << " obs = " << osep << std::endl;
-      oss << pad << ")";
-      return oss.str();
-  }
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << "TOSeparation(";
+        std::string pad;
+        for (std::size_t i = 0; i < oss.str().size() - 1; i++) {
+            pad += " ";
+        }
+        oss << std::endl;
+        oss << pad << " true = " << tsep << std::endl;
+        oss << pad << " obs = " << osep << std::endl;
+        oss << pad << ")";
+        return oss.str();
+    }
 
-  friend std::ostream& operator<<(std::ostream& os, const TOSeparation& s) {
-      os << s.toString();
-      return os;
-  }
+    friend std::ostream& operator<<(std::ostream& os, const TOSeparation& s) {
+        os << s.toString();
+        return os;
+    }
 };
 
 
@@ -1508,14 +1513,15 @@ std::size_t get_1d_indexer_from_nd(const std::array<int, N>& indices,
                                    const std::array<BinSpecifier, N>& bins) {
     std::size_t index = 0;
     for (std::size_t i = 0; i < N; i++) {
-        if (indices[i] < 0 || indices[i] >= (int) bins[i].get_nbins()) {
+        if (indices.at(i) < 0
+            || indices.at(i) >= (int) bins.at(i).get_nbins()) {
             throw std::out_of_range(
-                    "Invalid index " + std::to_string(indices[i])
+                    "Invalid index " + std::to_string(indices.at(i))
                     + " for dimension " + std::to_string(i) + " with size "
-                    + std::to_string(bins[i].get_nbins()));
+                    + std::to_string(bins.at(i).get_nbins()));
         }
-        index *= bins[i].get_nbins();
-        index += indices[i];
+        index *= bins.at(i).get_nbins();
+        index += indices.at(i);
     }
     return index;
 }
@@ -1551,7 +1557,7 @@ protected:
         n_tot_++;
         int index = get_bin(values);
         if (index >= 0) {
-            counts_[index]++;
+            counts_.at(index)++;
         }
     }
 
@@ -1591,8 +1597,8 @@ public:
                     "Invalid index " + std::to_string(binner_index) + " for "
                     + std::to_string(N) + "D binning");
         }
-        if (prefer_old) { binners_[binner_index].fill(new_binner); }
-        else { binners_[binner_index].update(new_binner); }
+        if (prefer_old) { binners_.at(binner_index).fill(new_binner); }
+        else { binners_.at(binner_index).update(new_binner); }
         on_bin_update();
     }
 
@@ -1620,8 +1626,8 @@ public:
     int get_bin(const std::array<double, N>& values) const {
         std::array<int, N> indices = arrays::make_filled_array<int, N>();
         for (std::size_t i = 0; i < N; i++) {
-            indices[i] = binners_[i].assign_bin(values[i]);
-            if (indices[i] == -1) { return -1; }
+            indices.at(i) = binners_.at(i).assign_bin(values.at(i));
+            if (indices.at(i) == -1) { return -1; }
         }
         return get_1d_indexer(indices);
     }
@@ -1633,7 +1639,7 @@ public:
         else { this->process_pair(pos1.opos(), pos2.opos()); }
     }
 
-    int operator[](std::size_t idx) const { return counts_[idx]; }
+    count_type operator[](std::size_t idx) const { return counts_.at(idx); }
 
     std::size_t n_tot() const { return n_tot_; }
 
@@ -1650,14 +1656,14 @@ public:
 
     NNType operator+=(const NNType& other) {
         for (std::size_t i = 0; i < N; i++) {
-            if (binners_[i] != other.binners_[i]) {
+            if (binners_.at(i) != other.binners_.at(i)) {
                 std::cerr << "Attempted to combine" << class_name
                           << " instances with different binning in dimension "
                           << std::to_string(i) << std::endl;
-                std::cerr << "this." << binners_[i].get_name() << ": "
-                          << binners_[i] << std::endl;
-                std::cerr << "ohter." << other.binners_[i].get_name() << ": "
-                          << other.binners_[i] << std::endl;
+                std::cerr << "this." << binners_.at(i).get_name() << ": "
+                          << binners_.at(i) << std::endl;
+                std::cerr << "ohter." << other.binners_.at(i).get_name() << ": "
+                          << other.binners_.at(i) << std::endl;
                 throw std::runtime_error("Cannot combine "
                                          + class_name
                                          + " instances with different binning schemes");
@@ -1834,7 +1840,7 @@ public:
                const BinSpecifier& zb_bins)
             : Base(arrays::make_array(rp_bins, rl_bins, zb_bins)) {}
 
-    BinSpecifier rperp_bins() const { return binners_[0]; }
+    BinSpecifier rperp_bins() const { return binners_.at(0); }
 
     void rperp_bins(const BinSpecifier& new_binner,
                     bool prefer_old = true) {
@@ -1843,7 +1849,7 @@ public:
                        prefer_old);
     }
 
-    BinSpecifier rpar_bins() const { return binners_[1]; }
+    BinSpecifier rpar_bins() const { return binners_.at(1); }
 
     void rpar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
@@ -1852,7 +1858,7 @@ public:
                        prefer_old);
     }
 
-    BinSpecifier zbar_bins() const { return binners_[2]; }
+    BinSpecifier zbar_bins() const { return binners_.at(2); }
 
     void zbar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
@@ -1875,18 +1881,22 @@ public:
             if (check_val_in_limits(pos1.distance_magnitude(pos2),
                                     r_min,
                                     r_max)) {
-                int zo_bin = binners_[2].assign_bin(pos1.distance_zbar(pos2));
+                int
+                        zo_bin = binners_.at(2)
+                                         .assign_bin(pos1.distance_zbar(pos2));
                 if (zo_bin != -1) {
                     int
-                            rp_bin = binners_[0].assign_bin(pos1.distance_perp(
-                            pos2));
+                            rp_bin = binners_.at(0)
+                                             .assign_bin(pos1.distance_perp(pos2));
                     if (rp_bin != -1) {
                         int
-                                rl_bin
-                                = binners_[1].assign_bin(pos1.distance_par(
-                                pos2));
+                                rl_bin = binners_.at(1)
+                                                 .assign_bin(pos1.distance_par(
+                                                         pos2));
                         if (rl_bin != -1) {
-                            counts_[get_1d_indexer(rp_bin, rl_bin, zo_bin)]++;
+                            counts_.at(get_1d_indexer(rp_bin,
+                                                      rl_bin,
+                                                      zo_bin))++;
                         }
                     }
                 }
@@ -1896,7 +1906,7 @@ public:
 
     std::tuple<std::size_t, std::size_t, std::size_t> shape() const {
         auto sv = shape_vec();
-        return std::make_tuple(sv[0], sv[1], sv[2]);
+        return std::make_tuple(sv.at(0), sv.at(1), sv.at(2));
     }
 
 private:
@@ -1937,7 +1947,7 @@ public:
     NNCountsND(const BinSpecifier& rp_bins, const BinSpecifier& rl_bins)
             : Base(arrays::make_array(rp_bins, rl_bins)) {}
 
-    BinSpecifier rperp_bins() const { return binners_[0]; }
+    BinSpecifier rperp_bins() const { return binners_.at(0); }
 
     void rperp_bins(const BinSpecifier& new_binner,
                     bool prefer_old = true) {
@@ -1946,7 +1956,7 @@ public:
                        prefer_old);
     }
 
-    BinSpecifier rpar_bins() const { return binners_[1]; }
+    BinSpecifier rpar_bins() const { return binners_.at(1); }
 
     void rpar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
@@ -1969,11 +1979,14 @@ public:
             if (check_val_in_limits(pos1.distance_magnitude(pos2),
                                     r_min,
                                     r_max)) {
-                int rp_bin = binners_[0].assign_bin(pos1.distance_perp(pos2));
+                int
+                        rp_bin = binners_.at(0)
+                                         .assign_bin(pos1.distance_perp(pos2));
                 if (rp_bin != -1) {
                     int
-                            rl_bin = binners_[1].assign_bin(pos1.distance_par(
-                            pos2));
+                            rl_bin = binners_.at(1)
+                                             .assign_bin(pos1.distance_par(
+                                                     pos2));
                     if (rl_bin != -1) {
                         counts_[get_1d_indexer(rp_bin, rl_bin)]++;
                     }
@@ -1984,7 +1997,7 @@ public:
 
     std::tuple<std::size_t, std::size_t> shape() const {
         auto sv = shape_vec();
-        return std::make_tuple(sv[0], sv[1]);
+        return std::make_tuple(sv.at(0), sv.at(1));
     }
 
 private:
@@ -2026,7 +2039,7 @@ public:
     explicit NNCountsND(const BinSpecifier& r_bins)
             : Base(arrays::make_array(r_bins)) {}
 
-    BinSpecifier r_bins() const { return binners_[0]; }
+    BinSpecifier r_bins() const { return binners_.at(0); }
 
     void r_bins(const BinSpecifier& new_binner,
                 bool prefer_old = true) {
@@ -2046,8 +2059,8 @@ public:
     void process_pair(const SPos& pos1, const SPos& pos2) override {
         n_tot_++;
         if (pos1.check_box(pos2, r_max)) {
-            int bin = binners_[0].assign_bin(pos1.distance_magnitude(pos2));
-            if (bin > -1) { counts_[bin]++; }
+            int bin = binners_.at(0).assign_bin(pos1.distance_magnitude(pos2));
+            if (bin > -1) { counts_.at(bin)++; }
         }
     }
 
@@ -2161,8 +2174,8 @@ private:
         for (std::size_t i = 0; i < max_index_; i++) {
             for (std::size_t j = 0; j < max_index_; j++) {
                 for (std::size_t k = 0; k < n_real_; k++) {
-                    cov[j + max_index_ * i] += diff[k][i]
-                                               * diff[k][j]
+                    cov[j + max_index_ * i] += diff.at(k).at(i)
+                                               * diff.at(k).at(j)
                                                / div_fac;
                 }
             }
@@ -2224,8 +2237,8 @@ public:
                     "Invalid index " + std::to_string(binner_index) + " for "
                     + std::to_string(N) + "D binning");
         }
-        if (prefer_old) { binners_[binner_index].fill(new_binner); }
-        else { binners_[binner_index].update(new_binner); }
+        if (prefer_old) { binners_.at(binner_index).fill(new_binner); }
+        else { binners_.at(binner_index).update(new_binner); }
         on_bin_ntot_update();
     }
 
@@ -2275,7 +2288,7 @@ public:
                     "Invalid index " + std::to_string(idx) + " for "
                     + std::to_string(n_real_) + " realizations");
         }
-        return nn_list_[idx];
+        return nn_list_.at(idx);
     }
 
     std::size_t n_tot() const { return n_tot_; }
@@ -2317,15 +2330,16 @@ public:
 
     ENNType& operator+=(const NNType& other) {
         for (std::size_t i = 0; i < N; i++) {
-            if (binners_[i] != other.binners_[i]) {
+            if (binners_.at(i) != other.binners_.at(i)) {
                 std::cerr << "Attempted to combine " << class_name
                           << " instance and " << NNType::class_name
                           << " instance with different binning in dimension "
                           << std::to_string(i) << std::endl;
-                std::cerr << "this." << binners_[i].name << ": " << binners_[i]
+                std::cerr << "this." << binners_.at(i).name << ": "
+                          << binners_.at(i)
                           << std::endl;
-                std::cerr << "other." << other.binners_[i].name << ": "
-                          << other.binners_[i]
+                std::cerr << "other." << other.binners_.at(i).name << ": "
+                          << other.binners_.at(i)
                           << std::endl;
                 throw std::runtime_error("Cannot combine "
                                          + class_name
@@ -2497,7 +2511,7 @@ public:
             : Base(arrays::make_array(rperp_bins, rpar_bins, zbar_bins),
                    n_tot) {}
 
-    BinSpecifier rperp_bins() const { return binners_[0]; }
+    BinSpecifier rperp_bins() const { return binners_.at(0); }
 
     void rperp_bins(const BinSpecifier& new_binner,
                     bool prefer_old = true) {
@@ -2506,7 +2520,7 @@ public:
                        prefer_old);
     }
 
-    BinSpecifier rpar_bins() const { return binners_[1]; }
+    BinSpecifier rpar_bins() const { return binners_.at(1); }
 
     void rpar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
@@ -2515,7 +2529,7 @@ public:
                        prefer_old);
     }
 
-    BinSpecifier zbar_bins() const { return binners_[2]; }
+    BinSpecifier zbar_bins() const { return binners_.at(2); }
 
     void zbar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
@@ -2560,18 +2574,18 @@ public:
     }
 
     std::tuple<int, int, int> mean_shape() const {
-        return std::make_tuple(binners_[0].nbins,
-                               binners_[1].nbins,
-                               binners_[2].nbins);
+        return std::make_tuple(binners_.at(0).nbins,
+                               binners_.at(1).nbins,
+                               binners_.at(2).nbins);
     }
 
     std::tuple<int, int, int, int, int, int> cov_shape() const {
-        return std::make_tuple(cov_binners_[0].nbins,
-                               cov_binners_[1].nbins,
-                               cov_binners_[2].nbins,
-                               cov_binners_[3].nbins,
-                               cov_binners_[4].nbins,
-                               cov_binners_[5].nbins);
+        return std::make_tuple(cov_binners_.at(0).nbins,
+                               cov_binners_.at(1).nbins,
+                               cov_binners_.at(2).nbins,
+                               cov_binners_.at(3).nbins,
+                               cov_binners_.at(4).nbins,
+                               cov_binners_.at(5).nbins);
     }
 };
 
@@ -2593,7 +2607,7 @@ public:
                        std::size_t n_tot)
             : Base(arrays::make_array(rperp_bins, rpar_bins), n_tot) {}
 
-    BinSpecifier rperp_bins() const { return binners_[0]; }
+    BinSpecifier rperp_bins() const { return binners_.at(0); }
 
     void rperp_bins(const BinSpecifier& new_binner,
                     bool prefer_old = true) {
@@ -2602,7 +2616,7 @@ public:
                        prefer_old);
     }
 
-    BinSpecifier rpar_bins() const { return binners_[1]; }
+    BinSpecifier rpar_bins() const { return binners_.at(1); }
 
     void rpar_bins(const BinSpecifier& new_binner,
                    bool prefer_old = true) {
@@ -2641,14 +2655,14 @@ public:
     }
 
     std::tuple<int, int> mean_shape() const {
-        return std::make_tuple(binners_[0].nbins, binners_[1].nbins);
+        return std::make_tuple(binners_.at(0).nbins, binners_.at(1).nbins);
     }
 
     std::tuple<int, int, int, int> cov_shape() const {
-        return std::make_tuple(cov_binners_[0].nbins,
-                               cov_binners_[1].nbins,
-                               cov_binners_[2].nbins,
-                               cov_binners_[3].nbins);
+        return std::make_tuple(cov_binners_.at(0).nbins,
+                               cov_binners_.at(1).nbins,
+                               cov_binners_.at(2).nbins,
+                               cov_binners_.at(3).nbins);
     }
 };
 
@@ -2668,7 +2682,7 @@ public:
     ExpectedNNCountsND(const BinSpecifier& r_bins, std::size_t n_tot)
             : Base(arrays::make_array(r_bins), n_tot) {}
 
-    BinSpecifier r_bins() const { return binners_[0]; }
+    BinSpecifier r_bins() const { return binners_.at(0); }
 
     void r_bins(const BinSpecifier& new_binner,
                 bool prefer_old = true) {
@@ -2717,10 +2731,10 @@ class CorrFuncNDBase {
     void on_bin_nn_update() {
         max_index_ = get_max_index(binners_);
         for (std::size_t i = 0; i < N; i++) {
-            dd_.update_binning(i, binners_[i], false);
-            dr_.update_binning(i, binners_[i], false);
-            rd_.update_binning(i, binners_[i], false);
-            rr_.update_binning(i, binners_[i], false);
+            dd_.update_binning(i, binners_.at(i), false);
+            dr_.update_binning(i, binners_.at(i), false);
+            rd_.update_binning(i, binners_.at(i), false);
+            rr_.update_binning(i, binners_.at(i), false);
         }
     }
 
@@ -2731,7 +2745,8 @@ protected:
 
     const NNType& verify_nn(const NNType& nn) const {
         for (std::size_t i = 0; i < N; i++) {
-            if (binners_[i].is_set() && nn.bin_info()[i] != binners_[i]) {
+            if (binners_.at(i).is_set()
+                && nn.bin_info().at(i) != binners_.at(i)) {
                 throw std::invalid_argument(NNType::class_name
                                             + " instance given has different binning scheme in dimension "
                                             + std::to_string(i));
@@ -2892,8 +2907,8 @@ public:
                                         + std::to_string(N)
                                         + " dimensions");
         }
-        if (prefer_old) { binners_[dim].fill(new_binning); }
-        else { binners_[dim].update(new_binning); }
+        if (prefer_old) { binners_.at(dim).fill(new_binning); }
+        else { binners_.at(dim).update(new_binning); }
         on_bin_nn_update();
     }
 
@@ -3041,7 +3056,7 @@ public:
                    rd) {}
 
     const BinSpecifier& rperp_bins() const {
-        return binners_[0];
+        return binners_.at(0);
     }
 
     void rperp_bins(const BinSpecifier& new_binning, bool prefer_old = true) {
@@ -3049,7 +3064,7 @@ public:
     }
 
     const BinSpecifier& rpar_bins() const {
-        return binners_[1];
+        return binners_.at(1);
     }
 
     void rpar_bins(const BinSpecifier& new_binning, bool prefer_old = true) {
@@ -3057,8 +3072,8 @@ public:
     }
 
     std::tuple<std::size_t, std::size_t> shape() const {
-        return std::make_tuple(binners_[0].get_nbins(),
-                               binners_[1].get_nbins());
+        return std::make_tuple(binners_.at(0).get_nbins(),
+                               binners_.at(1).get_nbins());
     }
 };
 
@@ -3104,7 +3119,7 @@ public:
                    rd) {}
 
     const BinSpecifier& r_bins() const {
-        return binners_[0];
+        return binners_.at(0);
     }
 
     void r_bins(const BinSpecifier& new_binning, bool prefer_old = true) {
