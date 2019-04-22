@@ -246,11 +246,8 @@ namespace math {
         return isclose(x, (T) 0) ? (dcy) 0 : (dcy) (1 / x);
     }
 
-    template<std::size_t P, typename T,
-                            typename dcy = std::decay_t<T>, std::enable_if_t<
-                    std::is_arithmetic_v<
-                            T>, int> = 0>
-    constexpr dcy power(T x) { return P == 0 ? 1 : x * power<P - 1>(x); }
+    template<typename T, typename dcy = std::decay_t<T>, std::enable_if_t<std::is_arithmetic_v<T>, int> = 0>
+    constexpr dcy power(T x, std::size_t p) { return p == 0 ? 1 : x * power(x, p); }
 
     template<typename T,
              typename dcy = std::decay_t<T>, typename std::enable_if_t<

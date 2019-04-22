@@ -36,9 +36,8 @@ inline int omp_get_num_threads() { return 1; }
 
 #endif
 
-template<typename T, typename std::enable_if_t<
-        std::is_arithmetic_v<T>,
-        int> = 0>
+template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
+                                               int> = 0>
 
 inline bool check_val_in_limits(const T& val, const T& min, const T& max) {
     return std::isfinite(val) && (!std::isfinite(min) || val >= min)
@@ -136,10 +135,7 @@ public:
         on_update();
     }
 
-    BinSpecifier(double min,
-                 double max,
-                 double width,
-                 bool log_bins,
+    BinSpecifier(double min, double max, double width, bool log_bins,
                  std::string name_in)
             : _min_set(true),
               _max_set(true),
@@ -167,10 +163,7 @@ public:
         on_update();
     }
 
-    BinSpecifier(double min,
-                 double max,
-                 std::size_t num_bins,
-                 bool log_bins,
+    BinSpecifier(double min, double max, std::size_t num_bins, bool log_bins,
                  std::string name_in)
             : _min_set(true),
               _max_set(true),
@@ -200,7 +193,7 @@ public:
     }
 
     bool operator!=(const BinSpecifier& other) const {
-        return !(*this == other);
+        return !(* this == other);
     }
 
     // Instead of copying everything with this one, just update the parameters
@@ -352,8 +345,7 @@ public:
 
     int assign_bin(double value) const {
         if (!_is_set) {
-            throw std::runtime_error("BinSpecifier("
-                                     + name
+            throw std::runtime_error("BinSpecifier(" + name
                                      + "): Cannot assign bin if values are not set");
         }
         int bin = (int) floor(get_diff(value) / bin_size);
@@ -361,26 +353,19 @@ public:
     }
 
     double log_step_func(int index) const {
-        return bin_min
-               * std::exp(index * bin_size);
+        return bin_min * std::exp(index * bin_size);
     }
 
     double lin_step_func(int index) const {
-        return bin_min
-               + (index * bin_size);
+        return bin_min + (index * bin_size);
     }
 
     double log_step_func_center(int index) const {
-        return bin_min
-               * std::exp((index
-                           + 0.5)
-                          * bin_size);
+        return bin_min * std::exp((index + 0.5) * bin_size);
     }
 
     double lin_step_func_center(int index) const {
-        return bin_min
-               + ((index + 0.5)
-                  * bin_size);
+        return bin_min + ((index + 0.5) * bin_size);
     }
 
     std::vector<double> lower_bin_edges() const {
@@ -473,8 +458,8 @@ public:
                            indices.end(),
                            vec.begin(),
                            [this](int i) {
-                             return (std::exp(bin_size) - 1)
-                                    * log_step_func(i);
+                               return (std::exp(bin_size) - 1)
+                                      * log_step_func(i);
                            });
         }
         else {
@@ -504,19 +489,20 @@ private:
 };
 
 
-inline std::size_t
-bin_size_multiply(std::size_t a, const BinSpecifier& b) {
+inline std::size_t bin_size_multiply(std::size_t a, const BinSpecifier& b) {
     return b._is_set ? a * b.nbins : 0;
 }
 
 inline double bin_min_combine(double a, const BinSpecifier& b) {
-    return b._is_set ? std::sqrt(math::square(a)
-                                 + math::square(b.bin_min)) : 0.0;
+    return b._is_set
+           ? std::sqrt(math::square(a) + math::square(b.bin_min))
+           : 0.0;
 }
 
 inline double bin_max_combine(double a, const BinSpecifier& b) {
-    return b._is_set ? std::sqrt(math::square(a)
-                                 + math::square(b.bin_max)) : 0.0;
+    return b._is_set
+           ? std::sqrt(math::square(a) + math::square(b.bin_max))
+           : 0.0;
 }
 
 template<std::size_t N>
@@ -619,14 +605,10 @@ public:
     bool operator==(const SPos& other) const {
         bool same_init = is_initialized_ == other.is_initialized_;
         if (!is_initialized_) { return same_init; }
-        bool
-                rclose = std::isnan(r_) ? std::isnan(other.r_) : math::isclose(
-                r_,
-                other.r_);
-        bool
-                zclose = std::isnan(z_) ? std::isnan(other.z_) : math::isclose(
-                z_,
-                other.z_);
+        bool rclose = std::isnan(r_) ? std::isnan(other.r_) : math::isclose(r_,
+                                                                            other.r_);
+        bool zclose = std::isnan(z_) ? std::isnan(other.z_) : math::isclose(z_,
+                                                                            other.z_);
         return same_init && math::isclose(ra_, other.ra_)
                && math::isclose(dec_, other.dec_) && rclose && zclose;
     }
@@ -652,14 +634,11 @@ public:
     std::array<double, 3> rvec() const { return rvec_; }
 
     double dot_norm(const SPos& other) const {
-        return operator==(other)
-               ? 1.0
-               : math::isclose(other.uvec_,
-                               uvec_)
-                 ? 1.0
-                 : (uvec_.at(0) * other.uvec_.at(0))
-                   + (uvec_.at(1) * other.uvec_.at(1))
-                   + (uvec_.at(2) * other.uvec_.at(2));
+        return operator==(other) ? 1.0 : math::isclose(other.uvec_, uvec_)
+                                         ? 1.0
+                                         : (uvec_.at(0) * other.uvec_.at(0))
+                                           + (uvec_.at(1) * other.uvec_.at(1))
+                                           + (uvec_.at(2) * other.uvec_.at(2));
     }
 
     double dot_mag(const SPos& other) const {
@@ -667,36 +646,30 @@ public:
     }
 
     double distance_zbar(const SPos& other) const {
-        return std::isnan(z_) || std::isnan(other.z_)
-               ? math::dnan
-               : 0.5 * (z_ + other.z_);
+        return std::isnan(z_) || std::isnan(other.z_) ? math::dnan : 0.5 * (z_
+                                                                            + other.z_);
     }
 
     double distance_par(const SPos& other) const {
-        return std::isnan(r_) || std::isnan(other.r_)
-               ? math::dnan
-               : math::dsqrt_2 * std::sqrt(1.0 + dot_norm(other)) * std::fabs(r_
-                                                                              - other.r_);
+        return std::isnan(r_) || std::isnan(other.r_) ? math::dnan :
+               math::dsqrt_2 * std::sqrt(1.0 + dot_norm(other))
+               * std::fabs(r_ - other.r_);
     }
 
     double distance_perp(const SPos& other) const {
-        return std::isnan(r_) || std::isnan(other.r_)
-               ? math::dnan
-               : math::dsqrt_2 * std::sqrt(1.0 - dot_norm(other))
-                 * (r_ + other.r_);
+        return std::isnan(r_) || std::isnan(other.r_) ? math::dnan :
+               math::dsqrt_2 * std::sqrt(1.0 - dot_norm(other))
+               * (r_ + other.r_);
     }
 
     std::array<double, 3> distance_vector(const SPos& other) const {
         return operator==(other)
-               ? (std::array<
-                        double,
-                        3>) {{0.0, 0.0, 0.0}}
-               : (std::array<
-                        double,
-                        3>) {
-                        {rvec_.at(0) - other.rvec_.at(0),
-                         rvec_.at(1) - other.rvec_.at(1),
-                         rvec_.at(2) - other.rvec_.at(2)}};
+               ? (std::array<double, 3>) {{0.0, 0.0, 0.0}}
+               : (std::array<double, 3>) {{rvec_.at(0) - other.rvec_.at(0),
+                                                  rvec_.at(1)
+                                                  - other.rvec_.at(1),
+                                                  rvec_.at(2)
+                                                  - other.rvec_.at(2)}};
     }
 
     double distance_magnitude(const SPos& other) const {
@@ -726,34 +699,24 @@ public:
         return true;
     }
 
-    bool check_shell(const SPos& other,
-                     const BinSpecifier& binner) const {
-        return check_shell(other,
-                           binner.get_bin_min(),
-                           binner.get_bin_max());
+    bool check_shell(const SPos& other, const BinSpecifier& binner) const {
+        return check_shell(other, binner.get_bin_min(), binner.get_bin_max());
     }
 
     bool check_shell(const SPos& other, double max) const {
-        return check_shell(other,
-                           0.0,
-                           max);
+        return check_shell(other, 0.0, max);
     }
 
-    bool check_limits(const SPos& other,
-                      double rp_min,
-                      double rp_max,
-                      double rl_min,
-                      double rl_max) const {
-        if (!check_val_in_limits(distance_perp(other),
-                                 rp_min,
-                                 rp_max)) {
+    bool
+    check_limits(const SPos& other, double rp_min, double rp_max, double rl_min,
+                 double rl_max) const {
+        if (!check_val_in_limits(distance_perp(other), rp_min, rp_max)) {
             return false;
         }
         return check_val_in_limits(distance_par(other), rl_min, rl_max);
     }
 
-    bool check_limits(const SPos& other,
-                      const BinSpecifier& rp_binner,
+    bool check_limits(const SPos& other, const BinSpecifier& rp_binner,
                       const BinSpecifier& rl_binner) const {
         return check_limits(other,
                             rp_binner.get_bin_min(),
@@ -863,7 +826,7 @@ public:
                && tpos_ == other.tpos_ && opos_ == other.opos_;
     }
 
-    bool operator!=(const Pos& other) const { return !(*this == other); }
+    bool operator!=(const Pos& other) const { return !(* this == other); }
 
     double dot_norm(const SPos& other) const {
         if (!other.is_initialized_) {
@@ -874,8 +837,8 @@ public:
             throw std::runtime_error(
                     "Cannot take dot product when no positions are set in self");
         }
-        return tpos_.is_initialized_ ? tpos_.dot_norm(other) : opos_.dot_norm(
-                other);
+        return tpos_.is_initialized_ ? tpos_.dot_norm(other) : opos_
+                .dot_norm(other);
     }
 
     double dot_norm(const Pos& other) const {
@@ -897,8 +860,8 @@ public:
             throw std::runtime_error(
                     "Cannot take dot product when no positions without NaN distances are set in self");
         }
-        return tpos_.is_initialized_ && !math::isnan(tpos_.r_) ? tpos_.dot_mag(
-                other) : opos_.dot_mag(other);
+        return tpos_.is_initialized_ && !math::isnan(tpos_.r_) ? tpos_
+                .dot_mag(other) : opos_.dot_mag(other);
     }
 
     double dot_mag(const Pos& other) const {
@@ -913,23 +876,25 @@ public:
                : dot_mag(other.opos_);
     }
 
-    double
-    zbar_t(const SPos& other) const { return tpos_.distance_zbar(other); }
+    double zbar_t(const SPos& other) const {
+        return tpos_.distance_zbar(other);
+    }
 
     double zbar_t(const Pos& other) const { return zbar_t(other.tpos_); }
 
-    double
-    zbar_o(const SPos& other) const { return opos_.distance_zbar(other); }
+    double zbar_o(const SPos& other) const {
+        return opos_.distance_zbar(other);
+    }
 
     double zbar_o(const Pos& other) const { return zbar_o(other.opos_); }
 
     std::tuple<double, double> distance_zbar(const Pos& other) const {
-        return std::make_tuple(zbar_t(other),
-                               zbar_o(other));
+        return std::make_tuple(zbar_t(other), zbar_o(other));
     }
 
-    double
-    r_par_t(const SPos& other) const { return tpos_.distance_par(other); }
+    double r_par_t(const SPos& other) const {
+        return tpos_.distance_par(other);
+    }
 
     double r_par_t(const Pos& other) const { return r_par_t(other.tpos_); }
 
@@ -940,8 +905,9 @@ public:
                * this->r_par_t(other);
     }
 
-    double
-    r_par_o(const SPos& other) const { return opos_.distance_par(other); }
+    double r_par_o(const SPos& other) const {
+        return opos_.distance_par(other);
+    }
 
     double r_par_o(const Pos& other) const { return r_par_o(other.opos_); }
 
@@ -949,13 +915,15 @@ public:
         return std::make_tuple(r_par_t_signed(other), r_par_o(other));
     }
 
-    double
-    r_perp_t(const SPos& other) const { return tpos_.distance_perp(other); }
+    double r_perp_t(const SPos& other) const {
+        return tpos_.distance_perp(other);
+    }
 
     double r_perp_t(const Pos& other) const { return r_perp_t(other.tpos_); }
 
-    double
-    r_perp_o(const SPos& other) const { return opos_.distance_perp(other); }
+    double r_perp_o(const SPos& other) const {
+        return opos_.distance_perp(other);
+    }
 
     double r_perp_o(const Pos& other) const { return r_perp_o(other.opos_); }
 
@@ -981,16 +949,14 @@ public:
 
     std::array<double, 3>
     distance_vector(const SPos& other, bool use_true) const {
-        return use_true
-               ? tpos_.distance_vector(other)
-               : opos_.distance_vector(other);
+        return use_true ? tpos_.distance_vector(other) : opos_
+                .distance_vector(other);
     }
 
     std::array<double, 3>
     distance_vector(const Pos& other, bool use_true) const {
-        return use_true
-               ? tpos_.distance_vector(other.tpos_)
-               : opos_.distance_vector(other.opos_);
+        return use_true ? tpos_.distance_vector(other.tpos_) : opos_
+                .distance_vector(other.opos_);
     }
 
     double distance_magnitude_t(const SPos& other) const {
@@ -1009,18 +975,14 @@ public:
         return opos_.distance_magnitude(other.opos_);
     }
 
-    double distance_magnitude(const SPos& other,
-                              const bool use_true) const {
-        return use_true
-               ? tpos_.distance_magnitude(other)
-               : opos_.distance_magnitude(other);
+    double distance_magnitude(const SPos& other, const bool use_true) const {
+        return use_true ? tpos_.distance_magnitude(other) : opos_
+                .distance_magnitude(other);
     }
 
-    double distance_magnitude(const Pos& other,
-                              const bool use_true) const {
-        return use_true
-               ? tpos_.distance_magnitude(other.tpos_)
-               : opos_.distance_magnitude(other.opos_);
+    double distance_magnitude(const Pos& other, const bool use_true) const {
+        return use_true ? tpos_.distance_magnitude(other.tpos_) : opos_
+                .distance_magnitude(other.opos_);
     }
 
     bool check_box(const SPos& other, double max) const {
@@ -1070,17 +1032,12 @@ public:
         return opos_.check_shell(other, min, max);
     }
 
-    bool check_shell(const SPos& other,
-                     const BinSpecifier& binner) const {
-        return check_shell(other,
-                           binner.get_bin_min(),
-                           binner.get_bin_max());
+    bool check_shell(const SPos& other, const BinSpecifier& binner) const {
+        return check_shell(other, binner.get_bin_min(), binner.get_bin_max());
     }
 
     bool check_shell(const SPos& other, double max) const {
-        return check_shell(other,
-                           0.0,
-                           max);
+        return check_shell(other, 0.0, max);
     }
 
     bool check_shell(const Pos& other, double min, double max) const {
@@ -1094,24 +1051,17 @@ public:
         return opos_.check_shell(other.opos_, min, max);
     }
 
-    bool check_shell(const Pos& other,
-                     const BinSpecifier& binner) const {
-        return check_shell(other,
-                           binner.get_bin_min(),
-                           binner.get_bin_max());
+    bool check_shell(const Pos& other, const BinSpecifier& binner) const {
+        return check_shell(other, binner.get_bin_min(), binner.get_bin_max());
     }
 
     bool check_shell(const Pos& other, double max) const {
-        return check_shell(other,
-                           0.0,
-                           max);
+        return check_shell(other, 0.0, max);
     }
 
-    bool check_limits(const SPos& other,
-                      double rp_min,
-                      double rp_max,
-                      double rl_min,
-                      double rl_max) const {
+    bool
+    check_limits(const SPos& other, double rp_min, double rp_max, double rl_min,
+                 double rl_max) const {
         if (!other.is_initialized_ || std::isnan(other.r_)) {
             throw std::runtime_error("No distance set in other");
         }
@@ -1125,8 +1075,7 @@ public:
         return opos_.check_limits(other, rp_min, rp_max, rl_min, rl_max);
     }
 
-    bool check_limits(const SPos& other,
-                      const BinSpecifier& rp_binner,
+    bool check_limits(const SPos& other, const BinSpecifier& rp_binner,
                       const BinSpecifier& rl_binner) const {
         return check_limits(other,
                             rp_binner.get_bin_min(),
@@ -1135,27 +1084,21 @@ public:
                             rl_binner.get_bin_max());
     }
 
-    bool check_limits(const Pos& other,
-                      double rp_min,
-                      double rp_max,
-                      double rl_min,
-                      double rl_max) const {
+    bool
+    check_limits(const Pos& other, double rp_min, double rp_max, double rl_min,
+                 double rl_max) const {
         if (!(has_obs() && other.has_obs())) {
             if (!(has_true() && other.has_true())) {
                 throw std::runtime_error(
                         "Cannot mix true and observed distances");
             }
-            return tpos_.check_limits(other.tpos_,
-                                      rp_min,
-                                      rp_max,
-                                      rl_min,
-                                      rl_max);
+            return tpos_
+                    .check_limits(other.tpos_, rp_min, rp_max, rl_min, rl_max);
         }
         return opos_.check_limits(other.opos_, rp_min, rp_max, rl_min, rl_max);
     }
 
-    bool check_limits(const Pos& other,
-                      const BinSpecifier& rp_binner,
+    bool check_limits(const Pos& other, const BinSpecifier& rp_binner,
                       const BinSpecifier& rl_binner) const {
         return check_limits(other,
                             rp_binner.get_bin_min(),
@@ -1232,12 +1175,10 @@ private:
         return pos1.distance_par(use_true ? pos2.tpos() : pos2.opos());
     }
 
-    static double get_r_par(const Pos& pos1,
-                            const Pos& pos2,
-                            bool use_true,
+    static double get_r_par(const Pos& pos1, const Pos& pos2, bool use_true,
                             bool use_signed = false) {
-        return use_true ? use_signed ? pos1.r_par_t_signed(pos2) : pos1.r_par_t(
-                pos2) : pos1.r_par_o(pos2);
+        return use_true ? use_signed ? pos1.r_par_t_signed(pos2) : pos1
+                .r_par_t(pos2) : pos1.r_par_o(pos2);
     }
 
     static double get_zbar(const SPos& pos1, const SPos& pos2, bool= true) {
@@ -1269,9 +1210,7 @@ public:
     Separation(double rp, double rl, double zb, std::size_t i1, std::size_t i2)
             : r_perp(rp), r_par(rl), zbar(zb), id1(i1), id2(i2) {}
 
-    Separation(const SPos& pos1,
-               const SPos& pos2,
-               std::size_t i1,
+    Separation(const SPos& pos1, const SPos& pos2, std::size_t i1,
                std::size_t i2)
             : r_perp(get_r_perp(pos1, pos2)),
               r_par(get_r_par(pos1, pos2)),
@@ -1279,34 +1218,24 @@ public:
               id1(i1),
               id2(i2) {}
 
-    Separation(const Pos& pos1,
-               const SPos& pos2,
-               std::size_t i1,
-               std::size_t i2,
-               bool use_true)
+    Separation(const Pos& pos1, const SPos& pos2, std::size_t i1,
+               std::size_t i2, bool use_true)
             : r_perp(get_r_perp(pos1, pos2, use_true)),
               r_par(get_r_par(pos1, pos2, use_true)),
               zbar(get_zbar(pos1, pos2, use_true)),
               id1(i1),
               id2(i2) {}
 
-    Separation(const SPos& pos1,
-               const Pos& pos2,
-               std::size_t i1,
-               std::size_t i2,
-               bool use_true)
+    Separation(const SPos& pos1, const Pos& pos2, std::size_t i1,
+               std::size_t i2, bool use_true)
             : r_perp(get_r_perp(pos1, pos2, use_true)),
               r_par(get_r_par(pos1, pos2, use_true)),
               zbar(get_zbar(pos1, pos2, use_true)),
               id1(i1),
               id2(i2) {}
 
-    Separation(const Pos& pos1,
-               const Pos& pos2,
-               std::size_t i1,
-               std::size_t i2,
-               bool use_true,
-               bool use_signed = false)
+    Separation(const Pos& pos1, const Pos& pos2, std::size_t i1, std::size_t i2,
+               bool use_true, bool use_signed = false)
             : r_perp(get_r_perp(pos1, pos2, use_true)),
               r_par(get_r_par(pos1, pos2, use_true, use_signed)),
               zbar(get_zbar(pos1, pos2, use_true)),
@@ -1320,11 +1249,10 @@ public:
     Separation& operator=(Separation&&) = default;
 
     bool operator==(const Separation& other) const {
-        return id1 == other.id1
-               && id2 == other.id2
-               && (std::isnan(r_perp)
-                   ? std::isnan(other.r_perp)
-                   : math::isclose(r_perp, other.r_perp))
+        return id1 == other.id1 && id2 == other.id2 && (std::isnan(r_perp)
+                                                        ? std::isnan(other.r_perp)
+                                                        : math::isclose(r_perp,
+                                                                        other.r_perp))
                && (std::isnan(r_par) ? std::isnan(other.r_par) : math::isclose(
                        r_par,
                        other.r_par))
@@ -1380,20 +1308,12 @@ struct TOSeparation {
     // move constructor
     TOSeparation(TOSeparation&&) = default;
 
-    TOSeparation(double rpt,
-                 double rlt,
-                 double zbt,
-                 double rpo,
-                 double rlo,
-                 double zbo,
-                 std::size_t i1,
-                 std::size_t i2)
+    TOSeparation(double rpt, double rlt, double zbt, double rpo, double rlo,
+                 double zbo, std::size_t i1, std::size_t i2)
             : tsep(Separation(rpt, rlt, zbt, i1, i2)),
               osep(Separation(rpo, rlo, zbo, i1, i2)) {}
 
-    TOSeparation(const Pos& pos1,
-                 const Pos& pos2,
-                 std::size_t i1,
+    TOSeparation(const Pos& pos1, const Pos& pos2, std::size_t i1,
                  std::size_t i2)
             : tsep(Separation(pos1, pos2, i1, i2, true, true)),
               osep(Separation(pos1, pos2, i1, i2, false)) {}
@@ -1451,16 +1371,15 @@ struct TOSeparation {
 };
 
 
-std::vector<Separation> get_auto_separations(const std::vector<SPos>& pos,
-                                             const BinSpecifier& rp_bins,
-                                             const BinSpecifier& rl_bins,
-                                             int num_threads = OMP_NUM_THREADS);
+std::vector<Separation>
+get_auto_separations(const std::vector<SPos>& pos, const BinSpecifier& rp_bins,
+                     const BinSpecifier& rl_bins,
+                     int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation> get_auto_separations(const std::vector<Pos>& pos,
-                                             const BinSpecifier& rp_bins,
-                                             const BinSpecifier& rl_bins,
-                                             bool use_true,
-                                             int num_threads = OMP_NUM_THREADS);
+std::vector<Separation>
+get_auto_separations(const std::vector<Pos>& pos, const BinSpecifier& rp_bins,
+                     const BinSpecifier& rl_bins, bool use_true,
+                     int num_threads = OMP_NUM_THREADS);
 
 std::vector<Separation> get_cross_separations(const std::vector<SPos>& pos1,
                                               const std::vector<SPos>& pos2,
@@ -1475,25 +1394,20 @@ std::vector<Separation> get_cross_separations(const std::vector<Pos>& pos1,
                                               bool use_true,
                                               int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation> get_separations(const std::vector<SPos>& pos1,
-                                        const std::vector<SPos>& pos2,
-                                        const BinSpecifier& rp_bins,
-                                        const BinSpecifier& rl_bins,
-                                        bool is_auto,
-                                        int num_threads = OMP_NUM_THREADS);
+std::vector<Separation>
+get_separations(const std::vector<SPos>& pos1, const std::vector<SPos>& pos2,
+                const BinSpecifier& rp_bins, const BinSpecifier& rl_bins,
+                bool is_auto, int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation> get_separations(const std::vector<Pos>& pos1,
-                                        const std::vector<Pos>& pos2,
-                                        const BinSpecifier& rp_bins,
-                                        const BinSpecifier& rl_bins,
-                                        bool use_true,
-                                        bool is_auto,
-                                        int num_threads = OMP_NUM_THREADS);
+std::vector<Separation>
+get_separations(const std::vector<Pos>& pos1, const std::vector<Pos>& pos2,
+                const BinSpecifier& rp_bins, const BinSpecifier& rl_bins,
+                bool use_true, bool is_auto, int num_threads = OMP_NUM_THREADS);
 
-std::vector<TOSeparation> get_auto_separations(const std::vector<Pos>& pos,
-                                               const BinSpecifier& rp_bins,
-                                               const BinSpecifier& rl_bins,
-                                               int num_threads = OMP_NUM_THREADS);
+std::vector<TOSeparation>
+get_auto_separations(const std::vector<Pos>& pos, const BinSpecifier& rp_bins,
+                     const BinSpecifier& rl_bins,
+                     int num_threads = OMP_NUM_THREADS);
 
 std::vector<TOSeparation> get_cross_separations(const std::vector<Pos>& pos1,
                                                 const std::vector<Pos>& pos2,
@@ -1501,12 +1415,10 @@ std::vector<TOSeparation> get_cross_separations(const std::vector<Pos>& pos1,
                                                 const BinSpecifier& rl_bins,
                                                 int num_threads = OMP_NUM_THREADS);
 
-std::vector<TOSeparation> get_separations(const std::vector<Pos>& pos1,
-                                          const std::vector<Pos>& pos2,
-                                          const BinSpecifier& rp_bins,
-                                          const BinSpecifier& rl_bins,
-                                          bool is_auto,
-                                          int num_threads = OMP_NUM_THREADS);
+std::vector<TOSeparation>
+get_separations(const std::vector<Pos>& pos1, const std::vector<Pos>& pos2,
+                const BinSpecifier& rp_bins, const BinSpecifier& rl_bins,
+                bool is_auto, int num_threads = OMP_NUM_THREADS);
 
 template<std::size_t N>
 std::size_t get_1d_indexer_from_nd(const std::array<int, N>& indices,
@@ -1533,6 +1445,8 @@ class CorrFuncNDBase;
 
 typedef long long count_type;
 typedef std::vector<count_type> vec_counts_type;
+typedef long double norm_type;
+typedef std::vector<norm_type> vec_norm_type;
 
 
 template<std::size_t N>
@@ -1543,12 +1457,26 @@ protected:
     BSType binners_ = arrays::make_filled_array<BinSpecifier, N>();
     std::size_t n_tot_ = 0, max_index_ = 0;
     vec_counts_type counts_ = {};
+    vec_norm_type norm_ = {};
     double r_min = 0.0, r_max = 0.0;
+
+    vec_norm_type calc_norm() {
+        if (n_tot_ == 0) { return vec_norm_type(max_index_, 0); }
+        vec_norm_type norm;
+        std::transform(counts_.begin(),
+                       counts_.end(),
+                       std::back_inserter(norm),
+                       [this](count_type x) {
+                           return (norm_type) x / n_tot_;
+                       });
+        return norm;
+    }
 
     void on_bin_update() {
         n_tot_ = 0;
         max_index_ = get_max_index(binners_);
         counts_ = vec_counts_type(max_index_, 0);
+        norm_ = vec_norm_type(max_index_, 0.0);
         r_min = get_r_min(binners_);
         r_max = get_r_max(binners_);
     }
@@ -1569,13 +1497,12 @@ protected:
     NNCountsNDBase(const NNCountsNDBase&) = default;
 
     // constructor for pickling support
-    NNCountsNDBase(BSType bins,
-                   vec_counts_type counts,
-                   std::size_t n_tot)
+    NNCountsNDBase(BSType bins, vec_counts_type counts, std::size_t n_tot)
             : binners_(std::move(bins)),
               n_tot_(n_tot),
               max_index_(get_max_index(binners_)),
               counts_(std::move(counts)),
+              norm_(calc_norm()),
               r_min(get_r_min(binners_)),
               r_max(get_r_max(binners_)) {}
 
@@ -1585,15 +1512,16 @@ protected:
               n_tot_(0),
               max_index_(get_max_index(binners_)),
               counts_(max_index_, 0),
+              norm_(calc_norm()),
               r_min(get_r_min(binners_)),
               r_max(get_r_max(binners_)) {}
 
 public:
     virtual ~NNCountsNDBase() = default;
 
-    void update_binning(std::size_t binner_index,
-                        const BinSpecifier& new_binner,
-                        bool prefer_old = true) {
+    void
+    update_binning(std::size_t binner_index, const BinSpecifier& new_binner,
+                   bool prefer_old = true) {
         if (binner_index >= N) {
             throw std::out_of_range(
                     "Invalid index " + std::to_string(binner_index) + " for "
@@ -1606,21 +1534,19 @@ public:
 
     inline static const std::string
             class_name = "NNCounts" // NOLINT(cert-err58-cpp)
-                         + std::to_string(N)
-                         + "D";
+                         + std::to_string(N) + "D";
 
     BSType bin_info() const { return binners_; }
 
-    int get_1d_indexer(const std::array<
-            int,
-            N>& indices) const {
+    int get_1d_indexer(const std::array<int, N>& indices) const {
         try {
-            return get_1d_indexer_from_nd(indices,
-                                          binners_);
+            return get_1d_indexer_from_nd(indices, binners_);
         }
         catch (std::out_of_range&) {
-            std::cerr << "Out of range error in get_1d_indexer of "
-                      << class_name << std::endl;
+            std::cerr
+                    << "Out of range error in get_1d_indexer of "
+                    << class_name
+                    << std::endl;
             return -1;
         }
     }
@@ -1647,27 +1573,32 @@ public:
 
     vec_counts_type counts() const { return counts_; }
 
-    std::vector<double> normed_counts() const {
-        std::vector<double> normed(counts_.begin(), counts_.end());
-        std::transform(normed.begin(),
-                       normed.end(),
-                       normed.begin(),
-                       [this](double el) { return el / n_tot_; });
-        return normed;
-    }
+    vec_norm_type normed_counts() const { return norm_; }
+
+    void update_norm() { norm_ = calc_norm(); }
 
     NNType operator+=(const NNType& other) {
         for (std::size_t i = 0; i < N; i++) {
             if (binners_.at(i) != other.binners_.at(i)) {
-                std::cerr << "Attempted to combine" << class_name
-                          << " instances with different binning in dimension "
-                          << std::to_string(i) << std::endl;
-                std::cerr << "this." << binners_.at(i).get_name() << ": "
-                          << binners_.at(i) << std::endl;
-                std::cerr << "ohter." << other.binners_.at(i).get_name() << ": "
-                          << other.binners_.at(i) << std::endl;
-                throw std::runtime_error("Cannot combine "
-                                         + class_name
+                std::cerr
+                        << "Attempted to combine"
+                        << class_name
+                        << " instances with different binning in dimension "
+                        << std::to_string(i)
+                        << std::endl;
+                std::cerr
+                        << "this."
+                        << binners_.at(i).get_name()
+                        << ": "
+                        << binners_.at(i)
+                        << std::endl;
+                std::cerr
+                        << "ohter."
+                        << other.binners_.at(i).get_name()
+                        << ": "
+                        << other.binners_.at(i)
+                        << std::endl;
+                throw std::runtime_error("Cannot combine " + class_name
                                          + " instances with different binning schemes");
             }
         }
@@ -1677,32 +1608,29 @@ public:
                        other.counts_.begin(),
                        counts_.begin(),
                        std::plus<>());
-        return NNType(*this);
+        return NNType(* this);
     }
 
-    template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
-            int> = 0>
+    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
+                                                   int> = 0>
 
     NNType operator+=(const T& x) {
         if (!math::isclose(x, (T) 0)) {
             throw std::invalid_argument(
                     "Only 0 valid for scalar addition with " + class_name);
         }
-        return NNType(*this);
+        return NNType(* this);
     }
 
-    template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
-            int> = 0>
+    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
+                                                   int> = 0>
 
     NNType operator+(const T& x) const {
-        return NNType(*this).operator+=(x);
+        return NNType(* this).operator+=(x);
     }
 
-    template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
-            int> = 0>
+    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
+                                                   int> = 0>
 
     friend NNType operator+(const T& x, const NNType& rhs) {
         return rhs.operator+(x);
@@ -1710,9 +1638,9 @@ public:
 
     friend bool
     operator==(const NNCountsNDBase& lhs, const NNCountsNDBase& rhs) {
-        return lhs.n_tot_ == rhs.n_tot_
-               && std::equal(lhs.binners_.begin(), lhs.binners_.end(),
-                             rhs.binners_.begin())
+        return lhs.n_tot_ == rhs.n_tot_ && std::equal(lhs.binners_.begin(),
+                                                      lhs.binners_.end(),
+                                                      rhs.binners_.begin())
                && std::equal(lhs.counts_.begin(),
                              lhs.counts_.end(),
                              rhs.counts_.begin());
@@ -1720,8 +1648,7 @@ public:
 
     friend bool
     operator!=(const NNCountsNDBase& lhs, const NNCountsNDBase& rhs) {
-        return !(lhs
-                 == rhs);
+        return !(lhs == rhs);
     }
 
     std::vector<std::size_t> shape_vec() const {
@@ -1733,15 +1660,11 @@ public:
     std::size_t size() const { return max_index_; }
 
     std::size_t nbins_nonzero() const {
-        return max_index_ - std::count(counts_.begin(),
-                                       counts_.end(),
-                                       0);
+        return max_index_ - std::count(counts_.begin(), counts_.end(), 0);
     }
 
-    long long ncounts() const {
-        return std::accumulate(counts_.begin(),
-                               counts_.end(),
-                               (long long) 0);
+    count_type ncounts() const {
+        return std::accumulate(counts_.begin(), counts_.end(), 0);
     }
 
     std::string toString() const {
@@ -1793,9 +1716,7 @@ public:
     explicit NNCountsND(BSType binners)
             : Base(std::move(binners)) {}
 
-    NNCountsND(BSType bins,
-               const std::vector<int>& counts,
-               std::size_t n_tot)
+    NNCountsND(BSType bins, const vec_counts_type& counts, std::size_t n_tot)
             : Base(std::move(bins), counts, n_tot) {}
 
     void process_pair(const SPos&, const SPos&) override {
@@ -1832,41 +1753,29 @@ public:
     explicit NNCountsND(BSType binners)
             : Base(std::move(binners)) {}
 
-    NNCountsND(BSType bins,
-               vec_counts_type counts,
-               std::size_t n_tot)
+    NNCountsND(BSType bins, vec_counts_type counts, std::size_t n_tot)
             : Base(std::move(bins), std::move(counts), n_tot) {}
 
-    NNCountsND(const BinSpecifier& rp_bins,
-               const BinSpecifier& rl_bins,
+    NNCountsND(const BinSpecifier& rp_bins, const BinSpecifier& rl_bins,
                const BinSpecifier& zb_bins)
             : Base(arrays::make_array(rp_bins, rl_bins, zb_bins)) {}
 
     BinSpecifier rperp_bins() const { return binners_.at(0); }
 
-    void rperp_bins(const BinSpecifier& new_binner,
-                    bool prefer_old = true) {
-        update_binning(0,
-                       new_binner,
-                       prefer_old);
+    void rperp_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(0, new_binner, prefer_old);
     }
 
     BinSpecifier rpar_bins() const { return binners_.at(1); }
 
-    void rpar_bins(const BinSpecifier& new_binner,
-                   bool prefer_old = true) {
-        update_binning(1,
-                       new_binner,
-                       prefer_old);
+    void rpar_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(1, new_binner, prefer_old);
     }
 
     BinSpecifier zbar_bins() const { return binners_.at(2); }
 
-    void zbar_bins(const BinSpecifier& new_binner,
-                   bool prefer_old = true) {
-        update_binning(2,
-                       new_binner,
-                       prefer_old);
+    void zbar_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(2, new_binner, prefer_old);
     }
 
     using Base::get_1d_indexer;
@@ -1883,18 +1792,14 @@ public:
             if (check_val_in_limits(pos1.distance_magnitude(pos2),
                                     r_min,
                                     r_max)) {
-                int
-                        zo_bin = binners_.at(2)
-                                         .assign_bin(pos1.distance_zbar(pos2));
+                int zo_bin =
+                        binners_.at(2).assign_bin(pos1.distance_zbar(pos2));
                 if (zo_bin != -1) {
-                    int
-                            rp_bin = binners_.at(0)
-                                             .assign_bin(pos1.distance_perp(pos2));
+                    int rp_bin =
+                            binners_.at(0).assign_bin(pos1.distance_perp(pos2));
                     if (rp_bin != -1) {
-                        int
-                                rl_bin = binners_.at(1)
-                                                 .assign_bin(pos1.distance_par(
-                                                         pos2));
+                        int rl_bin = binners_.at(1)
+                                             .assign_bin(pos1.distance_par(pos2));
                         if (rl_bin != -1) {
                             counts_.at(get_1d_indexer(rp_bin,
                                                       rl_bin,
@@ -1941,9 +1846,7 @@ public:
     explicit NNCountsND(BSType binners)
             : Base(std::move(binners)) {}
 
-    NNCountsND(BSType bins,
-               vec_counts_type counts,
-               std::size_t n_tot)
+    NNCountsND(BSType bins, vec_counts_type counts, std::size_t n_tot)
             : Base(std::move(bins), std::move(counts), n_tot) {}
 
     NNCountsND(const BinSpecifier& rp_bins, const BinSpecifier& rl_bins)
@@ -1951,20 +1854,14 @@ public:
 
     BinSpecifier rperp_bins() const { return binners_.at(0); }
 
-    void rperp_bins(const BinSpecifier& new_binner,
-                    bool prefer_old = true) {
-        update_binning(0,
-                       new_binner,
-                       prefer_old);
+    void rperp_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(0, new_binner, prefer_old);
     }
 
     BinSpecifier rpar_bins() const { return binners_.at(1); }
 
-    void rpar_bins(const BinSpecifier& new_binner,
-                   bool prefer_old = true) {
-        update_binning(1,
-                       new_binner,
-                       prefer_old);
+    void rpar_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(1, new_binner, prefer_old);
     }
 
     using Base::get_1d_indexer;
@@ -1981,14 +1878,11 @@ public:
             if (check_val_in_limits(pos1.distance_magnitude(pos2),
                                     r_min,
                                     r_max)) {
-                int
-                        rp_bin = binners_.at(0)
-                                         .assign_bin(pos1.distance_perp(pos2));
+                int rp_bin =
+                        binners_.at(0).assign_bin(pos1.distance_perp(pos2));
                 if (rp_bin != -1) {
-                    int
-                            rl_bin = binners_.at(1)
-                                             .assign_bin(pos1.distance_par(
-                                                     pos2));
+                    int rl_bin =
+                            binners_.at(1).assign_bin(pos1.distance_par(pos2));
                     if (rl_bin != -1) {
                         counts_[get_1d_indexer(rp_bin, rl_bin)]++;
                     }
@@ -2033,9 +1927,7 @@ public:
     explicit NNCountsND(BSType binners)
             : Base(std::move(binners)) {}
 
-    NNCountsND(BSType bins,
-               vec_counts_type counts,
-               std::size_t n_tot)
+    NNCountsND(BSType bins, vec_counts_type counts, std::size_t n_tot)
             : Base(std::move(bins), std::move(counts), n_tot) {}
 
     explicit NNCountsND(const BinSpecifier& r_bins)
@@ -2043,11 +1935,8 @@ public:
 
     BinSpecifier r_bins() const { return binners_.at(0); }
 
-    void r_bins(const BinSpecifier& new_binner,
-                bool prefer_old = true) {
-        update_binning(0,
-                       new_binner,
-                       prefer_old);
+    void r_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(0, new_binner, prefer_old);
     }
 
     using Base::get_1d_indexer;
@@ -2093,7 +1982,7 @@ protected:
     BBSType cov_binners_ = arrays::make_filled_array<BinSpecifier, 2 * N>();
     std::vector<NNType> nn_list_ = {};
     std::size_t n_real_ = 0, n_tot_ = 0, max_index_ = 0, max_cov_index_ = 0;
-    std::vector<double> mean_ = {}, cov_ = {};
+    vec_norm_type mean_ = {}, cov_ = {};
 
 private:
     void on_bin_ntot_update() {
@@ -2106,7 +1995,7 @@ private:
         cov_ = calculate_cov();
     }
 
-    ENNType& downcast() { return static_cast<ENNType&>(*this); }
+    ENNType& downcast() { return static_cast<ENNType&>(* this); }
 
     ENNType& remove_empty_realizations() {
         std::vector<NNType> non_empty;
@@ -2132,11 +2021,11 @@ private:
         return non_empty;
     }
 
-    std::vector<double> calculate_mean() const {
-        if (n_real_ == 0
-            || n_tot_ == 0) { return std::vector<double>(max_index_, 0.0); }
-        double div_fac = n_real_ * n_tot_;
-        std::vector<double> mean(max_index_, 0.0);
+    vec_norm_type calculate_mean() const {
+        if (n_real_ == 0 || n_tot_ == 0) {
+            return vec_norm_type(max_index_, 0.0);
+        }
+        vec_norm_type mean(max_index_, 0.0);
         for (const auto& nn : nn_list_) {
             std::transform(mean.begin(),
                            mean.end(),
@@ -2147,24 +2036,25 @@ private:
         std::transform(mean.begin(),
                        mean.end(),
                        mean.begin(),
-                       [=](double x) { return x / div_fac; });
+                       [=](norm_type x) { return x / n_tot_; });
         return mean;
     }
 
-    std::vector<double> calculate_cov() const {
+    vec_norm_type calculate_cov() const {
         if (n_real_ < 2 || n_tot_ == 0) {
-            return std::vector<double>(max_cov_index_,
-                                       0.0);
+            return vec_norm_type(max_cov_index_, 0.0);
         }
-        double div_fac = (n_real_ * (n_real_ - 1));
-        std::vector<double> mean = calculate_mean();
-        std::vector<std::vector<double>> diff;
+        norm_type div_fac = (n_real_ * (n_real_ - 1));
+        auto mean = calculate_mean();
+        std::vector<vec_norm_type> diff;
         for (const auto& nn : nn_list_) {
-            std::vector<double> temp(nn.counts_.begin(), nn.counts_.end());
-            std::transform(temp.begin(),
-                           temp.end(),
-                           temp.begin(),
-                           [this](double el) { return el / (double) n_tot_; });
+            vec_norm_type temp;
+            std::transform(nn.counts_.begin(),
+                           nn.counts_.end(),
+                           std::back_inserter(temp),
+                           [this](count_type x) {
+                               return (norm_type) x / n_tot_;
+                           });
             std::transform(temp.begin(),
                            temp.end(),
                            mean.begin(),
@@ -2172,13 +2062,12 @@ private:
                            std::minus<>());
             diff.push_back(temp);
         }
-        std::vector<double> cov(max_cov_index_, 0.0);
+        vec_norm_type cov(max_cov_index_, 0.0);
         for (std::size_t i = 0; i < max_index_; i++) {
             for (std::size_t j = 0; j < max_index_; j++) {
                 for (std::size_t k = 0; k < n_real_; k++) {
-                    cov[j + max_index_ * i] += diff.at(k).at(i)
-                                               * diff.at(k).at(j)
-                                               / div_fac;
+                    cov[j + max_index_ * i] +=
+                            diff.at(k).at(i) * diff.at(k).at(j) / div_fac;
                 }
             }
         }
@@ -2195,8 +2084,7 @@ public:
     // pickling support
     ExpectedNNCountsNDBase(const BSType& binners,
                            const std::vector<NNType>& nn_list,
-                           std::size_t n_real,
-                           std::size_t n_tot)
+                           std::size_t n_real, std::size_t n_tot)
             : binners_(binners),
               cov_binners_(arrays::repeat_array<2>(binners_)),
               nn_list_(nn_list),
@@ -2226,14 +2114,13 @@ public:
 
     inline static const std::string
             class_name = "ExpectedNNCounts" // NOLINT(cert-err58-cpp)
-                         + std::to_string(N)
-                         + "D";
+                         + std::to_string(N) + "D";
 
     BSType bin_info() const { return binners_; }
 
-    void update_binning(const BinSpecifier& new_binner,
-                        std::size_t binner_index,
-                        bool prefer_old = true) {
+    void
+    update_binning(const BinSpecifier& new_binner, std::size_t binner_index,
+                   bool prefer_old = true) {
         if (binner_index >= N) {
             throw std::out_of_range(
                     "Invalid index " + std::to_string(binner_index) + " for "
@@ -2251,16 +2138,15 @@ public:
         nn_list_.push_back(NNType(binners_));
     }
 
-    std::size_t get_1d_mean_indexer(const std::array<
-            int,
-            N>& indices) const {
+    std::size_t get_1d_mean_indexer(const std::array<int, N>& indices) const {
         try {
-            return get_1d_indexer_from_nd(indices,
-                                          binners_);
+            return get_1d_indexer_from_nd(indices, binners_);
         }
         catch (std::out_of_range&) {
-            std::cerr << "Out of range in get_1d_mean_indexer of " << class_name
-                      << std::endl;
+            std::cerr
+                    << "Out of range in get_1d_mean_indexer of "
+                    << class_name
+                    << std::endl;
             throw;
         }
     }
@@ -2272,8 +2158,10 @@ public:
                                           arrays::repeat_array<2>(binners_));
         }
         catch (std::out_of_range&) {
-            std::cerr << "Out of range in get_1d_cov_indexer of " << class_name
-                      << std::endl;
+            std::cerr
+                    << "Out of range in get_1d_cov_indexer of "
+                    << class_name
+                    << std::endl;
             throw;
         }
     }
@@ -2326,28 +2214,37 @@ public:
         cov_ = calculate_cov();
     }
 
-    std::vector<double> mean() const { return mean_; }
+    vec_norm_type mean() const { return mean_; }
 
-    std::vector<double> cov() const { return cov_; }
+    vec_norm_type cov() const { return cov_; }
 
     ENNType& operator+=(const NNType& other) {
         for (std::size_t i = 0; i < N; i++) {
             if (binners_.at(i) != other.binners_.at(i)) {
-                std::cerr << "Attempted to combine " << class_name
-                          << " instance and " << NNType::class_name
-                          << " instance with different binning in dimension "
-                          << std::to_string(i) << std::endl;
-                std::cerr << "this." << binners_.at(i).name << ": "
-                          << binners_.at(i)
-                          << std::endl;
-                std::cerr << "other." << other.binners_.at(i).name << ": "
-                          << other.binners_.at(i)
-                          << std::endl;
-                throw std::runtime_error("Cannot combine "
-                                         + class_name
-                                         + " instance and "
-                                         + NNType::class_name
-                                         + " instance with different binning schemes");
+                std::cerr
+                        << "Attempted to combine "
+                        << class_name
+                        << " instance and "
+                        << NNType::class_name
+                        << " instance with different binning in dimension "
+                        << std::to_string(i)
+                        << std::endl;
+                std::cerr
+                        << "this."
+                        << binners_.at(i).name
+                        << ": "
+                        << binners_.at(i)
+                        << std::endl;
+                std::cerr
+                        << "other."
+                        << other.binners_.at(i).name
+                        << ": "
+                        << other.binners_.at(i)
+                        << std::endl;
+                throw std::runtime_error(
+                        "Cannot combine " + class_name + " instance and "
+                        + NNType::class_name
+                        + " instance with different binning schemes");
             }
         }
         remove_empty_realizations();
@@ -2376,37 +2273,36 @@ public:
         return operator+=(onn_list[onn_list.size() - 1]);
     }
 
-    template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
-            int> = 0>
+    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
+                                                   int> = 0>
+
     ENNType& operator+=(const T& x) {
         if (!math::isclose(x, (T) 0)) {
-            throw std::invalid_argument("Only 0 valid for scalar addition with "
-                                        + class_name);
+            throw std::invalid_argument(
+                    "Only 0 valid for scalar addition with " + class_name);
         }
         return downcast();
     }
 
-    template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
-            int> = 0>
-    ENNType operator+(const T& x) const { return ENNType(*this).operator+=(x); }
+    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
+                                                   int> = 0>
 
-    template<typename T, typename std::enable_if_t<
-            std::is_arithmetic_v<T>,
-            int> = 0>
-    friend ENNType operator+(const T& x,
-                             const ExpectedNNCountsNDBase& rhs) {
+    ENNType operator+(const T& x) const {
+        return ENNType(* this).operator+=(x);
+    }
+
+    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
+                                                   int> = 0>
+
+    friend ENNType operator+(const T& x, const ExpectedNNCountsNDBase& rhs) {
         return rhs.operator+(x);
     }
 
     bool operator==(const ExpectedNNCountsNDBase& other) const {
-        return n_tot_ == other.n_tot_
-               && n_real_ == other.n_real_
-               && std::equal(binners_.begin(),
-                             binners_.end(),
-                             other.binners_.begin())
-               && math::isclose(mean_, other.mean_)
+        return n_tot_ == other.n_tot_ && n_real_ == other.n_real_ && std::equal(
+                binners_.begin(),
+                binners_.end(),
+                other.binners_.begin()) && math::isclose(mean_, other.mean_)
                && math::isclose(cov_, other.cov_);
     }
 
@@ -2414,14 +2310,16 @@ public:
         return !operator==(other);
     }
 
-    std::vector<std::vector<double>> normed_counts() const {
-        std::vector<std::vector<double>> norm;
+    std::vector<vec_norm_type> normed_counts() const {
+        std::vector<vec_norm_type> norm;
         for (const auto& nn : nn_list_) {
-            std::vector<double> normi(nn.counts_.begin(), nn.counts_.end());
-            std::transform(normi.begin(),
-                           normi.end(),
-                           normi.begin(),
-                           [this](double x) { return x / n_tot_; });
+            vec_norm_type normi;
+            std::transform(nn.counts_.begin(),
+                           nn.counts_.end(),
+                           std::back_inserter(normi),
+                           [this](count_type x) {
+                               return (norm_type) (x / n_tot_);
+                           });
             norm.push_back(normi);
         }
         return norm;
@@ -2440,9 +2338,7 @@ public:
         remove_empty_realizations();
         std::vector<NNType>
                 onn_list = remove_empty_realizations(other.nn_list_);
-        nn_list_.insert(nn_list_.end(),
-                        onn_list.begin(),
-                        onn_list.end());
+        nn_list_.insert(nn_list_.end(), onn_list.begin(), onn_list.end());
         n_real_ += onn_list.size();
         mean_ = calculate_mean();
         cov_ = calculate_cov();
@@ -2508,54 +2404,40 @@ public:
 
     ExpectedNNCountsND(const BinSpecifier& rperp_bins,
                        const BinSpecifier& rpar_bins,
-                       const BinSpecifier& zbar_bins,
-                       std::size_t n_tot)
+                       const BinSpecifier& zbar_bins, std::size_t n_tot)
             : Base(arrays::make_array(rperp_bins, rpar_bins, zbar_bins),
                    n_tot) {}
 
     BinSpecifier rperp_bins() const { return binners_.at(0); }
 
-    void rperp_bins(const BinSpecifier& new_binner,
-                    bool prefer_old = true) {
-        update_binning(new_binner,
-                       0,
-                       prefer_old);
+    void rperp_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(new_binner, 0, prefer_old);
     }
 
     BinSpecifier rpar_bins() const { return binners_.at(1); }
 
-    void rpar_bins(const BinSpecifier& new_binner,
-                   bool prefer_old = true) {
-        update_binning(new_binner,
-                       1,
-                       prefer_old);
+    void rpar_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(new_binner, 1, prefer_old);
     }
 
     BinSpecifier zbar_bins() const { return binners_.at(2); }
 
-    void zbar_bins(const BinSpecifier& new_binner,
-                   bool prefer_old = true) {
-        update_binning(new_binner,
-                       2,
-                       prefer_old);
+    void zbar_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(new_binner, 2, prefer_old);
     }
 
     using Base::get_1d_mean_indexer;
 
-    std::size_t get_1d_mean_indexer_from_args(int rp_bin,
-                                              int rl_bin,
-                                              int zb_bin) const {
+    std::size_t
+    get_1d_mean_indexer_from_args(int rp_bin, int rl_bin, int zb_bin) const {
         return get_1d_mean_indexer(arrays::make_array(rp_bin, rl_bin, zb_bin));
     }
 
     using Base::get_1d_cov_indexer;
 
-    std::size_t get_1d_cov_indexer_from_args(int rpi_bin,
-                                             int rli_bin,
-                                             int zbi_bin,
-                                             int rpj_bin,
-                                             int rlj_bin,
-                                             int zbj_bin) const {
+    std::size_t
+    get_1d_cov_indexer_from_args(int rpi_bin, int rli_bin, int zbi_bin,
+                                 int rpj_bin, int rlj_bin, int zbj_bin) const {
         return get_1d_cov_indexer(arrays::make_array(rpi_bin,
                                                      rli_bin,
                                                      zbi_bin,
@@ -2566,13 +2448,10 @@ public:
 
     using Base::process_separation;
 
-    void process_separation(double r_perp,
-                            double r_par,
-                            double zbar,
+    void process_separation(double r_perp, double r_par, double zbar,
                             bool new_real = false) {
-        process_separation((std::array<
-                double,
-                3>) {{r_perp, r_par, zbar}}, new_real);
+        process_separation((std::array<double, 3>) {{r_perp, r_par, zbar}},
+                           new_real);
     }
 
     std::tuple<int, int, int> mean_shape() const {
@@ -2605,41 +2484,32 @@ public:
             : Base(b) {}
 
     ExpectedNNCountsND(const BinSpecifier& rperp_bins,
-                       const BinSpecifier& rpar_bins,
-                       std::size_t n_tot)
+                       const BinSpecifier& rpar_bins, std::size_t n_tot)
             : Base(arrays::make_array(rperp_bins, rpar_bins), n_tot) {}
 
     BinSpecifier rperp_bins() const { return binners_.at(0); }
 
-    void rperp_bins(const BinSpecifier& new_binner,
-                    bool prefer_old = true) {
-        update_binning(new_binner,
-                       0,
-                       prefer_old);
+    void rperp_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(new_binner, 0, prefer_old);
     }
 
     BinSpecifier rpar_bins() const { return binners_.at(1); }
 
-    void rpar_bins(const BinSpecifier& new_binner,
-                   bool prefer_old = true) {
-        update_binning(new_binner,
-                       1,
-                       prefer_old);
+    void rpar_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(new_binner, 1, prefer_old);
     }
 
     using Base::get_1d_mean_indexer;
 
-    std::size_t get_1d_mean_indexer_from_args(int rp_bin,
-                                              int rl_bin) const {
+    std::size_t get_1d_mean_indexer_from_args(int rp_bin, int rl_bin) const {
         return get_1d_mean_indexer(arrays::make_array(rp_bin, rl_bin));
     }
 
     using Base::get_1d_cov_indexer;
 
-    std::size_t get_1d_cov_indexer_from_args(int rpi_bin,
-                                             int rli_bin,
-                                             int rpj_bin,
-                                             int rlj_bin) const {
+    std::size_t
+    get_1d_cov_indexer_from_args(int rpi_bin, int rli_bin, int rpj_bin,
+                                 int rlj_bin) const {
         return get_1d_cov_indexer(arrays::make_array(rpi_bin,
                                                      rli_bin,
                                                      rpj_bin,
@@ -2648,12 +2518,9 @@ public:
 
     using Base::process_separation;
 
-    void process_separation(double r_perp,
-                            double r_par,
-                            bool new_real = false) {
-        process_separation((std::array<
-                double,
-                2>) {{r_perp, r_par}}, new_real);
+    void
+    process_separation(double r_perp, double r_par, bool new_real = false) {
+        process_separation((std::array<double, 2>) {{r_perp, r_par}}, new_real);
     }
 
     std::tuple<int, int> mean_shape() const {
@@ -2686,11 +2553,8 @@ public:
 
     BinSpecifier r_bins() const { return binners_.at(0); }
 
-    void r_bins(const BinSpecifier& new_binner,
-                bool prefer_old = true) {
-        update_binning(new_binner,
-                       0,
-                       prefer_old);
+    void r_bins(const BinSpecifier& new_binner, bool prefer_old = true) {
+        update_binning(new_binner, 0, prefer_old);
     }
 
     using Base::get_1d_mean_indexer;
@@ -2701,18 +2565,14 @@ public:
 
     using Base::get_1d_cov_indexer;
 
-    std::size_t get_1d_cov_indexer_from_args(int ri_bin,
-                                             int rj_bin) const {
+    std::size_t get_1d_cov_indexer_from_args(int ri_bin, int rj_bin) const {
         return get_1d_cov_indexer(arrays::make_array(ri_bin, ri_bin));
     }
 
     using Base::process_separation;
 
-    void process_separation(double r,
-                            bool new_real = false) {
-        process_separation((std::array<
-                double,
-                1>) {{r}}, new_real);
+    void process_separation(double r, bool new_real = false) {
+        process_separation((std::array<double, 1>) {{r}}, new_real);
     }
 
     std::tuple<int> mean_shape() const {
@@ -2724,6 +2584,10 @@ public:
     }
 };
 
+
+enum class CFEstimator {
+    Landy_Szalay = 10, Hamilton = 20, Peebles = 30, Dodelson = 40
+};
 
 template<std::size_t N>
 class CorrFuncNDBase {
@@ -2810,9 +2674,7 @@ public:
               dr_(verify_nn(dr)),
               rd_(binners_) {}
 
-    CorrFuncNDBase(BSType binners,
-                   const NNType& dd,
-                   const NNType& rr,
+    CorrFuncNDBase(BSType binners, const NNType& dd, const NNType& rr,
                    const NNType& dr)
             : binners_(std::move(binners)),
               max_index_(get_max_index(binners_)),
@@ -2821,9 +2683,7 @@ public:
               dr_(verify_nn(dr)),
               rd_(binners_) {}
 
-    CorrFuncNDBase(const NNType& dd,
-                   const NNType& rr,
-                   const NNType& dr,
+    CorrFuncNDBase(const NNType& dd, const NNType& rr, const NNType& dr,
                    const NNType& rd)
             : binners_(dd.bin_info()),
               max_index_(get_max_index(binners_)),
@@ -2832,11 +2692,8 @@ public:
               dr_(verify_nn(dr)),
               rd_(verify_nn(rd)) {}
 
-    CorrFuncNDBase(BSType binners,
-                   const NNType& dd,
-                   const NNType& rr,
-                   const NNType& dr,
-                   const NNType& rd)
+    CorrFuncNDBase(BSType binners, const NNType& dd, const NNType& rr,
+                   const NNType& dr, const NNType& rd)
             : binners_(std::move(binners)),
               max_index_(get_max_index(binners_)),
               dd_(verify_nn(dd)),
@@ -2846,8 +2703,7 @@ public:
 
     inline static const std::string
             class_name = "CorrFunc" // NOLINT(cert-err58-cpp)
-                         + std::to_string(N)
-                         + "D";
+                         + std::to_string(N) + "D";
 
     const NNType& dd() const {
         return dd_;
@@ -2899,64 +2755,106 @@ public:
         return binners_;
     }
 
-    void update_binning(const BinSpecifier& new_binning,
-                        std::size_t dim,
+    void update_binning(const BinSpecifier& new_binning, std::size_t dim,
                         bool prefer_old = true) {
         if (dim >= N) {
-            throw std::invalid_argument("Index "
-                                        + std::to_string(dim)
+            throw std::invalid_argument("Index " + std::to_string(dim)
                                         + " out of bounds for binning in "
-                                        + std::to_string(N)
-                                        + " dimensions");
+                                        + std::to_string(N) + " dimensions");
         }
         if (prefer_old) { binners_.at(dim).fill(new_binning); }
         else { binners_.at(dim).update(new_binning); }
         on_bin_nn_update();
     }
 
-    std::vector<double> calculate_xi() const {
-        if (dd_.n_tot() == 0 || rr_.n_tot() == 0) {
+    vec_norm_type
+    calculate_xi(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        if (dd_.n_tot() == 0 || dr_.n_tot() == 0) {
             throw std::runtime_error(
-                    "Cannot calculate correlation function without at least DD and RR run");
+                    "Cannot calculate correlation function without at least DD and DR run");
         }
-        std::vector<double> xi = dd_.normed_counts(), nrr = rr_.normed_counts();
-        if (dr_.n_tot() != 0 || rd_.n_tot() != 0) {
-            std::transform(xi.begin(),
-                           xi.end(),
-                           nrr.begin(),
-                           xi.begin(),
-                           std::plus<>());
-            std::vector<double>
-                    ndr = dr_.n_tot() != 0
-                          ? dr_.normed_counts()
-                          : rd_.normed_counts();
-            std::vector<double>
-                    nrd = rd_.n_tot() != 0
-                          ? rd_.normed_counts()
-                          : dr_.normed_counts();
-            std::transform(ndr.begin(),
-                           ndr.end(),
-                           nrd.begin(),
-                           ndr.begin(),
-                           std::plus<>());
-            std::transform(xi.begin(),
-                           xi.end(),
-                           ndr.begin(),
-                           xi.begin(),
-                           std::minus<>());
+        vec_norm_type xi(max_index_);
+        auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts(),
+                nrr = rr_.normed_counts(), nrd = rd_.normed_counts();
+        switch (estimator) {
+            case CFEstimator::Peebles:
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               xi.begin(),
+                               std::divides<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x - 1; });
+            case CFEstimator::Hamilton:
+                if (rr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hamilton estimator without RR");
+                }
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               nrr.begin(),
+                               xi.begin(),
+                               std::multiplies<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               ndr.begin(),
+                               xi.begin(),
+                               [](norm_type x, norm_type y) {
+                                   return x / math::power(y, 2);
+                               });
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x - 1; });
+            case CFEstimator::Dodelson:
+                if (rr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Dodelson estimator without RR");
+                }
+                std::transform(nrr.begin(),
+                               nrr.end(),
+                               ndr.begin(),
+                               xi.begin(),
+                               std::minus<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               ndd.begin(),
+                               xi.begin(),
+                               std::divides<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x + 1; });
+            case CFEstimator::Landy_Szalay:
+                if (rr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Landy-Szalay estimator without RR");
+                }
+                if (rd_.n_tot() == 0) {
+                    nrd = ndr;
+                }
+                std::transform(ndr.begin(),
+                               ndr.end(),
+                               nrd.begin(),
+                               ndr.begin(),
+                               std::plus<>());
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               xi.begin(),
+                               std::minus<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               nrr.begin(),
+                               xi.begin(),
+                               std::divides<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x + 1; });
         }
-        else {
-            std::transform(xi.begin(),
-                           xi.end(),
-                           nrr.begin(),
-                           xi.begin(),
-                           std::minus<>());
-        }
-        std::transform(xi.begin(),
-                       xi.end(),
-                       nrr.begin(),
-                       xi.begin(),
-                       std::divides<>());
         return xi;
     }
 
@@ -2967,9 +2865,7 @@ public:
             pad += " ";
         }
         oss << class_name << "(" << std::endl;
-        if (dd_.n_tot() != 0
-            || rr_.n_tot() != 0
-            || dr_.n_tot() != 0
+        if (dd_.n_tot() != 0 || rr_.n_tot() != 0 || dr_.n_tot() != 0
             || rd_.n_tot() != 0) {
             if (dd_.n_tot() != 0) {
                 oss << pad << "dd=" << dd_ << std::endl;
@@ -3027,29 +2923,20 @@ public:
     CorrFuncND(const BinSpecifier& perp_binner, const BinSpecifier& par_binner)
             : Base(arrays::make_array(perp_binner, par_binner)) {}
 
-    CorrFuncND(const BinSpecifier& perp_binner,
-               const BinSpecifier& par_binner,
+    CorrFuncND(const BinSpecifier& perp_binner, const BinSpecifier& par_binner,
                const NNType& dd)
             : Base(arrays::make_array(perp_binner, par_binner), dd) {}
 
-    CorrFuncND(const BinSpecifier& perp_binner,
-               const BinSpecifier& par_binner,
-               const NNType& dd,
-               const NNType& rr)
+    CorrFuncND(const BinSpecifier& perp_binner, const BinSpecifier& par_binner,
+               const NNType& dd, const NNType& rr)
             : Base(arrays::make_array(perp_binner, par_binner), dd, rr) {}
 
-    CorrFuncND(const BinSpecifier& perp_binner,
-               const BinSpecifier& par_binner,
-               const NNType& dd,
-               const NNType& rr,
-               const NNType& dr)
+    CorrFuncND(const BinSpecifier& perp_binner, const BinSpecifier& par_binner,
+               const NNType& dd, const NNType& rr, const NNType& dr)
             : Base(arrays::make_array(perp_binner, par_binner), dd, rr, dr) {}
 
-    CorrFuncND(const BinSpecifier& perp_binner,
-               const BinSpecifier& par_binner,
-               const NNType& dd,
-               const NNType& rr,
-               const NNType& dr,
+    CorrFuncND(const BinSpecifier& perp_binner, const BinSpecifier& par_binner,
+               const NNType& dd, const NNType& rr, const NNType& dr,
                const NNType& rd)
             : Base(arrays::make_array(perp_binner, par_binner),
                    dd,
@@ -3094,31 +2981,19 @@ public:
     explicit CorrFuncND(const BinSpecifier& binner)
             : Base(arrays::make_array(binner)) {}
 
-    CorrFuncND(const BinSpecifier& binner,
-               const NNType& dd)
+    CorrFuncND(const BinSpecifier& binner, const NNType& dd)
             : Base(arrays::make_array(binner), dd) {}
 
-    CorrFuncND(const BinSpecifier& binner,
-               const NNType& dd,
-               const NNType& rr)
+    CorrFuncND(const BinSpecifier& binner, const NNType& dd, const NNType& rr)
             : Base(arrays::make_array(binner), dd, rr) {}
 
-    CorrFuncND(const BinSpecifier& binner,
-               const NNType& dd,
-               const NNType& rr,
+    CorrFuncND(const BinSpecifier& binner, const NNType& dd, const NNType& rr,
                const NNType& dr)
             : Base(arrays::make_array(binner), dd, rr, dr) {}
 
-    CorrFuncND(const BinSpecifier& binner,
-               const NNType& dd,
-               const NNType& rr,
-               const NNType& dr,
-               const NNType& rd)
-            : Base(arrays::make_array(binner),
-                   dd,
-                   rr,
-                   dr,
-                   rd) {}
+    CorrFuncND(const BinSpecifier& binner, const NNType& dd, const NNType& rr,
+               const NNType& dr, const NNType& rd)
+            : Base(arrays::make_array(binner), dd, rr, dr, rd) {}
 
     const BinSpecifier& r_bins() const {
         return binners_.at(0);
@@ -3140,69 +3015,20 @@ class ExpectedCorrFuncND {
     using BSType = std::array<BinSpecifier, N>;
     using BBSType = std::array<BinSpecifier, 2 * N>;
 
-    std::vector<std::vector<double>> calculate_xi_i() const {
-        if (dd_.n_real_ == 0 || rr_.n_real_ == 0) {
-            throw std::runtime_error(
-                    "Cannot calculate correlation function without at least DD and RR");
-        }
+    std::vector<vec_norm_type>
+    calculate_xi_i(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ == 0) {
-            return std::vector<std::vector<double>>(n_real_,
-                                                    std::vector<
-                                                            double>(max_index_,
-                                                                    0.0));
+            return std::vector<vec_norm_type>(n_real_,
+                                              vec_norm_type(max_index_, 0.0));
         }
-        std::vector<std::vector<double>>
-                xi(n_real_, std::vector<double>(max_index_, 1));
-        std::vector<std::vector<double>>
-                dd_norm = dd_.normed_counts(),
-                rr_norm = rr_.normed_counts();
-        if (dr_.n_real_ == 0 && rd_.n_real_ == 0) {
-            for (std::size_t i = 0; i < n_real_; i++) {
-                std::vector<double> xi_i(max_index_);
-                std::transform(dd_norm.at(i).begin(),
-                               dd_norm.at(i).end(),
-                               rr_norm.at(i).begin(),
-                               xi_i.begin(),
-                               std::divides<>());
-                std::transform(xi_i.begin(),
-                               xi_i.end(),
-                               xi.at(i).begin(),
-                               xi.at(i).begin(),
-                               std::minus<>());
-            }
+        if (dd_.n_real_ == 0 || dr_.n_real_ == 0) {
+            throw std::runtime_error(
+                    "Cannot calculate correlation function without at least DD and DR");
         }
-        else {
-            std::vector<std::vector<double>>
-                    dr_norm = dr_.n_real_ != 0
-                              ? dr_.normed_counts()
-                              : rd_.normed_counts();
-            std::vector<std::vector<double>>
-                    rd_norm = rd_.n_real_ != 0
-                              ? rd_.normed_counts()
-                              : dr_.normed_counts();
-            for (std::size_t i = 0; i < n_real_; i++) {
-                std::vector<double> xi_i = dd_norm.at(i);
-                std::transform(xi_i.begin(),
-                               xi_i.end(),
-                               dr_norm.at(i).begin(),
-                               xi_i.begin(),
-                               std::minus<>());
-                std::transform(xi_i.begin(),
-                               xi_i.end(),
-                               rd_norm.at(i).begin(),
-                               xi_i.begin(),
-                               std::minus<>());
-                std::transform(xi_i.begin(),
-                               xi_i.end(),
-                               rr_norm.at(i).begin(),
-                               xi_i.begin(),
-                               std::divides<>());
-                std::transform(xi_i.begin(),
-                               xi_i.end(),
-                               xi.at(i).begin(),
-                               xi.at(i).begin(),
-                               std::plus<>());
-            }
+        std::vector<vec_norm_type> xi;
+        for (std::size_t i = 0; i < n_real_; i++) {
+            CorrFuncND<N> cf(dd_[i], rr_[i], dr_[i], rd_[i]);
+            xi.push_back(cf.calculate_xi(estimator));
         }
         return xi;
     }
@@ -3254,9 +3080,7 @@ public:
               n_real_(dd_.n_real_),
               rr_(verify_nn(rr)) {}
 
-    ExpectedCorrFuncND(const ENNType& dd,
-                       const ENNType& rr,
-                       const ENNType& dr)
+    ExpectedCorrFuncND(const ENNType& dd, const ENNType& rr, const ENNType& dr)
             : binners_(dd.binners_),
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
@@ -3266,9 +3090,7 @@ public:
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)) {}
 
-    ExpectedCorrFuncND(const ENNType& dd,
-                       const ENNType& rr,
-                       const ENNType& dr,
+    ExpectedCorrFuncND(const ENNType& dd, const ENNType& rr, const ENNType& dr,
                        const ENNType& rd)
             : binners_(dd.binners_),
               cov_binners_(arrays::repeat_array<2>(binners_)),
@@ -3282,8 +3104,7 @@ public:
 
     inline static const std::string
             class_name = "ExpectedCorrFunc" // NOLINT(cert-err58-cpp)
-                         + std::to_string(N)
-                         + "D";
+                         + std::to_string(N) + "D";
 
     std::size_t n_real() const {
         return n_real_;
@@ -3311,8 +3132,7 @@ public:
 
     BSType bin_info() const { return binners_; }
 
-    void update_binning(const BinSpecifier& new_binner,
-                        std::size_t index,
+    void update_binning(const BinSpecifier& new_binner, std::size_t index,
                         bool prefer_old = true) {
         dd_.update_binning(new_binner, index, prefer_old);
         dr_.update_binning(new_binner, index, prefer_old);
@@ -3357,57 +3177,125 @@ public:
         rd_ = verify_nn(rd);
     }
 
-    std::vector<double> calculate_xi() const {
-        if (dd_.n_real_ == 0 || rr_.n_real_ == 0) {
+    vec_norm_type
+    calculate_xi(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        if (n_real_ == 0) { return vec_norm_type(max_index_, 0.0); }
+        if (dd_.n_real_ == 0 || dr_.n_real_ == 0) {
             throw std::runtime_error(
                     "Cannot calculate correlation function without at least DD and RR");
         }
-        if (n_real_ == 0) { return std::vector<double>(max_index_, 0.0); }
-        std::vector<std::vector<double>> xi_i = calculate_xi_i();
-        std::vector<double> xi(max_index_, 0.0);
-        for (std::size_t i = 0; i < n_real_; i++) {
-            std::transform(xi.begin(),
-                           xi.end(),
-                           xi_i.at(i).begin(),
-                           xi.begin(),
-                           std::plus<>());
+        vec_norm_type xi;
+        auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean(),
+                nrd = rd_.mean();
+        switch (estimator) {
+            case CFEstimator::Peebles:
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(xi),
+                               std::divides());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x - 1; });
+            case CFEstimator::Hamilton:
+                if (rr_.n_real_ == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hamilton estimator without RR");
+                }
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               nrr.begin(),
+                               std::back_inserter(xi),
+                               std::multiplies<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               ndr.begin(),
+                               xi.begin(),
+                               [](norm_type x, norm_type y) {
+                                   return x / math::power(y, 2);
+                               });
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x - 1; });
+            case CFEstimator::Dodelson:
+                if (rr_.n_real_ == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Dodelson estimator without RR");
+                }
+                std::transform(nrr.begin(),
+                               nrr.end(),
+                               ndr.begin(),
+                               std::back_inserter(xi),
+                               std::minus<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               ndd.begin(),
+                               xi.begin(),
+                               std::divides<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x + 1; });
+            case CFEstimator::Landy_Szalay:
+                if (rr_.n_real_ == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Landy-Szalay estimator without RR");
+                }
+                if (rd_.n_real_ == 0) {
+                    nrd = ndr;
+                }
+                std::transform(ndr.begin(),
+                               ndr.end(),
+                               nrd.begin(),
+                               ndr.begin(),
+                               std::plus<>());
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(xi),
+                               std::minus<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               nrr.begin(),
+                               xi.begin(),
+                               std::divides<>());
+                std::transform(xi.begin(),
+                               xi.end(),
+                               xi.begin(),
+                               [](norm_type x) { return x + 1; });
         }
-        std::transform(xi.begin(),
-                       xi.end(),
-                       xi.begin(),
-                       [this](double el) { return el / n_real_; });
         return xi;
     }
 
-    std::vector<double> calculate_xi_cov() const {
-        if (dd_.n_real_ == 0 || rr_.n_real_ == 0) {
+    vec_norm_type calculate_xi_cov() const {
+        if (n_real_ < 2) { return vec_norm_type(max_cov_index_, 0.0); }
+        if (dd_.n_real_ == 0 || dr_.n_real_ == 0) {
             throw std::runtime_error(
-                    "Cannot calculate correlation function without at least DD and RR");
+                    "Cannot calculate correlation function without at least DD and DR");
         }
-        if (n_real_ < 2) { return std::vector<double>(max_cov_index_, 0.0); }
-        std::vector<std::vector<double>>
-                xi_i = arrays::transpose_vector(calculate_xi_i());
-        std::vector<double> xi_mean = calculate_xi();
-        std::vector<double> xi_cov(max_cov_index_, 0.0);
+        auto xi_i = arrays::transpose_vector(calculate_xi_i());
+        auto xi_mean = calculate_xi();
+        vec_norm_type xi_cov(max_cov_index_, 0.0);
         for (std::size_t i = 0; i < max_index_; i++) {
             for (std::size_t j = 0; j < max_index_; j++) {
-                std::vector<double> tempi = xi_i.at(i), tempj = xi_i.at(j);
+                auto tempi = xi_i.at(i), tempj = xi_i.at(j);
                 std::transform(tempi.begin(),
                                tempi.end(),
                                tempi.begin(),
-                               [&](double el) { return el / xi_mean.at(i); });
+                               [&](norm_type el) { return el - xi_mean.at(i); });
                 std::transform(tempj.begin(),
                                tempj.end(),
                                tempj.begin(),
-                               [&](double el) { return el / xi_mean.at(j); });
+                               [&](norm_type el) { return el - xi_mean.at(j); });
                 std::transform(tempi.begin(),
                                tempi.end(),
                                tempj.begin(),
                                tempi.begin(),
                                std::multiplies<>());
-                xi_cov[i + max_index_ * j] = std::accumulate(tempi.begin(),
-                                                             tempi.end(),
-                                                             0.0);
+                xi_cov[i + max_index_ * j] =
+                        std::accumulate(tempi.begin(), tempi.end(), 0.0);
             }
         }
         return xi_cov;
@@ -3420,9 +3308,7 @@ public:
             pad += " ";
         }
         oss << class_name << "(" << std::endl;
-        if (dd_.n_real_ != 0
-            || rr_.n_real_ != 0
-            || dr_.n_real_ != 0
+        if (dd_.n_real_ != 0 || rr_.n_real_ != 0 || dr_.n_real_ != 0
             || rd_.n_real_ != 0) {
             if (dd_.n_real_ != 0) {
                 oss << pad << "dd=" << dd_ << std::endl;

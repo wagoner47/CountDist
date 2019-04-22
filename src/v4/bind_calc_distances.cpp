@@ -1644,6 +1644,7 @@ static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
             "binner_index"_a,
             "new_binner"_a,
             "prefer_old"_a = true);
+    cls.def("update_norm", &Class::update_norm, "Update the normalized pair counts");
     cls.def_readonly_static("class_name", &Class::class_name);
     cls.def("reset", &Class::reset, "Reset the counting");
     return cls;
