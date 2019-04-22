@@ -1589,6 +1589,8 @@ protected:
               r_max(get_r_max(binners_)) {}
 
 public:
+    virtual ~NNCountsNDBase() = default;
+
     void update_binning(std::size_t binner_index,
                         const BinSpecifier& new_binner,
                         bool prefer_old = true) {

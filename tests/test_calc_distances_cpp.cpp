@@ -59,9 +59,9 @@ struct CompareMatcher
         return "Equals: " + Catch::Detail::stringify(m_comparator);
     }
 
-    const std::array<T,N>& m_comparator;
-    Compare const &m_compare;
-    const std::array<T,N>& m_margin;
+    std::array<T,N> m_comparator;
+    Compare m_compare;
+    std::array<T,N> m_margin;
 };
 
 template<typename T, std::size_t N, typename C>
@@ -233,9 +233,9 @@ struct VectorApproxEquivalent
         return "Equals up to order: " + Catch::Detail::stringify(m_comparator);
     }
 
-    const std::vector<T> &m_comparator;
-    Compare const &m_compare;
-    const std::vector<T>& m_margin;
+    std::vector<T> m_comparator;
+    Compare m_compare;
+    std::vector<T> m_margin;
 };
 
 template<typename T, typename C>
