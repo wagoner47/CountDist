@@ -3269,14 +3269,15 @@ public:
         return xi;
     }
 
-    vec_norm_type calculate_xi_cov() const {
+    vec_norm_type
+    calculate_xi_cov(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ < 2) { return vec_norm_type(max_cov_index_, 0.0); }
         if (dd_.n_real_ == 0 || dr_.n_real_ == 0) {
             throw std::runtime_error(
                     "Cannot calculate correlation function without at least DD and DR");
         }
-        auto xi_i = arrays::transpose_vector(calculate_xi_i());
-        auto xi_mean = calculate_xi();
+        auto xi_i = arrays::transpose_vector(calculate_xi_i(estimator));
+        auto xi_mean = calculate_xi(estimator);
         vec_norm_type xi_cov(max_cov_index_, 0.0);
         for (std::size_t i = 0; i < max_index_; i++) {
             for (std::size_t j = 0; j < max_index_; j++) {
@@ -3284,11 +3285,15 @@ public:
                 std::transform(tempi.begin(),
                                tempi.end(),
                                tempi.begin(),
-                               [&](norm_type el) { return el - xi_mean.at(i); });
+                               [&](norm_type el) {
+                                   return el - xi_mean.at(i);
+                               });
                 std::transform(tempj.begin(),
                                tempj.end(),
                                tempj.begin(),
-                               [&](norm_type el) { return el - xi_mean.at(j); });
+                               [&](norm_type el) {
+                                   return el - xi_mean.at(j);
+                               });
                 std::transform(tempi.begin(),
                                tempi.end(),
                                tempj.begin(),
