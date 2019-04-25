@@ -21,100 +21,94 @@ inline bool lazy_string_equals(std::string_view a, std::string_view b) {
                                                      a.end(),
                                                      b.begin(),
                                                      [](char a, char b) {
-                                                       return std::tolower(a)
-                                                              == std::tolower(b);
+                                                         return std::tolower(a)
+                                                                == std::tolower(
+                                                                        b);
                                                      });
 }
 
 namespace arrays {
     namespace details {
         template<class>
-        struct is_ref_wrapper : std::false_type {};
-        template<class T>
-        struct is_ref_wrapper<std::reference_wrapper<T>> : std::true_type {
+        struct is_ref_wrapper : std::false_type {
         };
-
         template<class T>
-        using not_ref_wrapper = std::negation<is_ref_wrapper<std::decay_t<T>>>;
+        struct is_ref_wrapper<std::reference_wrapper < T>> : std::true_type {
+    };
 
-        template<class D, class...>
-        struct return_type_helper { using type = D; };
-        template<class... Ts>
-        struct return_type_helper<void, Ts...> : std::common_type<Ts...> {
-            static_assert(std::conjunction_v<not_ref_wrapper<Ts>...>,
-                          "Types cannot contain reference_wrappers when D is void");
-        };
+    template<class T> using not_ref_wrapper = std::negation <is_ref_wrapper<
+            std::decay_t < T>>>;
 
-        template<class D, class... Ts>
-        using return_type = std::array<
-                typename return_type_helper<
-                        D,
-                        Ts...>::type,
-                sizeof...(Ts)>;
+    template<class D, class...>
+    struct return_type_helper {
+        using type = D;
+    };
+    template<class... Ts>
+    struct return_type_helper<void, Ts...> : std::common_type<Ts...> {
+        static_assert(std::conjunction_v < not_ref_wrapper<Ts>...>,
+        "Types cannot contain reference_wrappers when D is void");
+    };
 
-        template<typename T, typename dcy = std::decay_t<T>, std::size_t... Is>
-        std::array<dcy, sizeof...(Is)>
-        make_filled_array_helper(T&& t, std::index_sequence<Is...>) {
-            return {{(static_cast<void>(Is), t)...}};
+    template<class D, class... Ts> using return_type = std::array<
+            typename return_type_helper<D, Ts...>::type, sizeof...(Ts)>;
+
+    template<typename T, typename dcy = std::decay_t <T>, std::size_t... Is>
+    std::array<dcy, sizeof...(Is)>
+    make_filled_array_helper(T&& t, std::index_sequence<Is...>) {
+        return {{(static_cast<void>(Is), t)...}};
+    }
+} // namespace details
+
+template<class D = void, class... Ts>
+constexpr details::return_type<D, Ts...> make_array(Ts&& ... t) {
+    return {std::forward<Ts>(t)...};
+}
+
+template<std::size_t N, typename T, typename dcy = std::decay_t <T>>
+std::array <dcy, N> make_filled_array(T&& t) {
+    return details::make_filled_array_helper(t,
+                                             std::make_index_sequence < N > {});
+}
+
+template<typename T, std::size_t N, typename std::enable_if_t<
+        std::is_arithmetic_v < T>, int> = 0>
+
+std::array <T, N> make_filled_array() {
+    return make_filled_array<N>((T) 0);
+}
+
+template<typename T, std::size_t N, typename std::enable_if_t<
+        !std::is_arithmetic_v < T>, int> = 0>
+
+std::array <T, N> make_filled_array() {
+    return make_filled_array<N>(T());
+}
+
+template<typename T,
+         typename U,
+         typename R = decltype(std::declval < std::decay_t
+                               < T >> () * std::declval < std::decay_t
+                               < U >> ()), std::size_t N>
+std::array <R, N>
+multiply_array_by_constant(const std::array <T, N>& arr, U&& x) {
+    std::array <R, N> ret = make_filled_array<R, N>();
+    std::transform(arr.begin(),
+                   arr.end(),
+                   ret.begin(),
+                   [=](T el) { return x * el; });
+    return ret;
+}
+
+template<std::size_t R, typename T, std::size_t N>
+std::array<T, R * N> repeat_array(const std::array <T, N>& arr) {
+    std::array < T, R * N > ret = make_filled_array<T, R * N>();
+    for (std::size_t i = 0; i < N; i++) {
+        for (std::size_t j = 0; j < R; j++) {
+            ret[i + (j * N)] = arr[i];
         }
-    } // namespace details
-
-    template<class D = void, class... Ts>
-    constexpr details::return_type<D, Ts...> make_array(Ts&& ... t) {
-        return {std::forward<Ts>(t)...};
     }
-
-    template<std::size_t N, typename T, typename dcy = std::decay_t<T>>
-    std::array<dcy, N> make_filled_array(T&& t) {
-        return details::make_filled_array_helper(t,
-                                                 std::make_index_sequence<N>{});
-    }
-
-    template<typename T, std::size_t N, typename std::enable_if_t<
-            std::is_arithmetic_v<
-                    T>, int> = 0>
-    std::array<T, N> make_filled_array() {
-        return make_filled_array<N>((T) 0);
-    }
-
-    template<typename T, std::size_t N, typename std::enable_if_t<
-            !std::is_arithmetic_v<
-                    T>, int> = 0>
-    std::array<T, N> make_filled_array() {
-        return make_filled_array<N>(T());
-    }
-
-    template<typename T,
-             typename U,
-             typename R = decltype(std::declval
-                                           <
-                                                   std::decay_t
-                                                           <T >>()
-                                   * std::declval
-                                           <
-                                                   std::decay_t
-                                                           <U >>()),
-            std::size_t N>
-    std::array<R, N>
-    multiply_array_by_constant(const std::array<T, N>& arr, U&& x) {
-        std::array<R, N> ret = make_filled_array<R, N>();
-        std::transform(arr.begin(),
-                       arr.end(),
-                       ret.begin(),
-                       [=](T el) { return x * el; });
-        return ret;
-    }
-
-    template<std::size_t R, typename T, std::size_t N>
-    std::array<T, R * N> repeat_array(const std::array<T, N>& arr) {
-        std::array<T, R * N> ret = make_filled_array<T, R * N>();
-        for (std::size_t i = 0; i < N; i++) {
-            for (std::size_t j = 0; j < R; j++) {
-                ret[i + (j * N)] = arr[i];
-            }
-        }
-        return ret;
-    } // namespace arrays
+    return ret;
+} // namespace arrays
 
 }
 
@@ -122,20 +116,18 @@ namespace math {
     using namespace std::string_view_literals;
 
     template<typename T, typename std::enable_if_t<
-            std::is_unsigned_v<T>,
-            int> = 0>
+            std::is_unsigned_v < T>, int> = 0>
 
     constexpr int signof(T x) { return T(0) < x; }
 
     template<typename T, typename std::enable_if_t<
-            std::is_signed_v<T>,
-            int> = 0>
+            std::is_signed_v < T>, int> = 0>
 
     constexpr int signof(T x) { return (T(0) < x) - (x < T(0)); }
 
     template<typename T, typename U, typename std::enable_if_t<
-            std::is_floating_point_v<T> || std::is_floating_point_v<U>,
-            int> = 0>
+            std::is_floating_point_v < T> || std::is_floating_point_v <U>,
+    int> = 0>
 
     constexpr bool isclose(T a, U b, int ulp = 10) {
         // isclose for non-integer numbers
@@ -146,7 +138,7 @@ namespace math {
     }
 
     template<typename T, typename U, typename std::enable_if_t<
-            std::is_integral_v<T> && std::is_integral_v<U>, int> = 0>
+            std::is_integral_v < T>&& std::is_integral_v <U>, int> = 0>
 
     constexpr bool isclose(T a, U b, int= 10) {
         // isclose for integers: exact equality
@@ -154,9 +146,9 @@ namespace math {
     }
 
     template<typename T, typename U, typename std::enable_if_t<
-            std::is_arithmetic_v<T> && std::is_arithmetic_v<U>, int> = 0>
+            std::is_arithmetic_v < T>&& std::is_arithmetic_v <U>, int> = 0>
 
-    inline bool isclose(std::vector<T> a, std::vector<U> b, int ulp = 10) {
+    inline bool isclose(std::vector <T> a, std::vector <U> b, int ulp = 10) {
         if (a.size() != b.size()) { return false; }
         return std::equal(a.begin(),
                           a.end(),
@@ -166,20 +158,16 @@ namespace math {
 
     template<std::size_t N, std::size_t M, typename T,
                                            typename U, typename std::enable_if_t<
-                    N != M,
-                    int> = 0>
-    constexpr bool isclose(const std::array<T, N>&,
-                           const std::array<U, M>&,
+                    N != M, int> = 0>
+    constexpr bool isclose(const std::array <T, N>&, const std::array <U, M>&,
                            int= 10) { return false; }
 
     template<std::size_t N, std::size_t M, typename T,
                                            typename U, typename std::enable_if_t<
-                    N == M && std::is_arithmetic_v<T>
-                    && std::is_arithmetic_v<U>,
-                    int> = 0>
+                    N == M && std::is_arithmetic_v
+                              < T>&& std::is_arithmetic_v <U>, int> = 0>
 
-    inline bool isclose(const std::array<T, N>& a,
-                        const std::array<U, M>& b,
+    inline bool isclose(const std::array <T, N>& a, const std::array <U, M>& b,
                         int ulp = 10) {
         return std::equal(a.begin(),
                           a.end(),
@@ -201,10 +189,9 @@ namespace math {
             pi2 = 6.283185307179586476925286766559005768L;
     template<typename T> constexpr T
             pi_2 = 1.570796326794896619231321691639751442L;
-    template<typename T> constexpr T
-            nan = std::numeric_limits<T>::has_quiet_NaN
-                  ? std::numeric_limits<T>::quiet_NaN()
-                  : std::numeric_limits<T>::max();
+    template<typename T> constexpr T nan =
+            std::numeric_limits<T>::has_quiet_NaN ? std::numeric_limits<
+                    T>::quiet_NaN() : std::numeric_limits<T>::max();
 
     constexpr static double dpi = pi<double>;
     constexpr static double dsqrt2 = sqrt2<double>;
@@ -217,49 +204,43 @@ namespace math {
     constexpr static std::string_view snan = "NaN"sv;
 
     template<typename T, typename std::enable_if_t<
-            std::is_floating_point_v<T>,
-            int> = 0>
+            std::is_floating_point_v < T>, int> = 0>
 
     constexpr bool isnan(T x) { return !isclose(x, x); }
 
     template<typename T, typename std::enable_if_t<
-            std::is_integral_v<T>,
-            int> = 0>
+            std::is_integral_v < T>, int> = 0>
 
     constexpr bool isnan(T x) { return isclose(x, nan<T>); }
 
     template<typename T,
-             typename dcy = std::decay_t<T>, typename std::enable_if_t<
-                    std::is_floating_point_v<
-                            T>, int> = 0>
+             typename dcy = std::decay_t <T>, typename std::enable_if_t<
+                    std::is_floating_point_v < T>, int> = 0>
 
     constexpr dcy inverse(T x) {
         return isclose(x, (T) 0) ? nan<dcy> : (dcy) (1.0 / x);
     }
 
     template<typename T,
-             typename dcy = std::decay_t<T>, typename std::enable_if_t<
-                    std::is_integral_v<
-                            T>, int> = 0>
+             typename dcy = std::decay_t <T>, typename std::enable_if_t<
+                    std::is_integral_v < T>, int> = 0>
 
     constexpr dcy inverse(T x) {
         return isclose(x, (T) 0) ? (dcy) 0 : (dcy) (1 / x);
     }
 
-    template<typename T, typename dcy = std::decay_t<T>, std::enable_if_t<std::is_arithmetic_v<T>, int> = 0>
-    constexpr dcy power(T x, std::size_t p) { return p == 0 ? 1 : x * power(x, p); }
+    template<class T,
+             typename dcy = std::decay_t<T>, std::enable_if_t<std::is_arithmetic_v<
+                    T>, int> = 0>
+    constexpr dcy power(T x, std::size_t p) {
+        return p == 0 ? 1 : x * power(x, p);
+    }
 
-    template<typename T,
-             typename dcy = std::decay_t<T>, typename std::enable_if_t<
-                    std::is_arithmetic_v<
-                            T>, int> = 0>
-
+    template<typename T, typename dcy = std::decay_t<T>>
     constexpr dcy square(T x) { return x * x; }
 
     constexpr long double factorial(const std::intmax_t& n) {
-        return n <= 1
-               ? 1
-               : n * factorial(n - 1);
+        return n <= 1 ? 1 : n * factorial(n - 1);
     }
 
 
@@ -275,24 +256,22 @@ namespace math {
 
     public:
         constexpr static array_type
-                coeffs = _coeffs(std::make_index_sequence<N>{});
+                coeffs = _coeffs(std::make_index_sequence < N > {});
     };
 
 
     template<class Base, std::size_t N,
-             class dcy = std::decay_t<typename Base::value_type>, typename std::enable_if_t<
-                    std::is_floating_point_v<dcy>,
-                    int> = 0>
+             class dcy = std::decay_t<
+                     typename Base::value_type>, typename std::enable_if_t<
+                    std::is_floating_point_v < dcy>, int> = 0>
 
     inline dcy _trig(typename Base::value_type x) noexcept {
         using c = trig_coeffs<Base, N>;
         if (std::isnan(x) && std::numeric_limits<dcy>::has_quiet_NaN) {
-            return static_cast<dcy>(std::numeric_limits<
-                    dcy>::quiet_NaN());
+            return static_cast<dcy>(std::numeric_limits<dcy>::quiet_NaN());
         }
         else if (std::isinf(x) && std::numeric_limits<dcy>::has_infinity) {
-            return static_cast<dcy>(std::numeric_limits<
-                    dcy>::infinity());
+            return static_cast<dcy>(std::numeric_limits<dcy>::infinity());
         }
         else {
             dcy _x = Base::range_reduce(x);
@@ -309,8 +288,7 @@ namespace math {
 
     namespace detail {
         template<typename T, typename std::enable_if_t<
-                std::is_arithmetic_v<T>,
-                int> = 0>
+                std::is_arithmetic_v < T>, int> = 0>
 
         struct _sin {
             using value_type = T;
@@ -336,8 +314,7 @@ namespace math {
 
 
         template<typename T, typename std::enable_if_t<
-                std::is_arithmetic_v<T>,
-                int> = 0>
+                std::is_arithmetic_v < T>, int> = 0>
 
         struct _cos {
             using value_type = T;
@@ -362,22 +339,22 @@ namespace math {
     }
 
     template<class T, size_t N = detail::_sin<T>::default_N>
-    constexpr static std::decay_t<T>
-    sin(T x) noexcept { return _trig<detail::_sin<T>, N>(x); }
+    constexpr static std::decay_t <T> sin(T x) noexcept {
+        return _trig < detail::_sin<T>, N > (x);
+    }
 
     template<class T, size_t N = detail::_cos<T>::default_N>
-    constexpr static std::decay_t<T> cos(T x) noexcept {
-        return 1 - _trig<
-                detail::_cos<T>, N>(x);
+    constexpr static std::decay_t <T> cos(T x) noexcept {
+        return 1 - _trig < detail::_cos<T>, N > (x);
     }
 
 }
 
 namespace arrays {
     template<typename T>
-    std::vector<std::vector<T>>
-    transpose_vector(const std::vector<std::vector<T>> vec_in) {
-        std::vector<std::vector<T>>
+    std::vector <std::vector<T>>
+    transpose_vector(const std::vector <std::vector<T>> vec_in) {
+        std::vector <std::vector<T>>
                 vec_out(vec_in[0].size(), std::vector<T>(vec_in.size()));
         for (std::size_t i = 0; i < vec_out.size(); i++) {
             for (std::size_t j = 0; j < vec_in.size(); j++) {
@@ -399,11 +376,10 @@ namespace arrays {
 
 template<typename T>
 inline std::array<T, 3> get_nxyz_array(T ra, T dec) {
-    return arrays::make_array(std::cos(math::deg2rad<T> * ra)
-                              * std::cos(math::deg2rad<T> * dec),
-                              std::sin(math::deg2rad<T> * ra)
-                              * std::cos(math::deg2rad<T> * dec),
-                              std::sin(math::deg2rad<T> * dec));
+    return arrays::make_array(
+            std::cos(math::deg2rad<T> * ra) * std::cos(math::deg2rad<T> * dec),
+            std::sin(math::deg2rad<T> * ra) * std::cos(math::deg2rad<T> * dec),
+            std::sin(math::deg2rad<T> * dec));
 }
 
 #endif

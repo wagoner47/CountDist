@@ -15,7 +15,7 @@
 #include <tuple>
 #include <array>
 #include <stdexcept>
-#include <unordered_map>
+#include <map>
 #include <typeindex>
 #include <utility>
 #include <iterator>
@@ -36,8 +36,8 @@ inline int omp_get_num_threads() { return 1; }
 
 #endif
 
-template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
-                                               int> = 0>
+template<typename T, typename std::enable_if_t<
+        std::is_arithmetic_v < T>, int> = 0>
 
 inline bool check_val_in_limits(const T& val, const T& min, const T& max) {
     return std::isfinite(val) && (!std::isfinite(min) || val >= min)
@@ -193,7 +193,7 @@ public:
     }
 
     bool operator!=(const BinSpecifier& other) const {
-        return !(* this == other);
+        return !(*this == other);
     }
 
     // Instead of copying everything with this one, just update the parameters
@@ -506,7 +506,7 @@ inline double bin_max_combine(double a, const BinSpecifier& b) {
 }
 
 template<std::size_t N>
-std::size_t get_max_index(const std::array<BinSpecifier, N>& binners) {
+std::size_t get_max_index(const std::array <BinSpecifier, N>& binners) {
     return std::accumulate(binners.begin(),
                            binners.end(),
                            (std::size_t) 1,
@@ -526,7 +526,7 @@ get_r_max(const BinSpecifier& rp_binner, const BinSpecifier& rl_binner) {
 
 template<std::size_t N>
 struct get_r_min_impl {
-    static double call(const std::array<BinSpecifier, N>& binners) {
+    static double call(const std::array <BinSpecifier, N>& binners) {
         return std::accumulate(binners.begin(),
                                binners.end(),
                                0.0,
@@ -544,14 +544,14 @@ struct get_r_min_impl<3> {
 
 
 template<std::size_t N>
-double get_r_min(const std::array<BinSpecifier, N>& binners) {
+double get_r_min(const std::array <BinSpecifier, N>& binners) {
     return get_r_min_impl<N>::call(binners);
 }
 
 
 template<std::size_t N>
 struct get_r_max_impl {
-    static double call(const std::array<BinSpecifier, N>& binners) {
+    static double call(const std::array <BinSpecifier, N>& binners) {
         return std::accumulate(binners.begin(),
                                binners.end(),
                                0.0,
@@ -569,7 +569,7 @@ struct get_r_max_impl<3> {
 
 
 template<std::size_t N>
-double get_r_max(const std::array<BinSpecifier, N>& binners) {
+double get_r_max(const std::array <BinSpecifier, N>& binners) {
     return get_r_max_impl<N>::call(binners);
 }
 
@@ -826,7 +826,7 @@ public:
                && tpos_ == other.tpos_ && opos_ == other.opos_;
     }
 
-    bool operator!=(const Pos& other) const { return !(* this == other); }
+    bool operator!=(const Pos& other) const { return !(*this == other); }
 
     double dot_norm(const SPos& other) const {
         if (!other.is_initialized_) {
@@ -1123,14 +1123,14 @@ public:
 };
 
 
-inline std::vector<SPos> tpos(const std::vector<Pos>& pos) {
-    std::vector<SPos> out;
+inline std::vector <SPos> tpos(const std::vector <Pos>& pos) {
+    std::vector <SPos> out;
     for (auto p : pos) { out.push_back(p.tpos()); }
     return out;
 }
 
-inline std::vector<SPos> opos(const std::vector<Pos>& pos) {
-    std::vector<SPos> out;
+inline std::vector <SPos> opos(const std::vector <Pos>& pos) {
+    std::vector <SPos> out;
     for (auto p : pos) { out.push_back(p.opos()); }
     return out;
 }
@@ -1371,58 +1371,58 @@ struct TOSeparation {
 };
 
 
-std::vector<Separation>
-get_auto_separations(const std::vector<SPos>& pos, const BinSpecifier& rp_bins,
+std::vector <Separation>
+get_auto_separations(const std::vector <SPos>& pos, const BinSpecifier& rp_bins,
                      const BinSpecifier& rl_bins,
                      int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation>
-get_auto_separations(const std::vector<Pos>& pos, const BinSpecifier& rp_bins,
+std::vector <Separation>
+get_auto_separations(const std::vector <Pos>& pos, const BinSpecifier& rp_bins,
                      const BinSpecifier& rl_bins, bool use_true,
                      int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation> get_cross_separations(const std::vector<SPos>& pos1,
-                                              const std::vector<SPos>& pos2,
-                                              const BinSpecifier& rp_bins,
-                                              const BinSpecifier& rl_bins,
-                                              int num_threads = OMP_NUM_THREADS);
+std::vector <Separation> get_cross_separations(const std::vector <SPos>& pos1,
+                                               const std::vector <SPos>& pos2,
+                                               const BinSpecifier& rp_bins,
+                                               const BinSpecifier& rl_bins,
+                                               int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation> get_cross_separations(const std::vector<Pos>& pos1,
-                                              const std::vector<Pos>& pos2,
-                                              const BinSpecifier& rp_bins,
-                                              const BinSpecifier& rl_bins,
-                                              bool use_true,
-                                              int num_threads = OMP_NUM_THREADS);
+std::vector <Separation> get_cross_separations(const std::vector <Pos>& pos1,
+                                               const std::vector <Pos>& pos2,
+                                               const BinSpecifier& rp_bins,
+                                               const BinSpecifier& rl_bins,
+                                               bool use_true,
+                                               int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation>
-get_separations(const std::vector<SPos>& pos1, const std::vector<SPos>& pos2,
+std::vector <Separation>
+get_separations(const std::vector <SPos>& pos1, const std::vector <SPos>& pos2,
                 const BinSpecifier& rp_bins, const BinSpecifier& rl_bins,
                 bool is_auto, int num_threads = OMP_NUM_THREADS);
 
-std::vector<Separation>
-get_separations(const std::vector<Pos>& pos1, const std::vector<Pos>& pos2,
+std::vector <Separation>
+get_separations(const std::vector <Pos>& pos1, const std::vector <Pos>& pos2,
                 const BinSpecifier& rp_bins, const BinSpecifier& rl_bins,
                 bool use_true, bool is_auto, int num_threads = OMP_NUM_THREADS);
 
-std::vector<TOSeparation>
-get_auto_separations(const std::vector<Pos>& pos, const BinSpecifier& rp_bins,
+std::vector <TOSeparation>
+get_auto_separations(const std::vector <Pos>& pos, const BinSpecifier& rp_bins,
                      const BinSpecifier& rl_bins,
                      int num_threads = OMP_NUM_THREADS);
 
-std::vector<TOSeparation> get_cross_separations(const std::vector<Pos>& pos1,
-                                                const std::vector<Pos>& pos2,
-                                                const BinSpecifier& rp_bins,
-                                                const BinSpecifier& rl_bins,
-                                                int num_threads = OMP_NUM_THREADS);
+std::vector <TOSeparation> get_cross_separations(const std::vector <Pos>& pos1,
+                                                 const std::vector <Pos>& pos2,
+                                                 const BinSpecifier& rp_bins,
+                                                 const BinSpecifier& rl_bins,
+                                                 int num_threads = OMP_NUM_THREADS);
 
-std::vector<TOSeparation>
-get_separations(const std::vector<Pos>& pos1, const std::vector<Pos>& pos2,
+std::vector <TOSeparation>
+get_separations(const std::vector <Pos>& pos1, const std::vector <Pos>& pos2,
                 const BinSpecifier& rp_bins, const BinSpecifier& rl_bins,
                 bool is_auto, int num_threads = OMP_NUM_THREADS);
 
 template<std::size_t N>
 std::size_t get_1d_indexer_from_nd(const std::array<int, N>& indices,
-                                   const std::array<BinSpecifier, N>& bins) {
+                                   const std::array <BinSpecifier, N>& bins) {
     std::size_t index = 0;
     for (std::size_t i = 0; i < N; i++) {
         if (indices.at(i) < 0
@@ -1444,9 +1444,9 @@ class CorrFuncNDBase;
 
 
 typedef long long count_type;
-typedef std::vector<count_type> vec_counts_type;
+typedef std::vector <count_type> vec_counts_type;
 typedef long double norm_type;
-typedef std::vector<norm_type> vec_norm_type;
+typedef std::vector <norm_type> vec_norm_type;
 
 
 template<std::size_t N>
@@ -1608,29 +1608,29 @@ public:
                        other.counts_.begin(),
                        counts_.begin(),
                        std::plus<>());
-        return NNType(* this);
+        return NNType(*this);
     }
 
-    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
-                                                   int> = 0>
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v < T>, int> = 0>
 
     NNType operator+=(const T& x) {
         if (!math::isclose(x, (T) 0)) {
             throw std::invalid_argument(
                     "Only 0 valid for scalar addition with " + class_name);
         }
-        return NNType(* this);
+        return NNType(*this);
     }
 
-    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
-                                                   int> = 0>
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v < T>, int> = 0>
 
     NNType operator+(const T& x) const {
-        return NNType(* this).operator+=(x);
+        return NNType(*this).operator+=(x);
     }
 
-    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
-                                                   int> = 0>
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v < T>, int> = 0>
 
     friend NNType operator+(const T& x, const NNType& rhs) {
         return rhs.operator+(x);
@@ -1651,8 +1651,8 @@ public:
         return !(lhs == rhs);
     }
 
-    std::vector<std::size_t> shape_vec() const {
-        std::vector<std::size_t> sv;
+    std::vector <std::size_t> shape_vec() const {
+        std::vector <std::size_t> sv;
         for (const auto& b : binners_) { sv.push_back(b.nbins); }
         return sv;
     }
@@ -1811,7 +1811,7 @@ public:
         }
     }
 
-    std::tuple<std::size_t, std::size_t, std::size_t> shape() const {
+    std::tuple <std::size_t, std::size_t, std::size_t> shape() const {
         auto sv = shape_vec();
         return std::make_tuple(sv.at(0), sv.at(1), sv.at(2));
     }
@@ -1891,7 +1891,7 @@ public:
         }
     }
 
-    std::tuple<std::size_t, std::size_t> shape() const {
+    std::tuple <std::size_t, std::size_t> shape() const {
         auto sv = shape_vec();
         return std::make_tuple(sv.at(0), sv.at(1));
     }
@@ -1955,7 +1955,7 @@ public:
         }
     }
 
-    std::tuple<std::size_t> shape() const {
+    std::tuple <std::size_t> shape() const {
         return std::make_tuple(max_index_);
     }
 
@@ -1980,7 +1980,7 @@ class ExpectedNNCountsNDBase {
 protected:
     BSType binners_ = arrays::make_filled_array<BinSpecifier, N>();
     BBSType cov_binners_ = arrays::make_filled_array<BinSpecifier, 2 * N>();
-    std::vector<NNType> nn_list_ = {};
+    std::vector <NNType> nn_list_ = {};
     std::size_t n_real_ = 0, n_tot_ = 0, max_index_ = 0, max_cov_index_ = 0;
     vec_norm_type mean_ = {}, cov_ = {};
 
@@ -1995,10 +1995,10 @@ private:
         cov_ = calculate_cov();
     }
 
-    ENNType& downcast() { return static_cast<ENNType&>(* this); }
+    ENNType& downcast() { return static_cast<ENNType&>(*this); }
 
     ENNType& remove_empty_realizations() {
-        std::vector<NNType> non_empty;
+        std::vector <NNType> non_empty;
         for (const auto& nn : nn_list_) {
             if (nn.n_tot_ > 0) { non_empty.push_back(nn); }
         }
@@ -2012,9 +2012,9 @@ private:
         return ENNType(enn).remove_empty_realizations();
     }
 
-    static std::vector<NNType>
-    remove_empty_realizations(const std::vector<NNType> nn_list_in) {
-        std::vector<NNType> non_empty;
+    static std::vector <NNType>
+    remove_empty_realizations(const std::vector <NNType> nn_list_in) {
+        std::vector <NNType> non_empty;
         for (const auto& nn : nn_list_in) {
             if (nn.n_tot_ > 0) { non_empty.push_back(nn); }
         }
@@ -2046,7 +2046,7 @@ private:
         }
         norm_type div_fac = (n_real_ * (n_real_ - 1));
         auto mean = calculate_mean();
-        std::vector<vec_norm_type> diff;
+        std::vector <vec_norm_type> diff;
         for (const auto& nn : nn_list_) {
             vec_norm_type temp;
             std::transform(nn.counts_.begin(),
@@ -2083,7 +2083,7 @@ public:
 
     // pickling support
     ExpectedNNCountsNDBase(const BSType& binners,
-                           const std::vector<NNType>& nn_list,
+                           const std::vector <NNType>& nn_list,
                            std::size_t n_real, std::size_t n_tot)
             : binners_(binners),
               cov_binners_(arrays::repeat_array<2>(binners_)),
@@ -2190,14 +2190,14 @@ public:
 
     std::size_t n_real() const { return n_real_; }
 
-    std::vector<std::size_t> mean_shape_vec() const {
-        std::vector<std::size_t> sv;
+    std::vector <std::size_t> mean_shape_vec() const {
+        std::vector <std::size_t> sv;
         for (const auto& b : binners_) { sv.push_back(b.nbins); }
         return sv;
     }
 
-    std::vector<std::size_t> cov_shape_vec() const {
-        std::vector<std::size_t> sv;
+    std::vector <std::size_t> cov_shape_vec() const {
+        std::vector <std::size_t> sv;
         for (const auto& b : cov_binners_) { sv.push_back(b.nbins); }
         return sv;
     }
@@ -2206,7 +2206,7 @@ public:
 
     std::size_t cov_size() const { return max_cov_index_; }
 
-    std::vector<NNType> nn_list() const { return nn_list_; }
+    std::vector <NNType> nn_list() const { return nn_list_; }
 
     void update() {
         nn_list_ = remove_empty_realizations(nn_list_);
@@ -2267,14 +2267,14 @@ public:
             throw std::runtime_error("Cannot combine " + class_name
                                      + " instances with different n_tot");
         }
-        std::vector<NNType>
+        std::vector <NNType>
                 onn_list = remove_empty_realizations(other.nn_list_);
         if (onn_list.size() == 0) { return downcast(); }
         return operator+=(onn_list[onn_list.size() - 1]);
     }
 
-    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
-                                                   int> = 0>
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v < T>, int> = 0>
 
     ENNType& operator+=(const T& x) {
         if (!math::isclose(x, (T) 0)) {
@@ -2284,15 +2284,15 @@ public:
         return downcast();
     }
 
-    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
-                                                   int> = 0>
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v < T>, int> = 0>
 
     ENNType operator+(const T& x) const {
-        return ENNType(* this).operator+=(x);
+        return ENNType(*this).operator+=(x);
     }
 
-    template<typename T, typename std::enable_if_t<std::is_arithmetic_v<T>,
-                                                   int> = 0>
+    template<typename T, typename std::enable_if_t<
+            std::is_arithmetic_v < T>, int> = 0>
 
     friend ENNType operator+(const T& x, const ExpectedNNCountsNDBase& rhs) {
         return rhs.operator+(x);
@@ -2310,8 +2310,8 @@ public:
         return !operator==(other);
     }
 
-    std::vector<vec_norm_type> normed_counts() const {
-        std::vector<vec_norm_type> norm;
+    std::vector <vec_norm_type> normed_counts() const {
+        std::vector <vec_norm_type> norm;
         for (const auto& nn : nn_list_) {
             vec_norm_type normi;
             std::transform(nn.counts_.begin(),
@@ -2336,7 +2336,7 @@ public:
 
     void append_real(const ExpectedNNCountsNDBase& other) {
         remove_empty_realizations();
-        std::vector<NNType>
+        std::vector <NNType>
                 onn_list = remove_empty_realizations(other.nn_list_);
         nn_list_.insert(nn_list_.end(), onn_list.begin(), onn_list.end());
         n_real_ += onn_list.size();
@@ -2346,7 +2346,7 @@ public:
 
     void reset() {
         n_real_ = 0;
-        std::vector<NNType> temp(n_real_);
+        std::vector <NNType> temp(n_real_);
         nn_list_.swap(temp);
         mean_ = calculate_mean();
         cov_ = calculate_cov();
@@ -2545,7 +2545,8 @@ public:
     using Base::Base;
 
     // NOLINTNEXTLINE(google-explicit-conversions)
-    ExpectedNNCountsND(const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
+    ExpectedNNCountsND(
+            const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
             : Base(b) {}
 
     ExpectedNNCountsND(const BinSpecifier& r_bins, std::size_t n_tot)
@@ -2586,8 +2587,27 @@ public:
 
 
 enum class CFEstimator {
-    Landy_Szalay = 10, Hamilton = 20, Peebles = 30, Dodelson = 40
+    Landy_Szalay = 10,
+    Dodelson = 20,
+    Hamilton = 30,
+    Davis_Peebles = 40,
+    Hewett = 50,
+    Peebles_Hauser = 60
 };
+
+// static std::map <CFEstimator, std::string> cf_estimators =
+//         {{CFEstimator::Landy_Szalay,   "Landy & Szalay (1993)"},
+//          {CFEstimator::Dodelson,       "Dodelson et al. (2018)"},
+//          {CFEstimator::Hamilton,       "Hamilton (1993)"},
+//          {CFEstimator::Davis_Peebles,  "Davis & Peebles (1983)"},
+//          {CFEstimator::Hewett,         "Hewett (1982)"},
+//          {CFEstimator::Peebles_Hauser, "Peebles & Hauser (1974)"}};
+//
+// static std::ostream&
+// operator<<(std::ostream& os, const CFEstimator& estimator) {
+//     os << cf_estimators[estimator];
+//     return os;
+// }
 
 template<std::size_t N>
 class CorrFuncNDBase {
@@ -2745,8 +2765,8 @@ public:
         return max_index_;
     }
 
-    std::vector<std::size_t> shape_vec() const {
-        std::vector<std::size_t> shape;
+    std::vector <std::size_t> shape_vec() const {
+        std::vector <std::size_t> shape;
         for (const auto& b : binners_) { shape.push_back(b.get_nbins()); }
         return shape;
     }
@@ -2767,94 +2787,164 @@ public:
         on_bin_nn_update();
     }
 
-    vec_norm_type
-    calculate_xi(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
-        if (dd_.n_tot() == 0 || dr_.n_tot() == 0) {
-            throw std::runtime_error(
-                    "Cannot calculate correlation function without at least DD and DR run");
-        }
-        vec_norm_type xi(max_index_);
-        auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts(),
-                nrr = rr_.normed_counts(), nrd = rd_.normed_counts();
+    vec_norm_type calculate_xi_numerator(
+            CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        vec_norm_type num;
         switch (estimator) {
-            case CFEstimator::Peebles:
+            case CFEstimator::Landy_Szalay: {
+                if (dd_.n_tot() == 0 || dr_.n_tot() == 0 || rr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Landy-Szalay estimator without at least DD, DR, and RR");
+                }
+                auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts(),
+                        nrr = rr_.normed_counts();
+                auto nrd = rd_.n_tot() > 0 ? rd_.normed_counts() : dr_
+                        .normed_counts();
                 std::transform(ndd.begin(),
                                ndd.end(),
                                ndr.begin(),
-                               xi.begin(),
-                               std::divides<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x - 1; });
-            case CFEstimator::Hamilton:
-                if (rr_.n_tot() == 0) {
-                    throw std::runtime_error(
-                            "Cannot calculate Hamilton estimator without RR");
-                }
-                std::transform(ndd.begin(),
-                               ndd.end(),
-                               nrr.begin(),
-                               xi.begin(),
-                               std::multiplies<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               ndr.begin(),
-                               xi.begin(),
-                               [](norm_type x, norm_type y) {
-                                   return x / math::power(y, 2);
-                               });
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x - 1; });
-            case CFEstimator::Dodelson:
-                if (rr_.n_tot() == 0) {
-                    throw std::runtime_error(
-                            "Cannot calculate Dodelson estimator without RR");
-                }
-                std::transform(nrr.begin(),
-                               nrr.end(),
-                               ndr.begin(),
-                               xi.begin(),
+                               std::back_inserter(num),
                                std::minus<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               ndd.begin(),
-                               xi.begin(),
-                               std::divides<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x + 1; });
-            case CFEstimator::Landy_Szalay:
-                if (rr_.n_tot() == 0) {
+                std::transform(num.begin(),
+                               num.end(),
+                               nrd.begin(),
+                               num.begin(),
+                               std::minus<>());
+                std::transform(num.begin(),
+                               num.end(),
+                               nrr.begin(),
+                               num.begin(),
+                               std::plus<>());
+                break;
+            }
+            case CFEstimator::Dodelson: {
+                if (dd_.n_tot() == 0 || dr_.n_tot() == 0 || rr_.n_tot() == 0) {
                     throw std::runtime_error(
-                            "Cannot calculate Landy-Szalay estimator without RR");
+                            "Cannot calculate Dodelson estimator without DD, DR, and RR");
                 }
-                if (rd_.n_tot() == 0) {
-                    nrd = ndr;
+                auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts(),
+                        nrr = rr_.normed_counts();
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(num),
+                               std::minus<>());
+                std::transform(num.begin(),
+                               num.end(),
+                               nrr.begin(),
+                               num.begin(),
+                               std::plus<>());
+                break;
+            }
+            case CFEstimator::Hamilton: {
+                if (dd_.n_tot() == 0 || dr_.n_tot() == 0 || rr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hamilton estimator without DD, DR, and RR");
                 }
+                auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts(),
+                        nrr = rr_.normed_counts();
                 std::transform(ndr.begin(),
                                ndr.end(),
-                               nrd.begin(),
                                ndr.begin(),
-                               std::plus<>());
+                               [](norm_type x) { return math::square(x); });
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               nrr.begin(),
+                               std::back_inserter(num),
+                               std::multiplies<>());
+                std::transform(num.begin(),
+                               num.end(),
+                               ndr.begin(),
+                               num.begin(),
+                               std::minus<>());
+                break;
+            }
+            case CFEstimator::Davis_Peebles: {
+                if (dd_.n_tot() == 0 || dr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Davis & Peebles estimator without DD and DR");
+                }
+                auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts();
                 std::transform(ndd.begin(),
                                ndd.end(),
                                ndr.begin(),
-                               xi.begin(),
+                               std::back_inserter(num),
                                std::minus<>());
-                std::transform(xi.begin(),
-                               xi.end(),
+                break;
+            }
+            case CFEstimator::Peebles_Hauser: {
+                if (dd_.n_tot() == 0 || rr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Peebles & Hauser estimator without DD and RR");
+                }
+                auto ndd = dd_.normed_counts(), nrr = rr_.normed_counts();
+                std::transform(ndd.begin(),
+                               ndd.end(),
                                nrr.begin(),
-                               xi.begin(),
-                               std::divides<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x + 1; });
+                               std::back_inserter(num),
+                               std::minus<>());
+                break;
+            }
+            case CFEstimator::Hewett: {
+                if (dd_.n_tot() == 0 || dr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hewett estimator numerator without DD and DR");
+                }
+                auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts();
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(num),
+                               std::minus<>());
+                break;
+            }
         }
+        return num;
+    }
+
+    vec_norm_type
+    calculate_xi(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        auto xi = calculate_xi_numerator(estimator);
+        vec_norm_type denom;
+        switch (estimator) {
+            case CFEstimator::Landy_Szalay: {
+                denom = rr_.normed_counts();
+                break;
+            }
+            case CFEstimator::Dodelson: {
+                denom = dd_.normed_counts();
+                break;
+            }
+            case CFEstimator::Hamilton: {
+                denom = dr_.normed_counts();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               [](norm_type x) { return math::square(x); });
+                break;
+            }
+            case CFEstimator::Davis_Peebles: {
+                denom = dr_.normed_counts();
+                break;
+            }
+            case CFEstimator::Peebles_Hauser: {
+                denom = rr_.normed_counts();
+                break;
+            }
+            case CFEstimator::Hewett: {
+                if (rr_.n_tot() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hewett estimator denominator without RR");
+                }
+                denom = rr_.normed_counts();
+                break;
+            }
+        }
+        std::transform(xi.begin(),
+                       xi.end(),
+                       denom.begin(),
+                       xi.begin(),
+                       std::divides<>());
         return xi;
     }
 
@@ -2904,7 +2994,8 @@ public:
     using Base::Base;
 
     // NOLINTNEXTLINE(google-explicit-conversions)
-    CorrFuncND(const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
+    CorrFuncND(
+            const Base& b) // NOLINT(google-explicit-constructor,hicpp-explicit-conversions)
             : Base(b) {}
 };
 
@@ -2960,7 +3051,7 @@ public:
         update_binning(new_binning, 1, prefer_old);
     }
 
-    std::tuple<std::size_t, std::size_t> shape() const {
+    std::tuple <std::size_t, std::size_t> shape() const {
         return std::make_tuple(binners_.at(0).get_nbins(),
                                binners_.at(1).get_nbins());
     }
@@ -3003,7 +3094,7 @@ public:
         update_binning(new_binning, 0, prefer_old);
     }
 
-    std::tuple<std::size_t> shape() const {
+    std::tuple <std::size_t> shape() const {
         return std::make_tuple(max_index_);
     }
 };
@@ -3015,17 +3106,13 @@ class ExpectedCorrFuncND {
     using BSType = std::array<BinSpecifier, N>;
     using BBSType = std::array<BinSpecifier, 2 * N>;
 
-    std::vector<vec_norm_type>
+    std::vector <vec_norm_type>
     calculate_xi_i(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ == 0) {
             return std::vector<vec_norm_type>(n_real_,
                                               vec_norm_type(max_index_, 0.0));
         }
-        if (dd_.n_real_ == 0 || dr_.n_real_ == 0) {
-            throw std::runtime_error(
-                    "Cannot calculate correlation function without at least DD and DR");
-        }
-        std::vector<vec_norm_type> xi;
+        std::vector <vec_norm_type> xi;
         for (std::size_t i = 0; i < n_real_; i++) {
             CorrFuncND<N> cf(dd_[i], rr_[i], dr_[i], rd_[i]);
             xi.push_back(cf.calculate_xi(estimator));
@@ -3044,9 +3131,10 @@ protected:
     ENNType verify_nn(const ENNType& nn) const {
         ENNType out = ENNType::remove_empty_realizations(nn);
         if (n_real_ > 0) {
-            if (out.n_real_ != n_real_) {
+            if (out.n_real() != n_real_) {
                 throw std::invalid_argument(out.class_name
-                                            + " instance given has different number of realizations");
+                                            + " instance given has different number of realizations than expected ("
+                                            + std::to_string(n_real_) + ")");
             }
         }
         return out;
@@ -3068,7 +3156,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(verify_nn(dd)),
+              dd_(ENNType::remove_empty_realizations(dd)),
               n_real_(dd_.n_real_) {}
 
     ExpectedCorrFuncND(const ENNType& dd, const ENNType& rr)
@@ -3076,7 +3164,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(verify_nn(dd)),
+              dd_(ENNType::remove_empty_realizations(dd)),
               n_real_(dd_.n_real_),
               rr_(verify_nn(rr)) {}
 
@@ -3085,7 +3173,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(verify_nn(dd)),
+              dd_(ENNType::remove_empty_realizations(dd)),
               n_real_(dd_.n_real_),
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)) {}
@@ -3096,7 +3184,7 @@ public:
               cov_binners_(arrays::repeat_array<2>(binners_)),
               max_index_(get_max_index(binners_)),
               max_cov_index_(get_max_index(cov_binners_)),
-              dd_(verify_nn(dd)),
+              dd_(ENNType::remove_empty_realizations(dd)),
               n_real_(dd_.n_real_),
               rr_(verify_nn(rr)),
               dr_(verify_nn(dr)),
@@ -3114,8 +3202,8 @@ public:
         return max_index_;
     }
 
-    std::vector<std::size_t> mean_shape() const {
-        std::vector<std::size_t> shape;
+    std::vector <std::size_t> mean_shape() const {
+        std::vector <std::size_t> shape;
         for (const auto& b : binners_) { shape.push_back(b.get_nbins()); }
         return shape;
     }
@@ -3124,8 +3212,8 @@ public:
         return max_cov_index_;
     }
 
-    std::vector<std::size_t> cov_shape() const {
-        std::vector<std::size_t> shape;
+    std::vector <std::size_t> cov_shape() const {
+        std::vector <std::size_t> shape;
         for (const auto& b : cov_binners_) { shape.push_back(b.get_nbins()); }
         return shape;
     }
@@ -3151,6 +3239,7 @@ public:
 
     void dd(const ENNType& dd) {
         dd_ = verify_nn(dd);
+        if (n_real_ == 0) { n_real_ = dd_.n_real(); }
     }
 
     const ENNType& rr() const {
@@ -3159,6 +3248,7 @@ public:
 
     void rr(const ENNType& rr) {
         rr_ = verify_nn(rr);
+        if (n_real_ == 0) { n_real_ = rr_.n_real(); }
     }
 
     const ENNType& dr() const {
@@ -3167,6 +3257,7 @@ public:
 
     void dr(const ENNType& dr) {
         dr_ = verify_nn(dr);
+        if (n_real_ == 0) { n_real_ = dr_.n_real(); }
     }
 
     const ENNType& rd() const {
@@ -3175,107 +3266,174 @@ public:
 
     void rd(const ENNType& rd) {
         rd_ = verify_nn(rd);
+        if (n_real_ == 0) { n_real_ = rd_.n_real(); }
+    }
+
+    vec_norm_type calculate_xi_numerator(
+            CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        if (n_real_ == 0) { return vec_norm_type(max_index_, 0.0); }
+        vec_norm_type num;
+        switch (estimator) {
+            case CFEstimator::Landy_Szalay: {
+                if (dd_.n_real() == 0 || dr_.n_real() == 0
+                    || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Landy-Szalay estimator without at least DD, DR, and RR");
+                }
+                auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean();
+                auto nrd = rd_.n_tot() > 0 ? rd_.mean() : dr_.mean();
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(num),
+                               std::minus<>());
+                std::transform(num.begin(),
+                               num.end(),
+                               nrd.begin(),
+                               num.begin(),
+                               std::minus<>());
+                std::transform(num.begin(),
+                               num.end(),
+                               nrr.begin(),
+                               num.begin(),
+                               std::plus<>());
+                break;
+            }
+            case CFEstimator::Dodelson: {
+                if (dd_.n_real() == 0 || dr_.n_real() == 0
+                    || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Dodelson estimator without DD, DR, and RR");
+                }
+                auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean();
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(num),
+                               std::minus<>());
+                std::transform(num.begin(),
+                               num.end(),
+                               nrr.begin(),
+                               num.begin(),
+                               std::plus<>());
+                break;
+            }
+            case CFEstimator::Hamilton: {
+                if (dd_.n_real() == 0 || dr_.n_real() == 0
+                    || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hamilton estimator without DD, DR, and RR");
+                }
+                auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean();
+                std::transform(ndr.begin(),
+                               ndr.end(),
+                               ndr.begin(),
+                               [](norm_type x) { return math::square(x); });
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               nrr.begin(),
+                               std::back_inserter(num),
+                               std::multiplies<>());
+                std::transform(num.begin(),
+                               num.end(),
+                               ndr.begin(),
+                               num.begin(),
+                               std::minus<>());
+                break;
+            }
+            case CFEstimator::Davis_Peebles: {
+                if (dd_.n_real() == 0 || dr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Davis & Peebles estimator without DD and DR");
+                }
+                auto ndd = dd_.mean(), ndr = dr_.mean();
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(num),
+                               std::minus<>());
+                break;
+            }
+            case CFEstimator::Peebles_Hauser: {
+                if (dd_.n_real() == 0 || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Peebles & Hauser estimator without DD and RR");
+                }
+                auto ndd = dd_.mean(), nrr = rr_.mean();
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               nrr.begin(),
+                               std::back_inserter(num),
+                               std::minus<>());
+                break;
+            }
+            case CFEstimator::Hewett: {
+                if (dd_.n_real() == 0 || dr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hewett estimator numerator without DD and DR");
+                }
+                auto ndd = dd_.mean(), ndr = dr_.mean();
+                std::transform(ndd.begin(),
+                               ndd.end(),
+                               ndr.begin(),
+                               std::back_inserter(num),
+                               std::minus<>());
+                break;
+            }
+        }
+        return num;
     }
 
     vec_norm_type
     calculate_xi(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ == 0) { return vec_norm_type(max_index_, 0.0); }
-        if (dd_.n_real_ == 0 || dr_.n_real_ == 0) {
-            throw std::runtime_error(
-                    "Cannot calculate correlation function without at least DD and RR");
-        }
-        vec_norm_type xi;
-        auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean(),
-                nrd = rd_.mean();
+        auto xi = calculate_xi_numerator(estimator);
+        vec_norm_type denom;
         switch (estimator) {
-            case CFEstimator::Peebles:
-                std::transform(ndd.begin(),
-                               ndd.end(),
-                               ndr.begin(),
-                               std::back_inserter(xi),
-                               std::divides());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x - 1; });
-            case CFEstimator::Hamilton:
-                if (rr_.n_real_ == 0) {
+            case CFEstimator::Landy_Szalay: {
+                denom = rr_.mean();
+                break;
+            }
+            case CFEstimator::Dodelson: {
+                denom = dd_.mean();
+                break;
+            }
+            case CFEstimator::Hamilton: {
+                denom = dr_.mean();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               math::square<norm_type>);
+                break;
+            }
+            case CFEstimator::Davis_Peebles: {
+                denom = dr_.mean();
+                break;
+            }
+            case CFEstimator::Peebles_Hauser: {
+                denom = rr_.mean();
+                break;
+            }
+            case CFEstimator::Hewett: {
+                if (rr_.n_real() == 0) {
                     throw std::runtime_error(
-                            "Cannot calculate Hamilton estimator without RR");
+                            "Cannot calculate Hewett estimator denominator without RR");
                 }
-                std::transform(ndd.begin(),
-                               ndd.end(),
-                               nrr.begin(),
-                               std::back_inserter(xi),
-                               std::multiplies<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               ndr.begin(),
-                               xi.begin(),
-                               [](norm_type x, norm_type y) {
-                                   return x / math::power(y, 2);
-                               });
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x - 1; });
-            case CFEstimator::Dodelson:
-                if (rr_.n_real_ == 0) {
-                    throw std::runtime_error(
-                            "Cannot calculate Dodelson estimator without RR");
-                }
-                std::transform(nrr.begin(),
-                               nrr.end(),
-                               ndr.begin(),
-                               std::back_inserter(xi),
-                               std::minus<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               ndd.begin(),
-                               xi.begin(),
-                               std::divides<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x + 1; });
-            case CFEstimator::Landy_Szalay:
-                if (rr_.n_real_ == 0) {
-                    throw std::runtime_error(
-                            "Cannot calculate Landy-Szalay estimator without RR");
-                }
-                if (rd_.n_real_ == 0) {
-                    nrd = ndr;
-                }
-                std::transform(ndr.begin(),
-                               ndr.end(),
-                               nrd.begin(),
-                               ndr.begin(),
-                               std::plus<>());
-                std::transform(ndd.begin(),
-                               ndd.end(),
-                               ndr.begin(),
-                               std::back_inserter(xi),
-                               std::minus<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               nrr.begin(),
-                               xi.begin(),
-                               std::divides<>());
-                std::transform(xi.begin(),
-                               xi.end(),
-                               xi.begin(),
-                               [](norm_type x) { return x + 1; });
+                denom = rr_.mean();
+                break;
+            }
         }
+        std::transform(xi.begin(),
+                       xi.end(),
+                       denom.begin(),
+                       xi.begin(),
+                       std::divides<>());
         return xi;
     }
 
     vec_norm_type
     calculate_xi_cov(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ < 2) { return vec_norm_type(max_cov_index_, 0.0); }
-        if (dd_.n_real_ == 0 || dr_.n_real_ == 0) {
-            throw std::runtime_error(
-                    "Cannot calculate correlation function without at least DD and DR");
-        }
         auto xi_i = arrays::transpose_vector(calculate_xi_i(estimator));
         auto xi_mean = calculate_xi(estimator);
         vec_norm_type xi_cov(max_cov_index_, 0.0);

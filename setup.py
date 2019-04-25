@@ -9,6 +9,7 @@ from setuptools.command.test import test as TestCommand
 from distutils.version import LooseVersion
 import subprocess
 from configobj import ConfigObj
+import multiprocessing
 
 cd_dir = pathlib.Path(__file__).parent.resolve()
 cwd = pathlib.Path.cwd()
@@ -57,7 +58,8 @@ class CMakeBuild(build_ext):
         ("omp=", None, "Number of OpenMP threads to use, or 0 for no OpenMP"),
         ("vers=", None, "Version of C++ code to compile"),
         ("c=", None, "C compiler to use (blank for system default)"),
-        ("cxx=", None, "C++ compiler to use (blank for system default)") 
+        ("cxx=", None, "C++ compiler to use (blank for system default)"),
+        ("j=", "j", "Set number of processes for parallel builds")
         ]
 
     def initialize_options(self):
@@ -66,6 +68,7 @@ class CMakeBuild(build_ext):
         self.vers = None
         self.c = None
         self.cxx = None
+        self.j = None
 
     def finalize_options(self):
         build_ext.finalize_options(self)
@@ -116,7 +119,8 @@ class CMakeBuild(build_ext):
             build_args += ['--', '/m']
         else:
             cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
-            build_args += ['--', '-j2']
+            if self.j is not None:
+                build_args += ['--', '-j{}'.format(self.j)]
 
         env = os.environ.copy()
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(
