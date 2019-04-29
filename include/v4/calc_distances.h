@@ -2824,6 +2824,10 @@ public:
                 }
                 auto ndd = dd_.normed_counts(), ndr = dr_.normed_counts(),
                         nrr = rr_.normed_counts();
+                std::transform(ndr.begin(),
+                               ndr.end(),
+                               ndr.begin(),
+                               [](norm_type x) { return 2 * x; });
                 std::transform(ndd.begin(),
                                ndd.end(),
                                ndr.begin(),
@@ -3306,6 +3310,10 @@ public:
                             "Cannot calculate Dodelson estimator without DD, DR, and RR");
                 }
                 auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean();
+                std::transform(ndr.begin(),
+                               ndr.end(),
+                               ndr.begin(),
+                               [](norm_type x) { return 2 * x; });
                 std::transform(ndd.begin(),
                                ndd.end(),
                                ndr.begin(),
