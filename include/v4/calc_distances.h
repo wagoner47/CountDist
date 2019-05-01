@@ -2609,6 +2609,10 @@ enum class CFEstimator {
 //     return os;
 // }
 
+vec_norm_type calculate_xi_from_vecs(vec_norm_type&& dd, vec_norm_type&& dr,
+                                     vec_norm_type&& rd, vec_norm_type&& rr,
+                                     CFEstimator estimator = CFEstimator::Landy_Szalay);
+
 template<std::size_t N>
 class CorrFuncNDBase {
     using NNType = NNCountsND<N>;
@@ -3110,16 +3114,89 @@ class ExpectedCorrFuncND {
     using BSType = std::array<BinSpecifier, N>;
     using BBSType = std::array<BinSpecifier, 2 * N>;
 
+    static vec_norm_type get_debiased_normed_counts(const ENNType& nn,
+                                                    const std::function<
+                                                            norm_type(
+                                                                    norm_type)>& bias,
+                                                    std::size_t real_num) {
+        if (nn.n_real() < real_num) { return vec_norm_type(nn.mean_size(), 0); }
+        vec_norm_type norm_counts = nn.normed_counts().at(real_num);
+        std::transform(norm_counts.begin(),
+                       norm_counts.end(),
+                       norm_counts.begin(),
+                       bias);
+        return norm_counts;
+    }
+
     std::vector <vec_norm_type>
-    calculate_xi_i(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+    calculate_xi_i(const std::function<norm_type(norm_type)>& bias_dd,
+                   const std::function<norm_type(norm_type)>& bias_dr,
+                   const std::function<norm_type(norm_type)>& bias_rd,
+                   const std::function<norm_type(norm_type)>& bias_rr,
+                   CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ == 0) {
             return std::vector<vec_norm_type>(n_real_,
                                               vec_norm_type(max_index_, 0.0));
         }
+        switch (estimator) {
+            case CFEstimator::Landy_Szalay:
+                if (dd_.n_real() == 0 || dr_.n_real() == 0
+                    || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Landy-Szalay estimator without at least DD, DR, and RR");
+                }
+                break;
+            case CFEstimator::Dodelson:
+                if (dd_.n_real() == 0 || dr_.n_real() == 0
+                    || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Dodelson estimator without DD, DR, and RR");
+                }
+                break;
+            case CFEstimator::Hamilton:
+                if (dd_.n_real() == 0 || dr_.n_real() == 0
+                    || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hamilton estimator without DD, DR, and RR");
+                }
+                break;
+            case CFEstimator::Hewett:
+                if (dd_.n_real() == 0 || dr_.n_real() == 0
+                    || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Hewett estimator without DD, DR, and RR");
+                }
+                break;
+            case CFEstimator::Davis_Peebles:
+                if (dd_.n_real() == 0 || dr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Davis & Peebles estimator without DD and DR");
+                }
+                break;
+            case CFEstimator::Peebles_Hauser:
+                if (dd_.n_real() == 0 || rr_.n_real() == 0) {
+                    throw std::runtime_error(
+                            "Cannot calculate Peebles & Hauser estimator without DD and RR");
+                }
+                break;
+        }
+
         std::vector <vec_norm_type> xi;
         for (std::size_t i = 0; i < n_real_; i++) {
-            CorrFuncND<N> cf(dd_[i], rr_[i], dr_[i], rd_[i]);
-            xi.push_back(cf.calculate_xi(estimator));
+            xi.push_back(calculate_xi_from_vecs(get_debiased_normed_counts(dd_,
+                                                                           bias_dd,
+                                                                           i),
+                                                get_debiased_normed_counts(dr_,
+                                                                           bias_dr,
+                                                                           i),
+                                                get_debiased_normed_counts(
+                                                        rd_.n_real() > 0
+                                                        ? rd_
+                                                        : dr_, bias_rd, i),
+                                                get_debiased_normed_counts(rr_,
+                                                                           bias_rr,
+                                                                           i),
+                                                estimator));
         }
         return xi;
     }
@@ -3273,8 +3350,12 @@ public:
         if (n_real_ == 0) { n_real_ = rd_.n_real(); }
     }
 
-    vec_norm_type calculate_xi_numerator(
-            CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+    vec_norm_type
+    calculate_xi_numerator(const std::function<norm_type(norm_type)>& bias_dd,
+                           const std::function<norm_type(norm_type)>& bias_dr,
+                           const std::function<norm_type(norm_type)>& bias_rd,
+                           const std::function<norm_type(norm_type)>& bias_rr,
+                           CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ == 0) { return vec_norm_type(max_index_, 0.0); }
         vec_norm_type num;
         switch (estimator) {
@@ -3286,6 +3367,10 @@ public:
                 }
                 auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean();
                 auto nrd = rd_.n_tot() > 0 ? rd_.mean() : dr_.mean();
+                std::transform(ndd.begin(), ndd.end(), ndd.begin(), bias_dd);
+                std::transform(ndr.begin(), ndr.end(), ndr.begin(), bias_dr);
+                std::transform(nrd.begin(), nrd.end(), nrd.begin(), bias_rd);
+                std::transform(nrr.begin(), nrr.end(), nrr.begin(), bias_rr);
                 std::transform(ndd.begin(),
                                ndd.end(),
                                ndr.begin(),
@@ -3310,6 +3395,9 @@ public:
                             "Cannot calculate Dodelson estimator without DD, DR, and RR");
                 }
                 auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean();
+                std::transform(ndd.begin(), ndd.end(), ndd.begin(), bias_dd);
+                std::transform(ndr.begin(), ndr.end(), ndr.begin(), bias_dr);
+                std::transform(nrr.begin(), nrr.end(), nrr.begin(), bias_rr);
                 std::transform(ndr.begin(),
                                ndr.end(),
                                ndr.begin(),
@@ -3333,6 +3421,9 @@ public:
                             "Cannot calculate Hamilton estimator without DD, DR, and RR");
                 }
                 auto ndd = dd_.mean(), ndr = dr_.mean(), nrr = rr_.mean();
+                std::transform(ndd.begin(), ndd.end(), ndd.begin(), bias_dd);
+                std::transform(ndr.begin(), ndr.end(), ndr.begin(), bias_dr);
+                std::transform(nrr.begin(), nrr.end(), nrr.begin(), bias_rr);
                 std::transform(ndr.begin(),
                                ndr.end(),
                                ndr.begin(),
@@ -3355,6 +3446,8 @@ public:
                             "Cannot calculate Davis & Peebles estimator without DD and DR");
                 }
                 auto ndd = dd_.mean(), ndr = dr_.mean();
+                std::transform(ndd.begin(), ndd.end(), ndd.begin(), bias_dd);
+                std::transform(ndr.begin(), ndr.end(), ndr.begin(), bias_dr);
                 std::transform(ndd.begin(),
                                ndd.end(),
                                ndr.begin(),
@@ -3368,6 +3461,8 @@ public:
                             "Cannot calculate Peebles & Hauser estimator without DD and RR");
                 }
                 auto ndd = dd_.mean(), nrr = rr_.mean();
+                std::transform(ndd.begin(), ndd.end(), ndd.begin(), bias_dd);
+                std::transform(nrr.begin(), nrr.end(), nrr.begin(), bias_rr);
                 std::transform(ndd.begin(),
                                ndd.end(),
                                nrr.begin(),
@@ -3380,7 +3475,10 @@ public:
                     throw std::runtime_error(
                             "Cannot calculate Hewett estimator numerator without DD and DR");
                 }
+
                 auto ndd = dd_.mean(), ndr = dr_.mean();
+                std::transform(ndd.begin(), ndd.end(), ndd.begin(), bias_dd);
+                std::transform(ndr.begin(), ndr.end(), ndr.begin(), bias_dr);
                 std::transform(ndd.begin(),
                                ndd.end(),
                                ndr.begin(),
@@ -3393,21 +3491,84 @@ public:
     }
 
     vec_norm_type
-    calculate_xi(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+    calculate_xi_numerator(const std::function<norm_type(norm_type)>& bias_dd,
+                           const std::function<norm_type(norm_type)>& bias_dr,
+                           const std::function<norm_type(norm_type)>& bias_rr,
+                           CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        return calculate_xi_numerator(bias_dd,
+                                      bias_dr,
+                                      bias_dr,
+                                      bias_rr,
+                                      estimator);
+    }
+
+    vec_norm_type
+    calculate_xi_numerator(const std::function<norm_type(norm_type)>& bias_dd,
+                           const std::function<
+                                   norm_type(norm_type)>& bias_other,
+                           CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        return calculate_xi_numerator(bias_dd,
+                                      bias_other,
+                                      bias_other,
+                                      bias_other,
+                                      estimator);
+    }
+
+    vec_norm_type
+    calculate_xi_numerator(const std::function<norm_type(norm_type)>& bias_dd,
+                           CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        std::function < norm_type(norm_type) > bias_other =
+                [](norm_type x) { return x; };
+        return calculate_xi_numerator(bias_dd,
+                                      bias_other,
+                                      bias_other,
+                                      bias_other,
+                                      estimator);
+    }
+
+    vec_norm_type calculate_xi_numerator(
+            CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        std::function < norm_type(norm_type) > bias =
+                [](norm_type x) { return x; };
+        return calculate_xi_numerator(bias, bias, bias, bias, estimator);
+    }
+
+    vec_norm_type
+    calculate_xi(const std::function<norm_type(norm_type)>& bias_dd,
+                 const std::function<norm_type(norm_type)>& bias_dr,
+                 const std::function<norm_type(norm_type)>& bias_rd,
+                 const std::function<norm_type(norm_type)>& bias_rr,
+                 CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ == 0) { return vec_norm_type(max_index_, 0.0); }
-        auto xi = calculate_xi_numerator(estimator);
+        auto xi = calculate_xi_numerator(bias_dd,
+                                         bias_dr,
+                                         bias_rd,
+                                         bias_rr,
+                                         estimator);
         vec_norm_type denom;
         switch (estimator) {
             case CFEstimator::Landy_Szalay: {
                 denom = rr_.mean();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               bias_rr);
                 break;
             }
             case CFEstimator::Dodelson: {
                 denom = dd_.mean();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               bias_dd);
                 break;
             }
             case CFEstimator::Hamilton: {
                 denom = dr_.mean();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               bias_dr);
                 std::transform(denom.begin(),
                                denom.end(),
                                denom.begin(),
@@ -3416,10 +3577,18 @@ public:
             }
             case CFEstimator::Davis_Peebles: {
                 denom = dr_.mean();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               bias_dr);
                 break;
             }
             case CFEstimator::Peebles_Hauser: {
                 denom = rr_.mean();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               bias_rr);
                 break;
             }
             case CFEstimator::Hewett: {
@@ -3428,6 +3597,10 @@ public:
                             "Cannot calculate Hewett estimator denominator without RR");
                 }
                 denom = rr_.mean();
+                std::transform(denom.begin(),
+                               denom.end(),
+                               denom.begin(),
+                               bias_rr);
                 break;
             }
         }
@@ -3440,25 +3613,73 @@ public:
     }
 
     vec_norm_type
-    calculate_xi_cov(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+    calculate_xi(const std::function<norm_type(norm_type)>& bias_dd,
+                 const std::function<norm_type(norm_type)>& bias_dr,
+                 const std::function<norm_type(norm_type)>& bias_rr,
+                 CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        return calculate_xi(bias_dd, bias_dr, bias_dr, bias_rr, estimator);
+    }
+
+    vec_norm_type
+    calculate_xi(const std::function<norm_type(norm_type)>& bias_dd,
+                 const std::function<norm_type(norm_type)>& bias_other,
+                 CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        return calculate_xi(bias_dd,
+                            bias_other,
+                            bias_other,
+                            bias_other,
+                            estimator);
+    }
+
+    vec_norm_type
+    calculate_xi(const std::function<norm_type(norm_type)>& bias_dd,
+                 CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        std::function < norm_type(norm_type) > bias_other =
+                [](norm_type x) { return x; };
+        return calculate_xi(bias_dd,
+                            bias_other,
+                            bias_other,
+                            bias_other,
+                            estimator);
+    }
+
+    vec_norm_type
+    calculate_xi(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        std::function < norm_type(norm_type) > bias =
+                [](norm_type x) { return x; };
+        return calculate_xi(bias, bias, bias, bias, estimator);
+    }
+
+    vec_norm_type
+    calculate_xi_cov(const std::function<norm_type(norm_type)>& bias_dd,
+                     const std::function<norm_type(norm_type)>& bias_dr,
+                     const std::function<norm_type(norm_type)>& bias_rd,
+                     const std::function<norm_type(norm_type)>& bias_rr,
+                     CFEstimator estimator = CFEstimator::Landy_Szalay) const {
         if (n_real_ < 2) { return vec_norm_type(max_cov_index_, 0.0); }
-        auto xi_i = arrays::transpose_vector(calculate_xi_i(estimator));
-        auto xi_mean = calculate_xi(estimator);
+        auto xi_i = arrays::transpose_vector(calculate_xi_i(bias_dd,
+                                                            bias_dr,
+                                                            bias_rd,
+                                                            bias_rr,
+                                                            estimator));
+        auto xi_mean =
+                calculate_xi(bias_dd, bias_dr, bias_rd, bias_rr, estimator);
         vec_norm_type xi_cov(max_cov_index_, 0.0);
         for (std::size_t i = 0; i < max_index_; i++) {
             for (std::size_t j = 0; j < max_index_; j++) {
                 auto tempi = xi_i.at(i), tempj = xi_i.at(j);
+                auto m_xi_i = xi_mean.at(i), m_xi_j = xi_mean.at(j);
                 std::transform(tempi.begin(),
                                tempi.end(),
                                tempi.begin(),
                                [&](norm_type el) {
-                                   return el - xi_mean.at(i);
+                                   return el - m_xi_i;
                                });
                 std::transform(tempj.begin(),
                                tempj.end(),
                                tempj.begin(),
                                [&](norm_type el) {
-                                   return el - xi_mean.at(j);
+                                   return el - m_xi_j;
                                });
                 std::transform(tempi.begin(),
                                tempi.end(),
@@ -3470,6 +3691,44 @@ public:
             }
         }
         return xi_cov;
+    }
+
+    vec_norm_type
+    calculate_xi_cov(const std::function<norm_type(norm_type)>& bias_dd,
+                     const std::function<norm_type(norm_type)>& bias_dr,
+                     const std::function<norm_type(norm_type)>& bias_rr,
+                     CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        return calculate_xi_cov(bias_dd, bias_dr, bias_dr, bias_rr, estimator);
+    }
+
+    vec_norm_type
+    calculate_xi_cov(const std::function<norm_type(norm_type)>& bias_dd,
+                     const std::function<norm_type(norm_type)>& bias_other,
+                     CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        return calculate_xi_cov(bias_dd,
+                                bias_other,
+                                bias_other,
+                                bias_other,
+                                estimator);
+    }
+
+    vec_norm_type
+    calculate_xi_cov(const std::function<norm_type(norm_type)>& bias_dd,
+                     CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        std::function < norm_type(norm_type) > bias_other =
+                [](norm_type x) { return x; };
+        return calculate_xi_cov(bias_dd,
+                                bias_other,
+                                bias_other,
+                                bias_other,
+                                estimator);
+    }
+
+    vec_norm_type
+    calculate_xi_cov(CFEstimator estimator = CFEstimator::Landy_Szalay) const {
+        std::function < norm_type(norm_type) > bias =
+                [](norm_type x) { return x; };
+        return calculate_xi_cov(bias, bias, bias, bias, estimator);
     }
 
     std::string toString() const {

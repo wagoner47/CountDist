@@ -4,6 +4,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/operators.h>
 #include <pybind11/iostream.h>
+#include <pybind11/functional.h>
 #include <stdexcept>
 #include <cstddef>
 #include <iostream>
@@ -13,6 +14,7 @@
 #include <string>
 #include <type_traits>
 #include <tuple>
+#include <functional>
 #include "fast_math.h"
 #include "calc_distances.h"
 
@@ -86,9 +88,9 @@ struct TOSepDType {
 };
 
 template<typename T>
-py::array_t<T, 0> mkarray_from_vec(const std::vector<T>& vec,
-                                   const std::vector<std::size_t>& shape) {
-    std::vector<std::size_t> strides(shape.size());
+py::array_t<T, 0> mkarray_from_vec(const std::vector <T>& vec,
+                                   const std::vector <std::size_t>& shape) {
+    std::vector <std::size_t> strides(shape.size());
     for (std::size_t i = 0; i < shape.size(); i++) {
         std::size_t this_size = sizeof(T);
         for (std::size_t j = i + 1; j < shape.size(); j++) {
@@ -241,7 +243,7 @@ convert_vector_separations(const std::vector <TOSeparation>& vs) {
                                                                  set_toseparations);
 }
 
-std::vector<Pos> convert_catalog(const py::array_t <PosCatalog>& arr) {
+std::vector <Pos> convert_catalog(const py::array_t <PosCatalog>& arr) {
     auto uarr = arr.unchecked<1>();
     auto n = (std::size_t) uarr.size();
     std::vector <Pos> vec;
@@ -253,7 +255,7 @@ std::vector<Pos> convert_catalog(const py::array_t <PosCatalog>& arr) {
     return vec;
 }
 
-std::vector<SPos> convert_catalog(const py::array_t <SPosCatalog>& arr) {
+std::vector <SPos> convert_catalog(const py::array_t <SPosCatalog>& arr) {
     auto uarr = arr.unchecked<1>();
     auto n = (std::size_t) uarr.size();
     std::vector <SPos> vec(n);
@@ -1276,7 +1278,7 @@ static void declarePos(py::module& mod) {
 }
 
 template<std::size_t N>
-static py::class_<NNCountsND<N>> declareNNCountsND(py::module& mod) {
+static py::class_ <NNCountsND<N>> declareNNCountsND(py::module& mod) {
     using Class = NNCountsND<N>;
     using BSType = std::array<BinSpecifier, N>;
     py::class_ <Class> cls(mod,
@@ -1571,7 +1573,7 @@ process_separation(ExpectedNNCountsND<1>& self, const py::array_t<double>& r,
 }
 
 template<std::size_t N>
-static py::class_<ExpectedNNCountsND<N>>
+static py::class_ <ExpectedNNCountsND<N>>
 declareExpectedNNCountsND(py::module& mod) {
     using Base = ExpectedNNCountsNDBase<N>;
     using Class = ExpectedNNCountsND<N>;
@@ -1725,7 +1727,7 @@ declareExpectedNNCountsND(py::module& mod) {
 }
 
 template<std::size_t N>
-py::class_<CorrFuncND<N>> declareCorrFuncND(py::module& mod) {
+py::class_ <CorrFuncND<N>> declareCorrFuncND(py::module& mod) {
     using Class = CorrFuncND<N>;
     using BSType = std::array<BinSpecifier, N>;
     using NNType = NNCountsND<N>;
@@ -1920,11 +1922,142 @@ py::class_ <ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
                      "RD pair counts");
     cls.def("calculate_xi_numerator",
             [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_dr,
+               const std::function<norm_type(norm_type)>& bias_rd,
+               const std::function<norm_type(norm_type)>& bias_rr,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_numerator(bias_dd,
+                                                                    bias_dr,
+                                                                    bias_rd,
+                                                                    bias_rr,
+                                                                    estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the numerator of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts",
+            "bias_dd"_a,
+            "bias_dr"_a,
+            "bias_rd"_a,
+            "bias_rr"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_numerator",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_dr,
+               const std::function<norm_type(norm_type)>& bias_rr,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_numerator(bias_dd,
+                                                                    bias_dr,
+                                                                    bias_rr,
+                                                                    estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the numerator of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The bias function for DR is also used for RD",
+            "bias_dd"_a,
+            "bias_dr"_a,
+            "bias_rr"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_numerator",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_other,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_numerator(bias_dd,
+                                                                    bias_other,
+                                                                    estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the numerator of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The same bias function is used for DR, RD, and RR",
+            "bias_dd"_a,
+            "bias_other"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_numerator",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_numerator(bias_dd,
+                                                                    estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the numerator of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. No bias function (or an identity operator) is applied to DR, RD, and RR",
+            "bias_dd"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_numerator",
+            [](const Class& self,
                CFEstimator estimator = CFEstimator::Landy_Szalay) {
                 return mkarray_from_vec(self.calculate_xi_numerator(estimator),
                                         self.mean_shape());
             },
-            "Calculate the numerator of the expected correlation function for the given estimator",
+            "Calculate the numerator of the expected correlation function for the given estimator. No bias function (or an identity operator) is applied to any of the pair counts",
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_dr,
+               const std::function<norm_type(norm_type)>& bias_rd,
+               const std::function<norm_type(norm_type)>& bias_rr,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi(bias_dd,
+                                                          bias_dr,
+                                                          bias_rd,
+                                                          bias_rr,
+                                                          estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts",
+            "bias_dd"_a,
+            "bias_dr"_a,
+            "bias_rd"_a,
+            "bias_rr"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_dr,
+               const std::function<norm_type(norm_type)>& bias_rr,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi(bias_dd,
+                                                          bias_dr,
+                                                          bias_rr,
+                                                          estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The bias function for DR is also used for RD",
+            "bias_dd"_a,
+            "bias_dr"_a,
+            "bias_rr"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_other,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi(bias_dd,
+                                                          bias_other,
+                                                          estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The same bias function is used for DR, RD, and RR",
+            "bias_dd"_a,
+            "bias_other"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi(bias_dd, estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. No bias function (or an identity operator) is applied to DR, RD, and RR",
+            "bias_dd"_a,
             py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
             py::return_value_policy::copy);
     cls.def("calculate_xi",
@@ -1933,7 +2066,72 @@ py::class_ <ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
                 return mkarray_from_vec(self.calculate_xi(estimator),
                                         self.mean_shape());
             },
-            "Get the mean correlation function",
+            "Get the mean correlation function without de-biasing pair counts (by using an identity operator)",
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_cov",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_dr,
+               const std::function<norm_type(norm_type)>& bias_rd,
+               const std::function<norm_type(norm_type)>& bias_rr,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_cov(bias_dd,
+                                                          bias_dr,
+                                                          bias_rd,
+                                                          bias_rr,
+                                                          estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. WARNING: NOT YET FULLY IMPLEMENTED!",
+            "bias_dd"_a,
+            "bias_dr"_a,
+            "bias_rd"_a,
+            "bias_rr"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_cov",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_dr,
+               const std::function<norm_type(norm_type)>& bias_rr,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_cov(bias_dd,
+                                                          bias_dr,
+                                                          bias_rr,
+                                                          estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The bias function for DR is also used for RD. WARNING: NOT YET FULLY IMPLEMENTED!",
+            "bias_dd"_a,
+            "bias_dr"_a,
+            "bias_rr"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_cov",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               const std::function<norm_type(norm_type)>& bias_other,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_cov(bias_dd,
+                                                          bias_other,
+                                                          estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The same bias function is used for DR, RD, and RR. WARNING: NOT YET FULLY IMPLEMENTED!",
+            "bias_dd"_a,
+            "bias_other"_a,
+            py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
+            py::return_value_policy::copy);
+    cls.def("calculate_xi_cov",
+            [](const Class& self,
+               const std::function<norm_type(norm_type)>& bias_dd,
+               CFEstimator estimator = CFEstimator::Landy_Szalay) {
+                return mkarray_from_vec(self.calculate_xi_cov(bias_dd, estimator),
+                                        self.mean_shape());
+            },
+            "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. No bias function (or an identity operator) is applied to DR, RD, and RR. WARNING: NOT YET FULLY IMPLEMENTED!",
+            "bias_dd"_a,
             py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"),
             py::return_value_policy::copy);
     cls.def("calculate_xi_cov",
@@ -1942,7 +2140,7 @@ py::class_ <ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
                 return mkarray_from_vec(self.calculate_xi_cov(estimator),
                                         self.cov_shape());
             },
-            "Get the covariance matrix of the correlation function",
+            "Get the covariance matrix of the correlation function without debiasing, by applying an identity operator. WARNING: NOT YET FULLY IMPLEMENTED!",
             py::return_value_policy::copy,
             py::arg_v("estimator", CFEstimator::Landy_Szalay, "LS estimator"));
     cls.def("__repr__", &Class::toString);
