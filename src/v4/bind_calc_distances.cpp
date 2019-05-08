@@ -1741,7 +1741,13 @@ py::class_ <CorrFuncND<N>> declareCorrFuncND(py::module& mod) {
             "Copy constructor: create a copy of 'other'",
             "other"_a);
     cls.def(py::init<const BSType&>(), "Initialize from binning", "binners"_a);
-    cls.def(py::init<const NNType&>(), "Initialize with only DD", "dd"_a);
+    //cls.def(py::init<const NNType&>(), "Initialize with only DD", "dd"_a);
+    cls.def(py::init([](const NNType& dd) {
+        std::cout
+                << "constructing with DD"
+                << std::endl;
+        return Class(dd);
+    }), "Initialize with only DD", "dd"_a);
     cls.def(py::init<const BSType&, const NNType&>(),
             "Initialize binning and DD",
             "binners"_a,
@@ -1758,8 +1764,8 @@ py::class_ <CorrFuncND<N>> declareCorrFuncND(py::module& mod) {
     cls.def(py::init<const NNType&, const NNType&, const NNType&>(),
             "Initialize with DD, RR, and DR",
             "dd"_a,
-            "dr"_a,
-            "rr"_a);
+            "rr"_a,
+            "dr"_a);
     cls.def(py::init<const BSType&, const NNType&, const NNType&,
                      const NNType&>(),
             "Initialize with binning, DD, RR, and DR",
@@ -2077,10 +2083,10 @@ py::class_ <ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
                const std::function<norm_type(norm_type)>& bias_rr,
                CFEstimator estimator = CFEstimator::Landy_Szalay) {
                 return mkarray_from_vec(self.calculate_xi_cov(bias_dd,
-                                                          bias_dr,
-                                                          bias_rd,
-                                                          bias_rr,
-                                                          estimator),
+                                                              bias_dr,
+                                                              bias_rd,
+                                                              bias_rr,
+                                                              estimator),
                                         self.mean_shape());
             },
             "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. WARNING: NOT YET FULLY IMPLEMENTED!",
@@ -2097,9 +2103,9 @@ py::class_ <ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
                const std::function<norm_type(norm_type)>& bias_rr,
                CFEstimator estimator = CFEstimator::Landy_Szalay) {
                 return mkarray_from_vec(self.calculate_xi_cov(bias_dd,
-                                                          bias_dr,
-                                                          bias_rr,
-                                                          estimator),
+                                                              bias_dr,
+                                                              bias_rr,
+                                                              estimator),
                                         self.mean_shape());
             },
             "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The bias function for DR is also used for RD. WARNING: NOT YET FULLY IMPLEMENTED!",
@@ -2114,8 +2120,8 @@ py::class_ <ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
                const std::function<norm_type(norm_type)>& bias_other,
                CFEstimator estimator = CFEstimator::Landy_Szalay) {
                 return mkarray_from_vec(self.calculate_xi_cov(bias_dd,
-                                                          bias_other,
-                                                          estimator),
+                                                              bias_other,
+                                                              estimator),
                                         self.mean_shape());
             },
             "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. The same bias function is used for DR, RD, and RR. WARNING: NOT YET FULLY IMPLEMENTED!",
@@ -2127,7 +2133,8 @@ py::class_ <ExpectedCorrFuncND<N>> declareExpectedCorrFuncND(py::module& mod) {
             [](const Class& self,
                const std::function<norm_type(norm_type)>& bias_dd,
                CFEstimator estimator = CFEstimator::Landy_Szalay) {
-                return mkarray_from_vec(self.calculate_xi_cov(bias_dd, estimator),
+                return mkarray_from_vec(self.calculate_xi_cov(bias_dd,
+                                                              estimator),
                                         self.mean_shape());
             },
             "Calculate the covariance matrix of the correlation function for the given estimator, applying the supplied functions to de-bias the pair counts. No bias function (or an identity operator) is applied to DR, RD, and RR. WARNING: NOT YET FULLY IMPLEMENTED!",
@@ -2709,23 +2716,17 @@ PYBIND11_MODULE(calculate_distances, m) {
                                     py::arithmetic(),
                                     "Correlation function estimator type");
     cf_enum.value("LS",
-                  CFEstimator::Landy_Szalay,
-                  "The Landy-Szalay estimator, (DD - 2 DR + RR) / RR");
+                  CFEstimator::Landy_Szalay);
     cf_enum.value("Hamilton",
-                  CFEstimator::Hamilton,
-                  "The Hamilton estimator, (DD RR / DR^2) - 1");
+                  CFEstimator::Hamilton);
     cf_enum.value("DP",
-                  CFEstimator::Davis_Peebles,
-                  "The Davis & Peebles  estimator, DD / DR - 1");
+                  CFEstimator::Davis_Peebles);
     cf_enum.value("Dodelson",
-                  CFEstimator::Dodelson,
-                  "The estimator from Dodelson et al. 2018, (DD - DR + RR) / DD");
+                  CFEstimator::Dodelson);
     cf_enum.value("PH",
-                  CFEstimator::Peebles_Hauser,
-                  "The Peebles & Hauser estimator, DD / RR - 1");
+                  CFEstimator::Peebles_Hauser);
     cf_enum.value("Hewett",
-                  CFEstimator::Hewett,
-                  "The Hewett estimator, (DD - DR) / RR");
+                  CFEstimator::Hewett);
     declareBinSpecifier(m);
     declareSPos(m);
     declarePos(m);

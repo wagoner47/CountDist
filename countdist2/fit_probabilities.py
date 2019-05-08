@@ -38,12 +38,12 @@ class TooFewGroupsError(ValueError): pass
 def empty_multi_index(names):
     levels = [[] for i in range(len(names))]
     labels = [[] for i in range(len(names))]
-    return pd.MultiIndex(levels=levels, labels=labels, names=names)
+    return pd.MultiIndex(levels=levels, codes=labels, names=names)
 
 def empty_multi_index_nonames(nlevels):
     levels = [[] for i in range(nlevels)]
     labels = [[] for i in range(nlevels)]
-    return pd.MultiIndex(levels=levels, labels=labels)
+    return pd.MultiIndex(levels=levels, codes=labels)
 
 
 def corr_coeff(x, y, x_mean, y_mean, x_var, y_var):

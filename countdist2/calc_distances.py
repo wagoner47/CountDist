@@ -875,7 +875,7 @@ def convolve_pair_counts(
         enn.append_real(
             pool.map(
                 functools.partial(
-                    nn_3d, prob, binners, sigmaz, rlt_mag),
+                    make_single_realization, nn_3d, prob, binners, sigmaz, rlt_mag),
                 range(1, n_real + 1)))
     enn.update()
     return enn

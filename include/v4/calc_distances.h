@@ -2036,7 +2036,7 @@ private:
         std::transform(mean.begin(),
                        mean.end(),
                        mean.begin(),
-                       [=](norm_type x) { return x / n_tot_; });
+                       [this](norm_type x) { return x / (n_real_ * n_tot_); });
         return mean;
     }
 
@@ -2052,9 +2052,7 @@ private:
             std::transform(nn.counts_.begin(),
                            nn.counts_.end(),
                            std::back_inserter(temp),
-                           [this](count_type x) {
-                               return (norm_type) x / n_tot_;
-                           });
+                           [this](count_type x) { return x / n_tot_; });
             std::transform(temp.begin(),
                            temp.end(),
                            mean.begin(),
