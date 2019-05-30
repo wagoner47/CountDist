@@ -1661,6 +1661,8 @@ declareExpectedNNCountsND(py::module& mod) {
     cls.def(float() + py::self);
     cls.def("__eq__", &Class::operator==, py::is_operator());
     cls.def("__neq__", &Class::operator!=, py::is_operator());
+    cls.def("start_new_realization", &Class::start_new_realization,
+	    "Start a new relaization");
     cls.def("append_real",
             py::overload_cast<const NNType&>(&Class::append_real),
             ("Append a realization as a single NNCounts" + std::to_string(N)

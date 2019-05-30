@@ -534,7 +534,7 @@ def get_pair_counts(binners: typing.Sequence[_calculate_distances.BinSpecifier],
         cat2_arr = _convert_catalog_to_structured_array(cat2, use_true,
                                                         not use_true)
         logger.debug("Cross pair counts")
-        nn.process_cross(cat2_arr)
+        nn.process_cross(cat1_arr, cat2_arr)
     return nn
 
 
@@ -777,6 +777,7 @@ def make_single_realization(
             np.random.seed(rstate)
         else:
             np.random.set_state(rstate)
+    enn.start_new_realization()
     is_first = True
     logger.debug("Begin loop")
     for (i, j, k), c in np.ndenumerate(nn_3d.counts):
